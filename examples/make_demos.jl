@@ -12,10 +12,11 @@
 #
 # Produces, in examples/:
 #     demo_grid_4x4.jsonl.gz       4x4 grid, 4 districts, 6 label-permuted maps
+#     demo_grid_3x3.jsonl.gz       3x3 grid, 3 districts, 4 label-permuted maps
 #     demo_multiscale.jsonl.gz     mixed-resolution maps over a county/prec graph
 #     demo_multiscale_graph.json   dual graph for the multiscale demo
 #
-# The grid demo is good for BOTH subcommands: `atlas info` shows the header, and
+# The grid demos are good for BOTH subcommands: `atlas info` shows the header, and
 # `atlas reorder` canonicalizes the permuted district labels. The multiscale demo
 # shows `atlas reorder <in> <out> demo_multiscale_graph.json`.
 #
@@ -74,6 +75,15 @@ function grid4x4()
     return d
 end
 
+"""Base 3x3 grid split into three rows labeled 1..3."""
+function grid3x3()
+    d = Districting()
+    for r in 0:2, c in 0:2
+        d[("n$(r*3 + c)",)] = r + 1
+    end
+    return d
+end
+
 # ---------------------------------------------------------------------------
 # Build the demos
 # ---------------------------------------------------------------------------
@@ -87,6 +97,15 @@ let base = grid4x4(),
                header("demo_grid_4x4"; districts = 4,
                       energies = ["get_isoperimetric_score"], var"energy weights" = [1.0],
                       state = "GRID"),
+               maps)
+end
+
+# 3x3 grid: three row districts, label-permuted across four maps.
+let base = grid3x3(),
+    perms = [[1, 2, 3], [3, 1, 2], [2, 3, 1], [3, 2, 1]]
+    maps = ["map$(k)" => permuteLabels(base, perms[k]) for k in eachindex(perms)]
+    writeAtlas("demo_grid_3x3",
+               header("demo_grid_3x3"; districts = 3, state = "GRID"),
                maps)
 end
 

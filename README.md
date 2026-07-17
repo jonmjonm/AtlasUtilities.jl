@@ -115,6 +115,7 @@ All files below live in [`examples/`](examples) and are gzip-compressed.
 |------|-----:|-------------|
 | `cycleWalk_ct_metadata.jsonl.gz` | few | A real CycleWalk **CT** run whose header embeds its run script — use it with `atlas info --extract-script`. |
 | `demo_grid_4x4.jsonl.gz` | 6 | Toy 4×4 grid, 4 districts, same partition with permuted labels — shows `atlas reorder` canonicalization. |
+| `demo_grid_3x3.jsonl.gz` | 4 | Toy 3×3 grid, 3 row districts, permuted labels across four maps. |
 | `demo_multiscale.jsonl.gz` (+ `demo_multiscale_graph.json`) | 3 | Tiny mixed-resolution atlas + its dual graph — shows graph-based reorder. |
 | `atlas_ordered.jsonl.gz`, `atlas_measureID12.jsonl.gz` | 100 | **NC** multiscale atlases (county/precinct levels, 14 districts). Reorder with `Data/NC_pct21.json` as the dual graph. |
 | `cycleWalk_v0p2_thread3_walkVSinternal_0.01_gamma0.5.jsonl.gz`, `…_iso0.15.jsonl.gz` | 100 | **NC** single-resolution CycleWalk atlases (14 districts). Reorder directly, no graph needed. |
