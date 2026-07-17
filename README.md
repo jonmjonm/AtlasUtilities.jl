@@ -4,15 +4,15 @@ Command-line utilities for working with redistricting **Atlas** files (the map
 container produced by the Quantifying Gerrymandering tooling; see the
 [Atlas format](https://github.com/jonmjonm/AtlasIO.jl/blob/main/atlas_format.md)).
 
-The package installs a single `atlas` command with two subcommands:
+The package installs a single `atlas` command with three subcommands:
 
 | Command | What it does |
 |---------|--------------|
 | `atlas info <atlas> [--extract-script]` | Print an atlas file's header — the metadata line and the atlas-parameter line. The bulky embedded `script` source is never printed; `--extract-script` writes it to its own file instead. |
 | `atlas reorder <A1> <A2> [<graph.json>] [--first-map] [--quiet]` | Relabel district numbers across every map in atlas `A1` so consecutive maps stay as consistent as possible, writing the result to `A2`. |
+| `atlas add <functions> <A1> <A2> [--config <param.toml>] [column flags] [--overwrite] [--quiet]` | Evaluate one or more CycleWalk "pushable writer" functions (e.g. `get_log_spanning_trees`) on every map in `A1` and add the results to the map data, writing to `A2`. |
 
-Run `atlas --help`, `atlas info --help`, or `atlas reorder --help` for full
-option details.
+Run `atlas --help` or `atlas <subcommand> --help` for full option details.
 
 ## Installation
 
@@ -121,6 +121,52 @@ with the `JULIA_NUM_THREADS` environment variable, e.g.:
 ```bash
 JULIA_NUM_THREADS=8 atlas reorder input.jsonl.gz reordered.jsonl.gz
 ```
+
+### `atlas add`
+
+Add one or more CycleWalk **pushable writer functions** to every map in an atlas.
+These are the same functions you would hand to `push_writer!` during a CycleWalk
+run — for example `get_log_spanning_trees`, `get_log_spanning_forests`, or
+`get_isoperimetric_scores`. Each is evaluated on every map and its result is
+stored in the map's data under the function's name, exactly as CycleWalk does
+when it writes out the data:
+
+```bash
+atlas add get_log_spanning_trees A1.jsonl.gz A2.jsonl.gz --config param.toml
+```
+
+Pass a single name, a comma-separated list, or a bracketed list to add several in
+one pass:
+
+```bash
+atlas add "get_log_spanning_trees,get_isoperimetric_scores" A1.jsonl.gz A2.jsonl.gz --config param.toml
+```
+
+Because a CycleWalk atlas stores only districtings (not the graph), the **dual
+graph the atlas was sampled on must be supplied** so each map's partition can be
+rebuilt. Give it either as a CycleWalk TOML config (its `[plans]` table provides
+the graph path and column names) or with explicit column flags — or a mix, where
+a flag overrides / fills in the TOML:
+
+```bash
+atlas add get_isoperimetric_scores A1.jsonl.gz A2.jsonl.gz \
+  --graph NC_pct21.json --pop-col POP20 --node-col NAME \
+  --area-col area --border-col border_length --edge-perimeter-col length
+```
+
+The graph columns are: `--pop-col` (population), `--node-col` (the node id column
+that districting keys use), `--area-col`, `--border-col` (node border length),
+`--edge-perimeter-col` (shared-edge perimeter), and `--node-data` (a
+comma-separated list of extra node attributes to keep). From a `--config`, these
+come from the `[plans]` keys `pop_col`, `geo_units`, `area_col`,
+`node_border_col`, `edge_perimeter_col`, and `node_data`, with the graph path
+built from `map_directory` + `map_file`.
+
+By default it is an error for a requested field to already exist on a map; pass
+`--overwrite` to recompute it instead. The output atlas's header records an
+`"added map data"` provenance entry (visible in `atlas info`) listing the added
+fields, the graph used, and the date; adding fields does not change the map data
+type (`Dict{String,Any}`), so the atlas stays readable by any existing reader.
 
 ## Example atlases
 

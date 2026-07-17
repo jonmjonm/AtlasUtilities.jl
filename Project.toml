@@ -1,18 +1,22 @@
 name = "AtlasUtilities"
 uuid = "020ba7bf-05d8-4817-8da0-aeeb372d76a1"
-authors = ["Jonathan Mattingly <jonathan.mattingly@gmail.com>"]
 version = "0.1.0"
+authors = ["Jonathan Mattingly <jonathan.mattingly@gmail.com>"]
 
 [deps]
 AtlasIO = "d44f5655-1c95-40b4-8e53-9bdb5084f5d6"
 Comonicon = "863f3e99-da2a-4334-8734-de3dacbe5542"
+CycleWalk = "ac9cec89-1413-42d8-a7d6-c246d938c565"
+Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
 Hungarian = "e91730f6-4275-51fb-a7a0-7064cfbd3b39"
 JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
 ProgressMeter = "92933f4c-e287-5a05-a399-4b506db050ca"
+TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
 
 [compat]
 AtlasIO = "0.1.2"
 Comonicon = "1"
+CycleWalk = "0.2"
 Hungarian = "0.7"
 JSON3 = "1.14"
 ProgressMeter = "1.11"
@@ -23,6 +27,3 @@ Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
 test = ["Test"]
-
-# Comonicon CLI configuration lives in the standalone `Comonicon.toml` at the
-# package root — Comonicon does not read a [comonicon] table from Project.toml.
