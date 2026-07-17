@@ -1,0 +1,39 @@
+# GitLab CI for Duke OIT GitLab (gitlab.oit.duke.edu)
+#
+# Runs the Julia test suite on a docker-executor runner using the official
+# Julia images. Requires a runner with the `docker` executor (the Duke OIT
+# shared runners provide this). No project-specific runner tags are assumed;
+# add `tags:` to the jobs if your group requires a specific runner tag.
+
+stages:
+  - test
+
+variables:
+  # Keep the Julia depot inside the project tree so GitLab can cache it
+  # between pipelines (packages, registries, compiled artifacts).
+  JULIA_DEPOT_PATH: "$CI_PROJECT_DIR/.julia"
+
+cache:
+  key: julia-depot
+  paths:
+    - .julia/
+
+.test:
+  stage: test
+  before_script:
+    - julia --version
+    - julia --project=. -e 'using Pkg; Pkg.instantiate()'
+  script:
+    # Run with several threads so the parallel batch pipeline is exercised.
+    - julia --project=. --threads=4 test/runtests.jl
+
+# Primary job: pin to the version used during development.
+test:1.12:
+  extends: .test
+  image: julia:1.12
+
+# Forward-compatibility check against the latest 1.x; non-blocking.
+test:latest:
+  extends: .test
+  image: julia:1
+  allow_failure: true

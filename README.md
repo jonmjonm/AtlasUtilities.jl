@@ -1,0 +1,120 @@
+# AtlasUtilities
+
+Command-line utilities for working with redistricting **Atlas** files (the map
+container produced by the Quantifying Gerrymandering tooling; see the
+[Atlas format](https://github.com/jonmjonm/AtlasIO.jl/blob/main/atlas_format.md)).
+
+The package installs a single `atlas` command with two subcommands:
+
+| Command | What it does |
+|---------|--------------|
+| `atlas info <atlas> [--extract-script]` | Print an atlas file's header — the metadata line and the atlas-parameter line. The bulky embedded `script` source is never printed; `--extract-script` writes it to its own file instead. |
+| `atlas reorder <A1> <A2> [<graph.json>] [--first-map] [--quiet]` | Relabel district numbers across every map in atlas `A1` so consecutive maps stay as consistent as possible, writing the result to `A2`. |
+
+Run `atlas --help`, `atlas info --help`, or `atlas reorder --help` for full
+option details.
+
+## Installation
+
+`atlas` is built with [Comonicon](https://comonicon.org). Installing the package
+runs a build step that drops an `atlas` launcher into `~/.julia/bin/` and
+compiles a system image so the command starts fast.
+
+```julia
+julia -e 'using Pkg; Pkg.add(url="https://github.com/jonmjonm/AtlasUtilities.jl")'
+```
+
+Then add `~/.julia/bin` to your `PATH` (one time):
+
+```bash
+echo 'export PATH="$HOME/.julia/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
+```
+
+Now the command is available:
+
+```bash
+atlas info some_atlas.jsonl.gz
+```
+
+> The first install compiles a system image and takes a few minutes. All
+> dependencies (including `AtlasIO`) resolve from the Julia General registry.
+
+### Installing from a local clone (development)
+
+```bash
+git clone https://github.com/jonmjonm/AtlasUtilities.jl
+cd AtlasUtilities.jl
+julia --project -e 'using Pkg; Pkg.instantiate()'
+julia --project deps/build.jl        # installs the `atlas` launcher + sysimg
+```
+
+## Usage
+
+### `atlas info`
+
+```bash
+atlas info output/cycleWalk_ct_metadata.jsonl.gz
+```
+
+prints the header metadata and the atlas parameters (alphabetized, nested values
+indented). To pull the embedded generating script out to its own file:
+
+```bash
+atlas info output/cycleWalk_ct_metadata.jsonl.gz --extract-script
+```
+
+The script is written to the filename recorded in the header's `script_name`
+entry (falling back to `extracted_script.jl`).
+
+### `atlas reorder`
+
+```bash
+atlas reorder input.jsonl.gz reordered.jsonl.gz
+```
+
+- `--first-map` — align every map to map 1 (the anchor) instead of to its
+  predecessor.
+- `--quiet` — suppress the progress bar.
+- A third positional argument is an optional dual-graph hierarchy
+  (NetworkX node-link JSON), **required** for multiscale/hierarchical atlases
+  whose per-map node sets vary. See [`reorder.md`](reorder.md) for the full
+  specification.
+
+Map parsing is threaded across the threads Julia was started with. Because the
+installed command runs on the Comonicon system image, control the thread count
+with the `JULIA_NUM_THREADS` environment variable, e.g.:
+
+```bash
+JULIA_NUM_THREADS=8 atlas reorder input.jsonl.gz reordered.jsonl.gz
+```
+
+## Running from source without installing
+
+You can also drive the commands directly through the package without installing
+the launcher:
+
+```bash
+julia --project=. --threads=8 -e 'using AtlasUtilities; AtlasUtilities.command_main()' -- \
+    reorder input.jsonl.gz reordered.jsonl.gz --quiet
+```
+
+## Development
+
+```bash
+julia --project=. -e 'using Pkg; Pkg.test()'
+```
+
+The suite covers the reorder logic (`test/runtests.jl`) and the info formatting
+and extraction (`test/infoTests.jl`).
+
+## Repository layout
+
+```
+src/AtlasUtilities.jl   module + Comonicon @cast subcommands (the CLI surface)
+src/info.jl             `atlas info` implementation
+src/reorder.jl          `atlas reorder` implementation
+deps/build.jl           Comonicon install (launcher + sysimg)
+deps/precompile.jl      exercises both subcommands while the sysimg is built
+test/                   test suite
+reorder.md              reorder algorithm specification
+```
