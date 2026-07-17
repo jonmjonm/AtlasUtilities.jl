@@ -24,20 +24,5 @@ Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 [targets]
 test = ["Test"]
 
-# ---------------------------------------------------------------------------
-# Comonicon CLI configuration. `atlas` is the installed command; the build step
-# (deps/build.jl) also compiles a system image so the command starts fast.
-# ---------------------------------------------------------------------------
-[comonicon]
-name = "atlas"
-
-[comonicon.install]
-completion = true
-quiet = false
-
-[comonicon.sysimg]
-incremental = true
-filter_stdlibs = false
-
-[comonicon.sysimg.precompile]
-execution_file = ["deps/precompile.jl"]
+# Comonicon CLI configuration lives in the standalone `Comonicon.toml` at the
+# package root — Comonicon does not read a [comonicon] table from Project.toml.

@@ -1,0 +1,18 @@
+# Comonicon CLI configuration. `atlas` is the installed command; the build step
+# (deps/build.jl) also compiles a system image so the command starts fast.
+#
+# NOTE: Comonicon reads this standalone file (Comonicon.toml / JuliaComonicon.toml),
+# NOT a [comonicon] table in Project.toml. Without this file the command name
+# falls back to the lowercased module name (`atlasutilities`).
+name = "atlas"
+
+[install]
+completion = true
+quiet = false
+
+[sysimg]
+incremental = true
+filter_stdlibs = false
+
+[sysimg.precompile]
+execution_file = ["deps/precompile.jl"]
