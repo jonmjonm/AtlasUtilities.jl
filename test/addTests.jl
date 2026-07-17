@@ -1,13 +1,13 @@
-# Tests for the `atlas add` subcommand's graph-free logic: function-name parsing,
-# function resolution, graph-spec resolution (TOML + flag overrides), and the
-# header provenance stamp. The full reconstruction path (which needs a real dual
-# graph and the CycleWalk partition stack) is exercised separately.
+# Tests for the `atlas add` subcommand: function-name parsing, function
+# resolution, graph-spec resolution (TOML + flag overrides), the header
+# provenance stamp, and an end-to-end oracle test that recomputes a real
+# CycleWalk atlas's map data and checks it reproduces CycleWalk's own values.
 
 using Test
 using AtlasIO
 using CycleWalk: get_log_spanning_trees, get_isoperimetric_scores
 using AtlasUtilities: parseFunctionNames, resolveFunctions, resolveGraphSpec,
-                     writeHeaderWithProvenance, GraphSpec
+                     writeHeaderWithProvenance, GraphSpec, run_add
 
 # resolveGraphSpec takes only keyword arguments; default them all to "".
 rgs(; kw...) = resolveGraphSpec(; config = "", graph = "", pop_col = "",
@@ -112,6 +112,46 @@ rgs(; kw...) = resolveGraphSpec(; config = "", graph = "", pop_col = "",
         atlas = openAtlas(smartOpen(A3, "r"))
         @test length(atlas.atlasParam["added map data"]) == 2
         close(atlas)
+    end
+
+    # Oracle test: `cycleWalk_ct_metadata.jsonl.gz` is real CycleWalk output whose
+    # maps already carry get_log_spanning_trees / get_log_spanning_forests /
+    # get_isoperimetric_scores. Recompute them from each districting on the same
+    # CT dual graph and confirm we reproduce CycleWalk's own values. This exercises
+    # the full reconstruction path -- MultiLevelPartition(graph, districting) ->
+    # LinkCutPartition -> f(partition) -- against ground truth.
+    @testset "oracle: reproduces CycleWalk's own map data" begin
+        graph = joinpath(@__DIR__, "..", "Data", "CT_pct20.json")
+        oracle = joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_metadata.jsonl.gz")
+        fields = ["get_log_spanning_trees", "get_log_spanning_forests",
+                  "get_isoperimetric_scores"]
+
+        A2 = joinpath(mktempdir(), "ct_recomputed.jsonl.gz")
+        run_add(join(fields, ","), oracle, A2;
+                graph = graph, pop_col = "POP20", node_col = "NAME",
+                area_col = "area", border_col = "border_length",
+                edge_perimeter_col = "length",
+                node_data = "COUNTY,NAME,POP20,area,border_length",
+                overwrite = true, quiet = true)
+
+        readall(p) = (a = openAtlas(smartOpen(p, "r")); ms = Map[];
+                      while !eof(a); push!(ms, nextMap(a)); end; close(a); ms)
+        orig, recomp = readall(oracle), readall(A2)
+        @test length(orig) == length(recomp)
+        @test length(orig) >= 1
+
+        asvec(x) = x isa AbstractVector ? Float64.(x) : [Float64(x)]
+        maxrel = 0.0
+        for (mo, mr) in zip(orig, recomp), f in fields
+            o, r = asvec(mo.data[f]), asvec(mr.data[f])
+            @test length(o) == length(r)
+            for (a, b) in zip(o, r)
+                maxrel = max(maxrel, abs(a - b) / max(abs(a), 1e-12))
+            end
+        end
+        # CycleWalk's stored values are reproduced to (essentially) machine
+        # precision; 1e-6 leaves generous headroom for BLAS/platform variation.
+        @test maxrel < 1e-6
     end
 
 end
