@@ -53,14 +53,15 @@ julia --project deps/build.jl        # installs the `atlas` launcher + sysimg
 ### `atlas info`
 
 ```bash
-atlas info output/cycleWalk_ct_metadata.jsonl.gz
+atlas info examples/cycleWalk_ct_metadata.jsonl.gz
 ```
 
-prints the header metadata and the atlas parameters (alphabetized, nested values
-indented). To pull the embedded generating script out to its own file:
+(A small sample atlas ships in [`examples/`](examples).) This prints the header
+metadata and the atlas parameters (alphabetized, nested values indented). To pull
+the embedded generating script out to its own file:
 
 ```bash
-atlas info output/cycleWalk_ct_metadata.jsonl.gz --extract-script
+atlas info examples/cycleWalk_ct_metadata.jsonl.gz --extract-script
 ```
 
 The script is written to the filename recorded in the header's `script_name`
@@ -116,5 +117,6 @@ src/reorder.jl          `atlas reorder` implementation
 deps/build.jl           Comonicon install (launcher + sysimg)
 deps/precompile.jl      exercises both subcommands while the sysimg is built
 test/                   test suite
+examples/               a small sample atlas for the `atlas info` examples
 reorder.md              reorder algorithm specification
 ```
