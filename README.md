@@ -20,9 +20,24 @@ option details.
 runs a build step that drops an `atlas` launcher into `~/.julia/bin/` and
 compiles a system image so the command starts fast.
 
+### Install from GitHub
+
+Install directly from the GitHub repository with Julia's package manager — this
+clones the package, resolves its dependencies from the General registry, and runs
+the build step that installs the `atlas` command:
+
 ```julia
 julia -e 'using Pkg; Pkg.add(url="https://github.com/jonmjonm/AtlasUtilities.jl")'
 ```
+
+Equivalently, from the Julia REPL package mode (press `]`):
+
+```julia-repl
+pkg> add https://github.com/jonmjonm/AtlasUtilities.jl
+```
+
+To pin a specific version or branch, append `#tag`/`#branch` to the URL (e.g.
+`…/AtlasUtilities.jl#v0.1.0`). To update later, `Pkg.update("AtlasUtilities")`.
 
 Then add `~/.julia/bin` to your `PATH` (one time):
 
