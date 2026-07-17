@@ -87,7 +87,9 @@ function run_info(atlasPath::AbstractString; extract_script::Bool = false)
             end
             println("Wrote script entry to: ", outName)
         else
-            println(stderr, "--extract-script: this atlas has no \"$SCRIPT_KEY\" entry.")
+            msg = "--extract-script: this atlas has no \"$SCRIPT_KEY\" entry."
+            println(msg)          # stdout, so it shows in the normal output too
+            println(stderr, msg)  # stderr, for pipelines that only watch that stream
         end
     end
 

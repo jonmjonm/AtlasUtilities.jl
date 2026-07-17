@@ -145,7 +145,8 @@ end
             end
         end
 
-        @test occursin("no \"script\" entry", err)
+        @test occursin("no \"script\" entry", err)      # warning on stderr
+        @test occursin("no \"script\" entry", out)      # and also on stdout
         @test isempty(readdir(dir)) == false            # only the atlas file exists
         @test !any(f -> endswith(f, ".jl"), readdir(dir))
     end
