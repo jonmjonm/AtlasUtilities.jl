@@ -203,6 +203,51 @@ function writeHeaderWithProvenance(A1::AbstractString, A2::AbstractString,
 end
 
 # ---------------------------------------------------------------------------
+# District-label alignment
+# ---------------------------------------------------------------------------
+
+"""
+    labelPermutation(partition, m) -> Vector{Int}
+
+The permutation `σ` for which reconstructed-district `j` is the same set of nodes
+as the map's own districting label `σ[j]`. `LinkCutPartition` numbers districts by
+its internal root-discovery order, which need not match the labels stored in the
+map's districting, so this recovers the correspondence. Node naming here mirrors
+CycleWalk's own `get_node_map` (`partition.graph.node_attributes[ni][node_col]`),
+so the keys line up with the districting keys the atlas was written with.
+"""
+function labelPermutation(partition, m)
+    d = partition.num_dists
+    graph = partition.graph
+    col = partition.node_col
+    σ = zeros(Int, d)
+    for ni in 1:graph.num_nodes
+        key = (string(graph.node_attributes[ni][col]),)
+        σ[partition.node_to_dist[ni]] = m.districting[key]
+    end
+    any(iszero, σ) && error("atlas add: could not align reconstructed districts " *
+                            "with map \"$(m.name)\"'s districting labels.")
+    return σ
+end
+
+"""
+    alignResult(val, σ) -> val'
+
+Reorder a per-district result from reconstructed labels onto the map's districting
+labels: a length-`d` vector `v` becomes `v′` with `v′[σ[j]] = v[j]`. Anything that
+is not a length-`d` vector (e.g. a scalar, which is label-invariant) is returned
+unchanged.
+"""
+function alignResult(val, σ::Vector{Int})
+    (val isa AbstractVector && length(val) == length(σ)) || return val
+    aligned = similar(val)
+    @inbounds for j in eachindex(σ)
+        aligned[σ[j]] = val[j]
+    end
+    return aligned
+end
+
+# ---------------------------------------------------------------------------
 # Driver
 # ---------------------------------------------------------------------------
 
@@ -260,8 +305,16 @@ function run_add(functions::AbstractString, A1::AbstractString, A2::AbstractStri
         # spanning tree the partition picks, so LinkCutPartition's default RNG is
         # fine (and no RNG dependency is needed here).
         partition = LinkCutPartition(MultiLevelPartition(g, m.districting))
+
+        # LinkCutPartition assigns district labels by internal root-discovery
+        # order, which need not match the map's own districting labels, so a
+        # per-district result comes out indexed by the reconstructed labels.
+        # Reorder each such result back onto the map's labels so field entry `i`
+        # describes district `i` of the districting (as CycleWalk's own output
+        # does, where the districting and the data share one labeling).
+        σ = labelPermutation(partition, m)
         for (desc, f) in fns
-            m.data[desc] = f(partition)
+            m.data[desc] = alignResult(f(partition), σ)
         end
 
         addMap(outIO, m)

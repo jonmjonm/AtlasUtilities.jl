@@ -114,44 +114,54 @@ rgs(; kw...) = resolveGraphSpec(; config = "", graph = "", pop_col = "",
         close(atlas)
     end
 
-    # Oracle test: `cycleWalk_ct_metadata.jsonl.gz` is real CycleWalk output whose
-    # maps already carry get_log_spanning_trees / get_log_spanning_forests /
+    # Oracle tests: these fixtures are real CycleWalk output whose maps already
+    # carry get_log_spanning_trees / get_log_spanning_forests /
     # get_isoperimetric_scores. Recompute them from each districting on the same
     # CT dual graph and confirm we reproduce CycleWalk's own values. This exercises
     # the full reconstruction path -- MultiLevelPartition(graph, districting) ->
-    # LinkCutPartition -> f(partition) -- against ground truth.
-    @testset "oracle: reproduces CycleWalk's own map data" begin
-        graph = joinpath(@__DIR__, "..", "Data", "CT_pct20.json")
-        oracle = joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_metadata.jsonl.gz")
-        fields = ["get_log_spanning_trees", "get_log_spanning_forests",
-                  "get_isoperimetric_scores"]
+    # LinkCutPartition -> f(partition), including the district-label re-alignment
+    # (LinkCutPartition renumbers districts, so per-district vectors must be mapped
+    # back onto the districting's labels) -- against ground truth. The multi-map
+    # slice is what makes the re-alignment observable: several of its maps
+    # reconstruct with a non-identity district permutation.
+    graph = joinpath(@__DIR__, "..", "Data", "CT_pct20.json")
+    fields = ["get_log_spanning_trees", "get_log_spanning_forests",
+              "get_isoperimetric_scores"]
+    readall(p) = (a = openAtlas(smartOpen(p, "r")); ms = Map[];
+                  while !eof(a); push!(ms, nextMap(a)); end; close(a); ms)
+    asvec(x) = x isa AbstractVector ? Float64.(x) : [Float64(x)]
 
-        A2 = joinpath(mktempdir(), "ct_recomputed.jsonl.gz")
-        run_add(join(fields, ","), oracle, A2;
-                graph = graph, pop_col = "POP20", node_col = "NAME",
-                area_col = "area", border_col = "border_length",
-                edge_perimeter_col = "length",
-                node_data = "COUNTY,NAME,POP20,area,border_length",
-                overwrite = true, quiet = true)
+    # (fixture, expected minimum map count)
+    fixtures = [("cycleWalk_ct_metadata.jsonl.gz", 1),
+                ("cycleWalk_ct_slice.jsonl.gz", 40)]
 
-        readall(p) = (a = openAtlas(smartOpen(p, "r")); ms = Map[];
-                      while !eof(a); push!(ms, nextMap(a)); end; close(a); ms)
-        orig, recomp = readall(oracle), readall(A2)
-        @test length(orig) == length(recomp)
-        @test length(orig) >= 1
+    for (fixture, minmaps) in fixtures
+        @testset "oracle: $fixture" begin
+            oracle = joinpath(@__DIR__, "..", "examples", fixture)
+            A2 = joinpath(mktempdir(), "ct_recomputed.jsonl.gz")
+            run_add(join(fields, ","), oracle, A2;
+                    graph = graph, pop_col = "POP20", node_col = "NAME",
+                    area_col = "area", border_col = "border_length",
+                    edge_perimeter_col = "length",
+                    node_data = "COUNTY,NAME,POP20,area,border_length",
+                    overwrite = true, quiet = true)
 
-        asvec(x) = x isa AbstractVector ? Float64.(x) : [Float64(x)]
-        maxrel = 0.0
-        for (mo, mr) in zip(orig, recomp), f in fields
-            o, r = asvec(mo.data[f]), asvec(mr.data[f])
-            @test length(o) == length(r)
-            for (a, b) in zip(o, r)
-                maxrel = max(maxrel, abs(a - b) / max(abs(a), 1e-12))
+            orig, recomp = readall(oracle), readall(A2)
+            @test length(orig) == length(recomp)
+            @test length(orig) >= minmaps
+
+            maxrel = 0.0
+            for (mo, mr) in zip(orig, recomp), f in fields
+                o, r = asvec(mo.data[f]), asvec(mr.data[f])
+                @test length(o) == length(r)
+                for (a, b) in zip(o, r)
+                    maxrel = max(maxrel, abs(a - b) / max(abs(a), 1e-12))
+                end
             end
+            # CycleWalk's stored values are reproduced to (essentially) machine
+            # precision; 1e-6 leaves headroom for BLAS/platform variation.
+            @test maxrel < 1e-6
         end
-        # CycleWalk's stored values are reproduced to (essentially) machine
-        # precision; 1e-6 leaves generous headroom for BLAS/platform variation.
-        @test maxrel < 1e-6
     end
 
 end

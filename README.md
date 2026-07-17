@@ -175,6 +175,7 @@ All files below live in [`examples/`](examples) and are gzip-compressed.
 | File | Maps | Description |
 |------|-----:|-------------|
 | `cycleWalk_ct_metadata.jsonl.gz` | few | A real CycleWalk **CT** run whose header embeds its run script — use it with `atlas info --extract-script`. |
+| `cycleWalk_ct_slice.jsonl.gz` | 41 | A short real CycleWalk **CT** run (5 districts) whose maps carry the writer fields; paired with `Data/CT_pct20.json` it is the `atlas add` oracle fixture (recomputed values reproduce CycleWalk's own to machine precision). |
 | `demo_grid_4x4.jsonl.gz` | 6 | Toy 4×4 grid, 4 districts, same partition with permuted labels — shows `atlas reorder` canonicalization. |
 | `demo_grid_3x3.jsonl.gz` | 4 | Toy 3×3 grid, 3 row districts, permuted labels across four maps. |
 | `demo_multiscale.jsonl.gz` (+ `demo_multiscale_graph.json`) | 3 | Tiny mixed-resolution atlas + its dual graph — shows graph-based reorder. |
