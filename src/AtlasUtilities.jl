@@ -35,9 +35,7 @@ include("add.jl")
 include("extract.jl")
 
 """
-Print the header information of an Atlas file: the header metadata (line 2) and
-the atlas parameters (line 3). The bulky "script" entry — the full source of the
-script that generated the atlas — is never printed.
+Print an Atlas file's header (metadata and atlas parameters); the bulky embedded generating "script" is never printed (use `--extract-script` to write it out).
 
 # Args
 
@@ -53,11 +51,7 @@ script that generated the atlas — is never printed.
 end
 
 """
-Walk every map in input atlas A1, relabel district numbers so consecutive maps
-are as similar as possible, and write the relabeled maps to a new atlas A2.
-
-Parsing is threaded across the threads Julia was started with (`julia
---threads=N`); with one thread it runs serially.
+Relabel district numbers across atlas A1 so consecutive maps stay as similar as possible, writing the result to A2.
 
 # Args
 
@@ -78,22 +72,7 @@ Parsing is threaded across the threads Julia was started with (`julia
 end
 
 """
-Add one or more CycleWalk "pushable writer" functions to every map in input atlas
-A1, writing the augmented atlas to A2.
-
-`functions` names the function(s) to add — the same functions you would pass to
-`push_writer!` during a CycleWalk run (e.g. `get_log_spanning_trees`). Pass a
-single name, a comma-separated list, or a bracketed list to add several in one
-pass:
-
-    atlas add get_log_spanning_trees A1 A2 --config param.toml
-    atlas add "get_log_spanning_trees,get_isoperimetric_scores" A1 A2 --graph g.json --pop-col POP20 --node-col NAME --area-col area --border-col border_length --edge-perimeter-col length
-
-A CycleWalk atlas stores only districtings, so the dual graph the atlas was
-sampled on must be supplied — via a CycleWalk `--config` TOML, via the column
-flags below, or a mix (a flag overrides / fills in the TOML). Each map's
-partition is rebuilt on that graph and the function evaluated on it exactly as
-CycleWalk does when it writes out the data.
+Add CycleWalk "pushable writer" function(s) (e.g. `get_log_spanning_trees`) to every map in atlas A1, writing the augmented atlas to A2; the dual graph is supplied via `--config` and/or the column flags.
 
 # Args
 
@@ -133,23 +112,7 @@ CycleWalk does when it writes out the data.
 end
 
 """
-Extract the per-map data of atlas A1 to CSV files.
-
-Reads A1 and writes one CSV file per map-data field into a directory named after
-the atlas (its path with the `.jsonl`/`.jsonl.gz`/`.jsonl.bz2` extension removed;
-created if absent). Each map is one row: the first column is the map name, the
-remaining columns are the field's value (a scalar is one column, a vector is one
-column per entry). Each file starts with a header row.
-
-Every field already present in the maps' data is extracted. `--add` additionally
-computes CycleWalk "pushable writer" functions — the same functions you would pass
-to `push_writer!` — by reconstructing each map's partition on a supplied graph
-(exactly as `atlas add` does) and extracts those too; supply the graph via
-`--config` and/or the column flags. Pass `--add` a single name, a comma-separated
-list, or a bracketed list.
-
-    atlas extract-map-data run.jsonl.gz
-    atlas extract-map-data run.jsonl.gz --add get_log_spanning_trees --config param.toml
+Write each map-data field of atlas A1 to its own CSV (one row per map) in a directory named after the atlas; `--add` also computes CycleWalk writer functions to extract, using the same graph inputs as `atlas add`.
 
 # Args
 
