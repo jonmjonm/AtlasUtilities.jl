@@ -144,38 +144,8 @@ function relabel(m::Map, σ::Vector{Int})
     return Map(m.name, m.districting, m.weight, m.data)
 end
 
-# ---------------------------------------------------------------------------
-# Threading helpers
-# ---------------------------------------------------------------------------
-
-# Maps processed per batch. Large enough to amortize task overhead, small enough
-# to bound memory (a batch of parsed maps is held at once).
-const BATCH = 512
-
-"""Split `1:n` into at most `k` contiguous ranges (one per task)."""
-function chunkranges(n::Int, k::Int)
-    k = clamp(k, 1, max(n, 1))
-    base, extra = divrem(n, k)
-    ranges = UnitRange{Int}[]
-    start = 1
-    for c in 1:k
-        len = base + (c <= extra ? 1 : 0)
-        len == 0 && continue
-        push!(ranges, start:(start + len - 1))
-        start += len
-    end
-    return ranges
-end
-
-"""Run `f(i)` for `i in 1:n` across `cores` tasks (results must be written to
-preallocated, per-index storage by `f`)."""
-function parallelDo!(f, n::Int, cores::Int)
-    @sync for r in chunkranges(n, cores)
-        Threads.@spawn for i in r
-            f(i)
-        end
-    end
-end
+# The batched-parallelism helpers (`BATCH`, `chunkranges`, `parallelDo!`) live in
+# threading.jl, shared with `add`/`extract-map-data`.
 
 # ---------------------------------------------------------------------------
 # Driver

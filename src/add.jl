@@ -278,13 +278,19 @@ end
 
 """
     run_add(functions, A1, A2; config, graph, pop_col, node_col, area_col,
-            border_col, edge_perimeter_col, node_data, overwrite, quiet)
+            border_col, edge_perimeter_col, node_data, overwrite, quiet,
+            cores = Threads.nthreads())
 
 Add the CycleWalk writer function(s) named by `functions` to every map in atlas
 `A1`, writing the augmented atlas to `A2`. The graph is described by `config`
 and/or the column keyword arguments (see `resolveGraphSpec`). By default it is an
 error for a requested field to already exist on a map; pass `overwrite = true` to
 recompute it instead. `quiet` suppresses the progress bar.
+
+The per-map work (parse -> reconstruct partition -> evaluate writers -> serialize)
+is independent across maps and is threaded across `cores` tasks; maps are written
+to `A2` serially in order. `cores` defaults to the threads Julia was started with,
+so a single thread runs serially.
 """
 function run_add(functions::AbstractString, A1::AbstractString, A2::AbstractString;
                  config::AbstractString = "", graph::AbstractString = "",
@@ -292,7 +298,8 @@ function run_add(functions::AbstractString, A1::AbstractString, A2::AbstractStri
                  area_col::AbstractString = "", border_col::AbstractString = "",
                  edge_perimeter_col::AbstractString = "",
                  node_data::AbstractString = "",
-                 overwrite::Bool = false, quiet::Bool = false)
+                 overwrite::Bool = false, quiet::Bool = false,
+                 cores::Int = Threads.nthreads())
     names = parseFunctionNames(functions)
     fns = resolveFunctions(names)
     spec = resolveGraphSpec(; config = config, graph = graph, pop_col = pop_col,
@@ -308,32 +315,59 @@ function run_add(functions::AbstractString, A1::AbstractString, A2::AbstractStri
 
     inIO = smartOpen(String(A1), "r")
     atlas = openAtlas(inIO)
+    mpt, wt = atlas.mapParamType, atlas.weightType
 
     progress = quiet ? nothing :
                ProgressUnknown(desc = "Adding map data:", spinner = true)
     written = 0
-    while !eof(atlas)
-        m = nextMap(atlas)
 
-        # Guard against silently clobbering data already on the map.
-        if !overwrite
-            for (desc, _) in fns
-                haskey(m.data, desc) && error(
-                    "atlas add: map \"$(m.name)\" already has field \"$desc\"; " *
-                    "pass --overwrite to recompute it.")
+    # Process maps in batches: read serially, then parse + reconstruct + evaluate +
+    # serialize each map in parallel (into preallocated per-index slots), then write
+    # the serialized bytes to A2 serially in map order.
+    with_serial_blas() do
+        while !eof(atlas)
+            lines = String[]
+            while length(lines) < BATCH && !eof(atlas)
+                push!(lines, readline(atlas.io))
             end
-        end
+            n = length(lines)
+            n == 0 && break
 
-        # Reconstruct the partition and evaluate each writer function (realigned to
-        # the map's districting labels); merge the results into the map's data.
-        for (desc, val) in evalWriters(g, m, fns)
-            m.data[desc] = val
-        end
+            bytes = Vector{Vector{UInt8}}(undef, n)
+            conflict = Vector{Union{Nothing,Tuple{String,String}}}(nothing, n)
+            parallelDo!(n, cores) do i
+                m = JSON3.read(lines[i], Map{mpt,wt})
+                if !overwrite
+                    for (desc, _) in fns
+                        if haskey(m.data, desc)
+                            conflict[i] = (m.name, desc)
+                            return
+                        end
+                    end
+                end
+                for (desc, val) in evalWriters(g, m, fns)
+                    m.data[desc] = val
+                end
+                buf = IOBuffer()
+                addMap(buf, m)
+                bytes[i] = take!(buf)
+            end
 
-        addMap(outIO, m)
-        written += 1
-        progress === nothing ||
-            next!(progress; showvalues = [("maps written", written)])
+            # Report the first field collision in reading order (if any).
+            c = findfirst(!isnothing, conflict)
+            if c !== nothing
+                name, desc = conflict[c]
+                error("atlas add: map \"$name\" already has field \"$desc\"; " *
+                      "pass --overwrite to recompute it.")
+            end
+
+            for i in 1:n
+                write(outIO, bytes[i])
+            end
+            written += n
+            progress === nothing ||
+                next!(progress; showvalues = [("maps written", written)])
+        end
     end
     progress === nothing ||
         finish!(progress; showvalues = [("maps written", written)])

@@ -120,13 +120,27 @@ consistent.
 
   See [`reorder.md`](reorder.md) for the full specification.
 
-Map parsing is threaded across the threads Julia was started with. Because the
-installed command runs on the Comonicon system image, control the thread count
-with the `JULIA_NUM_THREADS` environment variable, e.g.:
+## Threading
+
+`reorder`, `add`, and `extract-map-data` process maps in parallel across the
+threads Julia was started with (each map is independent; results are written in
+input order). For `add` and `extract-map-data --add` the win is large — the
+per-map partition reconstruction and writer-function evaluation dominate — while
+for `reorder` and plain extraction it speeds up map parsing.
+
+Because the installed command runs on the Comonicon system image, control the
+thread count with the `JULIA_NUM_THREADS` environment variable, e.g.:
 
 ```bash
+JULIA_NUM_THREADS=8 atlas add get_log_spanning_trees A1.jsonl.gz A2.jsonl.gz --config param.toml
 JULIA_NUM_THREADS=8 atlas reorder input.jsonl.gz reordered.jsonl.gz
 ```
+
+Threaded and serial runs agree to machine precision. They are not bitwise
+identical, because CycleWalk reconstructs each map's partition from a fresh random
+spanning tree, so a few floating-point sums (e.g. in `get_isoperimetric_scores`)
+land in a different order — an inherent ~1e-15 difference that also appears
+between two serial runs, not an artifact of threading.
 
 ### `atlas add`
 

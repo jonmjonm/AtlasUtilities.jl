@@ -79,7 +79,8 @@ function run_extract(A1::AbstractString;
                      node_col::AbstractString = "", area_col::AbstractString = "",
                      border_col::AbstractString = "",
                      edge_perimeter_col::AbstractString = "",
-                     node_data::AbstractString = "", quiet::Bool = false)
+                     node_data::AbstractString = "", quiet::Bool = false,
+                     cores::Int = Threads.nthreads())
     addNames = isempty(add) ? String[] : parseFunctionNames(add)
     fns = resolveFunctions(addNames)          # validate names up front
     addedSet = Set(addNames)
@@ -100,6 +101,7 @@ function run_extract(A1::AbstractString;
     ext = compress ? ".csv.gz" : ".csv"
 
     atlas = openAtlas(smartOpen(String(A1), "r"))
+    mpt, wt = atlas.mapParamType, atlas.weightType
     if eof(atlas)
         close(atlas)
         println("atlas extract-map-data: $A1 has no maps; nothing written.")
@@ -148,19 +150,40 @@ function run_extract(A1::AbstractString;
         return nothing
     end
 
-    # --- stream the remaining maps --------------------------------------------
+    # --- stream the remaining maps in batches ---------------------------------
+    # Read serially, then per map parse + compute (--add) + render each field's row
+    # in parallel, then write the rows to their streams serially in map order.
     progress = quiet ? nothing :
                ProgressUnknown(desc = "Extracting map data:", spinner = true)
     written = 1
-    while !eof(atlas)
-        m = nextMap(atlas)
-        added = computeAdded(m)
-        for (field, io, width) in streams
-            write(io, valueRow(m.name, valueOf(m, field, added), width))
+    with_serial_blas() do
+        while !eof(atlas)
+            lines = String[]
+            while length(lines) < BATCH && !eof(atlas)
+                push!(lines, readline(atlas.io))
+            end
+            n = length(lines)
+            n == 0 && break
+
+            # rows[i][k] is map i's row string for stream k.
+            rows = Vector{Vector{String}}(undef, n)
+            parallelDo!(n, cores) do i
+                m = JSON3.read(lines[i], Map{mpt,wt})
+                added = computeAdded(m)
+                rr = Vector{String}(undef, length(streams))
+                for (k, (field, _, width)) in enumerate(streams)
+                    rr[k] = valueRow(m.name, valueOf(m, field, added), width)
+                end
+                rows[i] = rr
+            end
+
+            for i in 1:n, k in eachindex(streams)
+                write(streams[k][2], rows[i][k])
+            end
+            written += n
+            progress === nothing ||
+                next!(progress; showvalues = [("maps written", written)])
         end
-        written += 1
-        progress === nothing ||
-            next!(progress; showvalues = [("maps written", written)])
     end
     progress === nothing ||
         finish!(progress; showvalues = [("maps written", written)])

@@ -25,10 +25,12 @@ using CycleWalk
 using Dates
 using Hungarian
 using JSON3
+using LinearAlgebra: BLAS
 using ProgressMeter
 using TOML
 using Comonicon
 
+include("threading.jl")
 include("info.jl")
 include("reorder.jl")
 include("add.jl")
