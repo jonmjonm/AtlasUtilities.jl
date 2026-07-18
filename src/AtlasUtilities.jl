@@ -21,6 +21,7 @@ Run `atlas --help` or `atlas <subcommand> --help` for details.
 module AtlasUtilities
 
 using AtlasIO
+using CodecZlib
 using CycleWalk
 using Dates
 using Hungarian
@@ -31,6 +32,7 @@ using TOML
 using Comonicon
 
 include("threading.jl")
+include("pargzip.jl")
 include("info.jl")
 include("reorder.jl")
 include("add.jl")

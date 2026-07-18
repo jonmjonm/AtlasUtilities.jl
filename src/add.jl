@@ -164,17 +164,17 @@ end
 # ---------------------------------------------------------------------------
 
 """
-    writeHeaderWithProvenance(A1, A2, names, spec)
+    provenanceHeaderBytes(A1, names, spec) -> Vector{UInt8}
 
-Write A2's header from A1's, re-emitting line 3 (the atlas params) with an
-`"added map data"` provenance entry appended -- recording which fields were
-added, from which graph, and when. Lines 1-2 are copied verbatim. The entry is
-purely additive to the params dict, so older readers ignore it while `atlas info`
-surfaces it; the declared `mapParamType` (`Dict{String,Any}`) is unchanged, since
-adding keys to each map's data does not change its type.
+A1's header (its three lines) with an `"added map data"` provenance entry appended
+to line 3 (the atlas params) -- recording which fields were added, from which graph,
+and when -- returned as raw bytes ready to emit through an `AtlasOutput`. Lines 1-2
+are copied verbatim. The entry is purely additive to the params dict, so older
+readers ignore it while `atlas info` surfaces it; the declared `mapParamType`
+(`Dict{String,Any}`) is unchanged, since adding keys to each map's data does not
+change its type.
 """
-function writeHeaderWithProvenance(A1::AbstractString, A2::AbstractString,
-                                   names::Vector{String}, spec::GraphSpec)
+function provenanceHeaderBytes(A1::AbstractString, names::Vector{String}, spec::GraphSpec)
     src = smartOpen(String(A1), "r")
     line1 = readline(src)   # fixed description line
     line2 = readline(src)   # AtlasHeader
@@ -193,11 +193,26 @@ function writeHeaderWithProvenance(A1::AbstractString, A2::AbstractString,
     push!(log, entry)
     atlasParam["added map data"] = log
 
+    buf = IOBuffer()
+    write(buf, line1, "\n")
+    write(buf, line2, "\n")
+    JSON3.write(buf, atlasParam)
+    write(buf, "\n")
+    return take!(buf)
+end
+
+"""
+    writeHeaderWithProvenance(A1, A2, names, spec)
+
+Write A2's header from A1's with the `atlas add` provenance stamp (see
+[`provenanceHeaderBytes`](@ref)), through a plain/compressed stream chosen by A2's
+extension. Used on its own (e.g. in tests); `run_add` instead feeds the same header
+bytes to an `AtlasOutput`.
+"""
+function writeHeaderWithProvenance(A1::AbstractString, A2::AbstractString,
+                                   names::Vector{String}, spec::GraphSpec)
     out = smartOpen(String(A2), "w")
-    write(out, line1, "\n")
-    write(out, line2, "\n")
-    JSON3.write(out, atlasParam)
-    write(out, "\n")
+    write(out, provenanceHeaderBytes(String(A1), names, spec))
     close(out)
     return nothing
 end
@@ -406,8 +421,9 @@ function run_add(functions::AbstractString, A1::AbstractString, A2::AbstractStri
     g = buildGraph(spec)
 
     # Start A2 with A1's header plus a provenance stamp, then append maps to it.
-    writeHeaderWithProvenance(String(A1), String(A2), names, spec)
-    outIO = smartOpen(String(A2), "a")
+    # For .gz output, `AtlasOutput` compresses the map body as byte-targeted gzip
+    # members in parallel (the serial write is only raw I/O); plain/.bz2 stream as before.
+    outIO = openAtlasOutput(String(A2), provenanceHeaderBytes(String(A1), names, spec), cores)
 
     inIO = smartOpen(String(A1), "r")
     atlas = openAtlas(inIO)
@@ -457,9 +473,7 @@ function run_add(functions::AbstractString, A1::AbstractString, A2::AbstractStri
                       "pass --overwrite to recompute it.")
             end
 
-            for i in 1:n
-                write(outIO, bytes[i])
-            end
+            writeMaps!(outIO, bytes)
             written += n
             progress === nothing ||
                 next!(progress; showvalues = [("maps written", written)])
