@@ -66,6 +66,11 @@ julia --project deps/build.jl        # installs the `atlas` launcher + sysimg
 
 ## Usage
 
+> **`--quiet`** — the map-processing subcommands (`reorder`, `add`,
+> `extract-map-data`) show a live progress bar by default; pass `--quiet` to turn
+> it off (e.g. for logs or non-interactive runs). `info` prints only a header, so
+> it has no progress bar and no `--quiet` flag.
+
 ### `atlas info`
 
 ```bash
