@@ -165,9 +165,10 @@ function run_reorder(A1::AbstractString, A2::AbstractString,
                      jsonPath::Union{AbstractString,Nothing} = nothing;
                      firstMap::Bool = false, quiet::Bool = false,
                      cores::Int = Threads.nthreads())
-    # Start A2 by cloning A1's header (lines 1-3), then append maps to it.
-    copyAtlasHeader(String(A1), String(A2))
-    outIO = smartOpen(String(A2), "a")
+    # Start A2 by cloning A1's header (lines 1-3), then append maps to it. For .gz
+    # output, `AtlasOutput` compresses the map body as byte-targeted gzip members in
+    # parallel (the serial write is only raw I/O); plain/.bz2 stream as before.
+    outIO = openAtlasOutput(String(A2), atlasHeaderBytes(String(A1)), cores)
 
     inIO = smartOpen(String(A1), "r")
     atlas = openAtlas(inIO)
@@ -192,7 +193,10 @@ function run_reorder(A1::AbstractString, A2::AbstractString,
 
     # Map 1 is the anchor: written verbatim and used as the initial reference.
     ref = nextMap(atlas)
-    addMap(outIO, ref)
+    let buf = IOBuffer()
+        addMap(buf, ref)
+        writeMaps!(outIO, [take!(buf)])
+    end
     written += 1
     tick()
 
@@ -223,9 +227,7 @@ function run_reorder(A1::AbstractString, A2::AbstractString,
             bytes[i] = take!(buf)
         end
 
-        for i in 1:n                                            # write (serial, in order)
-            write(outIO, bytes[i])
-        end
+        writeMaps!(outIO, bytes)                                # write (parallel gzip / serial raw)
         written += n
         tick()
     end

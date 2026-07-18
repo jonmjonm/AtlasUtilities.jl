@@ -15,7 +15,7 @@ ProgressMeter = "92933f4c-e287-5a05-a399-4b506db050ca"
 TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
 
 [compat]
-AtlasIO = "0.1.2"
+AtlasIO = "0.1.3"
 Comonicon = "1"
 CycleWalk = "0.2"
 Hungarian = "0.7"

@@ -2,7 +2,7 @@
 
 julia_version = "1.12.6"
 manifest_format = "2.0"
-project_hash = "8509a0e5d20d04241630ae11971844c987d6103f"
+project_hash = "782db3aeec1ea95dfe90eb62f55c5e7094cbda1d"
 
 [[deps.ArgTools]]
 uuid = "0dad84c5-d112-42e6-8d28-ef12dabb789f"
@@ -25,7 +25,7 @@ uuid = "d44f5655-1c95-40b4-8e53-9bdb5084f5d6"
 version = "0.1.2"
 
 [[deps.AtlasUtilities]]
-deps = ["AtlasIO", "Comonicon", "CycleWalk", "Dates", "Hungarian", "JSON3", "ProgressMeter", "TOML"]
+deps = ["AtlasIO", "Comonicon", "CycleWalk", "Dates", "Hungarian", "JSON3", "LinearAlgebra", "ProgressMeter", "TOML"]
 path = "."
 uuid = "020ba7bf-05d8-4817-8da0-aeeb372d76a1"
 version = "0.1.0"
