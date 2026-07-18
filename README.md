@@ -4,13 +4,14 @@ Command-line utilities for working with redistricting **Atlas** files (the map
 container produced by the Quantifying Gerrymandering tooling; see the
 [Atlas format](https://github.com/jonmjonm/AtlasIO.jl/blob/main/atlas_format.md)).
 
-The package installs a single `atlas` command with three subcommands:
+The package installs a single `atlas` command with four subcommands:
 
 | Command | What it does |
 |---------|--------------|
 | `atlas info <atlas> [--extract-script]` | Print an atlas file's header — the metadata line and the atlas-parameter line. The bulky embedded `script` source is never printed; `--extract-script` writes it to its own file instead. |
 | `atlas reorder <A1> <A2> [<graph.json>] [--first-map] [--quiet]` | Relabel district numbers across every map in atlas `A1` so consecutive maps stay as consistent as possible, writing the result to `A2`. |
 | `atlas add <functions> <A1> <A2> [--config <param.toml>] [column flags] [--overwrite] [--quiet]` | Evaluate one or more CycleWalk "pushable writer" functions (e.g. `get_log_spanning_trees`) on every map in `A1` and add the results to the map data, writing to `A2`. |
+| `atlas extract-map-data <A1> [--add <functions>] [--no-compression] [--force] [column flags]` | Write each map-data field to its own CSV (one row per map) in a directory named after the atlas; `--add` also computes writer functions to extract. |
 
 Run `atlas --help` or `atlas <subcommand> --help` for full option details.
 
@@ -167,6 +168,48 @@ By default it is an error for a requested field to already exist on a map; pass
 `"added map data"` provenance entry (visible in `atlas info`) listing the added
 fields, the graph used, and the date; adding fields does not change the map data
 type (`Dict{String,Any}`), so the atlas stays readable by any existing reader.
+
+### `atlas extract-map-data`
+
+Write the per-map data of an atlas to CSV — one file per data field:
+
+```bash
+atlas extract-map-data cycleWalk_ct_slice.jsonl.gz
+```
+
+This creates a directory named after the atlas (its path with the `.jsonl` /
+`.jsonl.gz` / `.jsonl.bz2` extension removed — e.g. `cycleWalk_ct_slice/`) and
+writes one CSV per field found in the map data:
+
+```
+cycleWalk_ct_slice/
+  get_log_spanning_trees.csv.gz
+  get_log_spanning_forests.csv.gz
+  get_isoperimetric_scores.csv.gz
+```
+
+Each map is one row. The first column is the map name; the remaining columns are
+the field's value — a scalar is a single column, a vector is one column per entry
+— under a header row (`name,get_isoperimetric_scores_1,get_isoperimetric_scores_2,…`).
+
+Output is gzip-compressed by default; `--no-compression` writes plain `.csv`. A
+field whose output file already exists is **skipped**; pass `--force` to overwrite.
+One stream is kept open per file for the whole pass, so each file is opened once.
+
+`--add` additionally computes CycleWalk pushable writer functions (fields that may
+not be in the atlas yet) and extracts them alongside the existing data, using the
+same graph inputs as [`atlas add`](#atlas-add):
+
+```bash
+atlas extract-map-data run.jsonl.gz --add get_log_spanning_trees --config param.toml
+atlas extract-map-data run.jsonl.gz \
+  --add "get_log_spanning_trees,get_isoperimetric_scores" \
+  --graph NC_pct21.json --pop-col POP20 --node-col NAME \
+  --area-col area --border-col border_length --edge-perimeter-col length
+```
+
+Without `--add`, no graph is needed — it simply streams the maps and dumps their
+existing data.
 
 ## Example atlases
 

@@ -247,6 +247,31 @@ function alignResult(val, σ::Vector{Int})
     return aligned
 end
 
+"""
+    evalWriters(g, m, fns) -> Dict{String,Any}
+
+Evaluate each CycleWalk writer function in `fns` (a vector of `(desc, f)` pairs) on
+map `m`, reconstructing `m`'s partition on graph `g` exactly as CycleWalk does at
+startup (`MultiLevelPartition(g, districting)` -> `LinkCutPartition`) and evaluating
+`f(partition)` the way CycleWalk's `output` does. Each per-district result is
+realigned onto the map's districting labels (see `labelPermutation`/`alignResult`),
+so entry `i` describes district `i` of the districting. Returns `desc => value`.
+
+The partition is rebuilt once and all functions share it. The statistics depend
+only on the districting, not on which random spanning tree the partition picks, so
+`LinkCutPartition`'s default RNG is fine (no RNG dependency is needed here). Shared
+by `atlas add` and `atlas extract-map-data`.
+"""
+function evalWriters(g, m, fns)
+    partition = LinkCutPartition(MultiLevelPartition(g, m.districting))
+    σ = labelPermutation(partition, m)
+    out = Dict{String,Any}()
+    for (desc, f) in fns
+        out[desc] = alignResult(f(partition), σ)
+    end
+    return out
+end
+
 # ---------------------------------------------------------------------------
 # Driver
 # ---------------------------------------------------------------------------
@@ -299,22 +324,10 @@ function run_add(functions::AbstractString, A1::AbstractString, A2::AbstractStri
             end
         end
 
-        # Rebuild the partition on the graph exactly as CycleWalk does at startup,
-        # then evaluate each writer function the way CycleWalk's `output` does. The
-        # added statistics depend only on the districting, not on which random
-        # spanning tree the partition picks, so LinkCutPartition's default RNG is
-        # fine (and no RNG dependency is needed here).
-        partition = LinkCutPartition(MultiLevelPartition(g, m.districting))
-
-        # LinkCutPartition assigns district labels by internal root-discovery
-        # order, which need not match the map's own districting labels, so a
-        # per-district result comes out indexed by the reconstructed labels.
-        # Reorder each such result back onto the map's labels so field entry `i`
-        # describes district `i` of the districting (as CycleWalk's own output
-        # does, where the districting and the data share one labeling).
-        σ = labelPermutation(partition, m)
-        for (desc, f) in fns
-            m.data[desc] = alignResult(f(partition), σ)
+        # Reconstruct the partition and evaluate each writer function (realigned to
+        # the map's districting labels); merge the results into the map's data.
+        for (desc, val) in evalWriters(g, m, fns)
+            m.data[desc] = val
         end
 
         addMap(outIO, m)

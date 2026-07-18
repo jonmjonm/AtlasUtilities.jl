@@ -4,7 +4,7 @@
 Command-line utilities for redistricting Atlas files (see the Atlas format at
 https://github.com/jonmjonm/AtlasIO.jl/blob/main/atlas_format.md).
 
-Installs a single `atlas` command with three subcommands:
+Installs a single `atlas` command with four subcommands:
 
   * `atlas info <atlas> [--extract-script]` — print an atlas file's header.
   * `atlas reorder <A1> <A2> [<graph.json>] [--first-map] [--quiet]` — relabel
@@ -12,6 +12,9 @@ Installs a single `atlas` command with three subcommands:
   * `atlas add <functions> <A1> <A2> [--config <param.toml>] [column flags]
     [--overwrite] [--quiet]` — evaluate one or more CycleWalk "pushable writer"
     functions on every map and add the results to the map data.
+  * `atlas extract-map-data <A1> [--add <functions>] [--no-compression] [--force]
+    [column flags]` — write each map-data field to its own CSV file (one row per
+    map) in a directory named after the atlas.
 
 Run `atlas --help` or `atlas <subcommand> --help` for details.
 """
@@ -29,6 +32,7 @@ using Comonicon
 include("info.jl")
 include("reorder.jl")
 include("add.jl")
+include("extract.jl")
 
 """
 Print the header information of an Atlas file: the header metadata (line 2) and
@@ -126,6 +130,61 @@ CycleWalk does when it writes out the data.
             node_col = node_col, area_col = area_col, border_col = border_col,
             edge_perimeter_col = edge_perimeter_col, node_data = node_data,
             overwrite = overwrite, quiet = quiet)
+end
+
+"""
+Extract the per-map data of atlas A1 to CSV files.
+
+Reads A1 and writes one CSV file per map-data field into a directory named after
+the atlas (its path with the `.jsonl`/`.jsonl.gz`/`.jsonl.bz2` extension removed;
+created if absent). Each map is one row: the first column is the map name, the
+remaining columns are the field's value (a scalar is one column, a vector is one
+column per entry). Each file starts with a header row.
+
+Every field already present in the maps' data is extracted. `--add` additionally
+computes CycleWalk "pushable writer" functions — the same functions you would pass
+to `push_writer!` — by reconstructing each map's partition on a supplied graph
+(exactly as `atlas add` does) and extracts those too; supply the graph via
+`--config` and/or the column flags. Pass `--add` a single name, a comma-separated
+list, or a bracketed list.
+
+    atlas extract-map-data run.jsonl.gz
+    atlas extract-map-data run.jsonl.gz --add get_log_spanning_trees --config param.toml
+
+# Args
+
+- `a1`: input atlas (`.jsonl` / `.jsonl.gz` / `.jsonl.bz2`).
+
+# Options
+
+- `--add <functions>`: also compute and extract these writer function(s).
+- `--config <param.toml>`: CycleWalk TOML supplying the graph (for `--add`).
+- `--graph <graph.json>`: dual-graph JSON (overrides the TOML's path).
+- `--pop-col <col>`: population column.
+- `--node-col <col>`: node id column (the districting key column).
+- `--area-col <col>`: node area column.
+- `--border-col <col>`: node border-length column.
+- `--edge-perimeter-col <col>`: shared-edge perimeter column.
+- `--node-data <cols>`: extra node attributes to keep (comma-separated list).
+
+# Flags
+
+- `--no-compression`: write plain `.csv` instead of gzip-compressed `.csv.gz`.
+- `--force`: overwrite an output file that already exists (otherwise it is skipped).
+- `--quiet`: suppress the progress bar.
+"""
+@cast function extract_map_data(a1::String; add::String = "",
+                                no_compression::Bool = false, force::Bool = false,
+                                config::String = "", graph::String = "",
+                                pop_col::String = "", node_col::String = "",
+                                area_col::String = "", border_col::String = "",
+                                edge_perimeter_col::String = "",
+                                node_data::String = "", quiet::Bool = false)
+    run_extract(a1; add = add, compress = !no_compression, force = force,
+                config = config, graph = graph, pop_col = pop_col,
+                node_col = node_col, area_col = area_col, border_col = border_col,
+                edge_perimeter_col = edge_perimeter_col, node_data = node_data,
+                quiet = quiet)
 end
 
 # Designate this module as the CLI entry point; its `@cast` functions above
