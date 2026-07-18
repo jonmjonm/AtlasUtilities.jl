@@ -253,20 +253,23 @@ end
 #
 # Most writer statistics are deterministic functions of the districting (which
 # nodes lie in which district) and the graph -- they do NOT depend on the random
-# spanning tree `LinkCutPartition` draws. For those we can skip the
-# `LinkCutPartition` build, which profiling shows is ~half of a reconstruction
-# (drawing a random spanning tree per district and loading it into a link-cut /
-# splay-tree structure), and evaluate the statistic directly from the
-# `MultiLevelPartition`'s node-to-district map plus the finest `BaseGraph`'s
-# `simple_graph`. On a real NC atlas this roughly halves `atlas add`'s per-map cost
-# and reproduces the `LinkCutPartition` path bit-for-bit.
+# spanning tree `LinkCutPartition` draws. For those we can skip BOTH reconstruction
+# steps that dominate a rebuild: the `LinkCutPartition` (drawing a random spanning
+# tree per district and loading it into a link-cut / splay-tree structure, ~56% of
+# per-map cost) AND the `MultiLevelPartition` (building per-district subgraphs,
+# vmaps, populations and cross-district edges, ~32%). Instead we resolve each finest
+# node straight to its districting label with `coverLabel` (from reorder.jl) and call
+# the statistic on that `node_to_dist` plus the finest `BaseGraph`'s `simple_graph`.
+# This reproduces the `LinkCutPartition` path bit-for-bit (the tree is irrelevant to
+# the statistic) while building no partition object at all.
 #
 # A writer is "treeless" if it appears in `TREELESS_WRITERS`, mapping its name to
-# `(node_to_dist, simple_graph, num_dists) -> value` in `MultiLevelPartition`
-# district numbering (a length-`d` vector or a scalar), computed without any
-# partition object. A request whose writers are ALL treeless takes the fast path;
-# any non-treeless (or otherwise unrecognized) name falls back to the always-correct
-# `LinkCutPartition` path (`evalWritersLCP`).
+# `(node_to_dist, simple_graph, num_dists) -> value` (a length-`d` vector or a
+# scalar), computed without any partition object. Because `coverLabel` returns the
+# districting's own labels, `node_to_dist` is already in the map's district
+# numbering, so results need no re-alignment. A request whose writers are ALL
+# treeless takes the fast path; any non-treeless (or otherwise unrecognized) name
+# falls back to the always-correct `LinkCutPartition` path (`evalWritersLCP`).
 
 # CycleWalk exposes a low-level `get_log_spanning_trees(node_to_dist, simple_graph,
 # di)` that scores one district straight from the assignment + graph -- no partition.
@@ -285,47 +288,47 @@ const TREELESS_WRITERS = Dict{String,Function}(
 allTreeless(fns) = all(haskey(TREELESS_WRITERS, desc) for (desc, _) in fns)
 
 """
-    fastPartitionData(g, m) -> (mlp, simple_graph, node_to_dist, σ)
+    nodeToDist(g, m) -> (simple_graph, node_to_dist, num_dists)
 
-Build only the `MultiLevelPartition` of map `m` on graph `g` (skipping the
-`LinkCutPartition`) and derive the integer `node_to_dist` vector -- indexed by the
-finest `BaseGraph`'s node order, the same ordering `simple_graph` uses -- together
-with the alignment permutation `σ` from `MultiLevelPartition` district numbering
-onto `m`'s districting labels. Node naming mirrors `labelPermutation`, so keys line
-up with the districting keys the atlas was written with.
+Resolve map `m`'s districting to an integer node-to-district vector on graph `g`
+WITHOUT building a `MultiLevelPartition` or `LinkCutPartition`. Each finest
+`BaseGraph` node is mapped to its district straight from `m.districting` via
+`coverLabel`, which matches the node's level-value tuple (over `g.levels`) against
+the districting keys -- so a coarse districting key (e.g. a whole county) covers all
+of its finest units, exactly as `reorder.jl` resolves multiscale maps. `coverLabel`
+returns the districting's own label, so `node_to_dist` is already in the map's
+district numbering and needs no realignment.
+
+Returns the finest `simple_graph`, the `node_to_dist` vector (indexed by base-graph
+node order, matching the `simple_graph` vertices), and the district count (the
+largest label; a districting partitions all nodes into contiguously-numbered,
+nonempty districts, so this is the number of districts).
 """
-function fastPartitionData(g, m)
-    mlp  = MultiLevelPartition(g, m.districting)
-    base = g.graphs_by_level[end]           # finest BaseGraph
-    col  = g.levels[1]                       # node id column (as LinkCutPartition uses)
-    d    = mlp.num_dists
-    n2d  = Vector{Int}(undef, base.num_nodes)
-    σ    = zeros(Int, d)
+function nodeToDist(g, m)
+    base   = g.graphs_by_level[end]          # finest BaseGraph
+    levels = g.levels
+    n2d    = Vector{Int}(undef, base.num_nodes)
     for ni in 1:base.num_nodes
-        key = (string(base.node_attributes[ni][col]),)
-        di  = mlp.node_to_district[key]
-        n2d[ni] = di
-        σ[di]   = m.districting[key]         # mlp-district di -> map's districting label
+        key = Tuple(string(base.node_attributes[ni][lev]) for lev in levels)
+        n2d[ni] = coverLabel(m.districting, key)
     end
-    any(iszero, σ) && error("atlas add: could not align reconstructed districts " *
-                            "with map \"$(m.name)\"'s districting labels.")
-    return (mlp, base.simple_graph, n2d, σ)
+    return (base.simple_graph, n2d, maximum(n2d))
 end
 
 """
     evalWritersTreeless(g, m, fns) -> Dict{String,Any}
 
 Fast path of [`evalWriters`](@ref): every writer in `fns` must be treeless (see
-`TREELESS_WRITERS`). Builds only the `MultiLevelPartition`, evaluates each writer
-from `(node_to_dist, simple_graph, num_dists)`, and realigns per-district results
-onto the map's districting labels. Returns `desc => value`.
+`TREELESS_WRITERS`). Resolves the districting to `node_to_dist` with `nodeToDist`
+(no partition object built) and evaluates each writer from `(node_to_dist,
+simple_graph, num_dists)`. The vector is already in the map's district numbering, so
+no realignment is needed. Returns `desc => value`.
 """
 function evalWritersTreeless(g, m, fns)
-    _, sg, n2d, σ = fastPartitionData(g, m)
-    d = length(σ)
+    sg, n2d, d = nodeToDist(g, m)
     out = Dict{String,Any}()
     for (desc, _) in fns
-        out[desc] = alignResult(TREELESS_WRITERS[desc](n2d, sg, d), σ)
+        out[desc] = TREELESS_WRITERS[desc](n2d, sg, d)
     end
     return out
 end
@@ -360,7 +363,7 @@ describes district `i` of the districting.
 
 Dispatches on the requested writers: when they are all "treeless" (their statistic
 does not need the random spanning tree, e.g. `get_log_spanning_trees`) it takes the
-faster [`evalWritersTreeless`](@ref) path that skips the `LinkCutPartition` build;
+faster [`evalWritersTreeless`](@ref) path that builds no partition object at all;
 otherwise it falls back to the always-correct [`evalWritersLCP`](@ref). Both paths
 produce identical values. Shared by `atlas add` and `atlas extract-map-data`.
 """

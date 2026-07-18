@@ -166,7 +166,8 @@ rgs(; kw...) = resolveGraphSpec(; config = "", graph = "", pop_col = "",
         end
     end
 
-    # The treeless fast path (skip LinkCutPartition) must reproduce the general
+    # The treeless fast path (builds no partition object -- resolves node_to_dist
+    # straight from the districting via coverLabel) must reproduce the general
     # LinkCutPartition path bit-for-bit for the writers it covers. This pins the
     # fast == slow invariant directly, independent of the oracle fixtures' stored
     # values (the oracle test above already exercises the fast path against ground
