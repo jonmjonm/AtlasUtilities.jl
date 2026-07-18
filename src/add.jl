@@ -259,36 +259,32 @@ end
 # per-map cost) AND the `MultiLevelPartition` (building per-district subgraphs,
 # vmaps, populations and cross-district edges, ~32%). Instead we resolve each finest
 # node straight to its districting label with `coverLabel` (from reorder.jl) and call
-# the statistic on that `node_to_dist` plus the finest `BaseGraph`'s `simple_graph`.
-# This reproduces the `LinkCutPartition` path bit-for-bit (the tree is irrelevant to
-# the statistic) while building no partition object at all.
+# the writer on that `node_to_dist` plus the finest `BaseGraph`. This reproduces the
+# `LinkCutPartition` path (to machine precision) while building no partition at all.
 #
-# A writer is "treeless" if it appears in `TREELESS_WRITERS`, mapping its name to
-# `(node_to_dist, simple_graph, num_dists) -> value` (a length-`d` vector or a
-# scalar), computed without any partition object. Because `coverLabel` returns the
-# districting's own labels, `node_to_dist` is already in the map's district
-# numbering, so results need no re-alignment. A request whose writers are ALL
-# treeless takes the fast path; any non-treeless (or otherwise unrecognized) name
-# falls back to the always-correct `LinkCutPartition` path (`evalWritersLCP`).
+# Dispatch is by CONVENTION, not a hard-coded name list: a CycleWalk writer offers a
+# fast path iff it defines a method with the uniform signature
+# `f(node_to_dist::Vector{Int}, ::BaseGraph, num_dists::Int)` -- the partition-free
+# form that returns per-district values in `node_to_dist`'s own numbering. We simply
+# ask each requested function whether it has that method (`hasFastMethod`). A request
+# whose writers ALL have it takes the fast path; anything else (a writer with only the
+# `LinkCutPartition` method, or an unrecognized one) falls back to the always-correct
+# `evalWritersLCP`. Any writer CycleWalk later gives a partition-free method to is then
+# picked up automatically, with no change here.
 
-# CycleWalk exposes a low-level `get_log_spanning_trees(node_to_dist, simple_graph,
-# di)` that scores one district straight from the assignment + graph -- no partition.
-const _logSpanningTrees = getfield(CycleWalk, :get_log_spanning_trees)
+# The uniform partition-free signature a writer must provide to be fast.
+const _FAST_SIG = Tuple{Vector{Int}, CycleWalk.BaseGraph, Int}
 
-const TREELESS_WRITERS = Dict{String,Function}(
-    # per-district log spanning-tree counts (length-d vector)
-    "get_log_spanning_trees" =>
-        (n2d, sg, d) -> Float64[_logSpanningTrees(n2d, sg, di) for di in 1:d],
-    # log spanning-FOREST count = sum over districts (a label-invariant scalar)
-    "get_log_spanning_forests" =>
-        (n2d, sg, d) -> sum(_logSpanningTrees(n2d, sg, di) for di in 1:d),
-)
+"""True if CycleWalk writer `f` provides the partition-free `(node_to_dist, ::BaseGraph,
+num_dists)` method (checked once via `hasmethod`, no call made)."""
+hasFastMethod(f) = hasmethod(f, _FAST_SIG)
 
-"""True if every `(desc, _)` writer in `fns` has a treeless variant."""
-allTreeless(fns) = all(haskey(TREELESS_WRITERS, desc) for (desc, _) in fns)
+"""True if every writer in `fns` (a vector of `(desc, f)` pairs) has the partition-free
+fast method, so the whole request can take `evalWritersTreeless`."""
+allTreeless(fns) = all(hasFastMethod(f) for (_, f) in fns)
 
 """
-    nodeToDist(g, m) -> (simple_graph, node_to_dist, num_dists)
+    nodeToDist(g, m) -> (base_graph, node_to_dist, num_dists)
 
 Resolve map `m`'s districting to an integer node-to-district vector on graph `g`
 WITHOUT building a `MultiLevelPartition` or `LinkCutPartition`. Each finest
@@ -299,10 +295,10 @@ of its finest units, exactly as `reorder.jl` resolves multiscale maps. `coverLab
 returns the districting's own label, so `node_to_dist` is already in the map's
 district numbering and needs no realignment.
 
-Returns the finest `simple_graph`, the `node_to_dist` vector (indexed by base-graph
-node order, matching the `simple_graph` vertices), and the district count (the
-largest label; a districting partitions all nodes into contiguously-numbered,
-nonempty districts, so this is the number of districts).
+Returns the finest `BaseGraph`, the `node_to_dist` vector (indexed by base-graph node
+order, matching the graph's vertices), and the district count (the largest label; a
+districting partitions all nodes into contiguously-numbered, nonempty districts, so
+this is the number of districts).
 """
 function nodeToDist(g, m)
     base   = g.graphs_by_level[end]          # finest BaseGraph
@@ -312,23 +308,23 @@ function nodeToDist(g, m)
         key = Tuple(string(base.node_attributes[ni][lev]) for lev in levels)
         n2d[ni] = coverLabel(m.districting, key)
     end
-    return (base.simple_graph, n2d, maximum(n2d))
+    return (base, n2d, maximum(n2d))
 end
 
 """
     evalWritersTreeless(g, m, fns) -> Dict{String,Any}
 
-Fast path of [`evalWriters`](@ref): every writer in `fns` must be treeless (see
-`TREELESS_WRITERS`). Resolves the districting to `node_to_dist` with `nodeToDist`
-(no partition object built) and evaluates each writer from `(node_to_dist,
-simple_graph, num_dists)`. The vector is already in the map's district numbering, so
-no realignment is needed. Returns `desc => value`.
+Fast path of [`evalWriters`](@ref): every writer in `fns` must provide the
+partition-free method (see `hasFastMethod`). Resolves the districting to
+`node_to_dist` with `nodeToDist` (no partition object built) and calls each writer as
+`f(node_to_dist, base_graph, num_dists)`. The result is already in the map's district
+numbering, so no realignment is needed. Returns `desc => value`.
 """
 function evalWritersTreeless(g, m, fns)
-    sg, n2d, d = nodeToDist(g, m)
+    base, n2d, d = nodeToDist(g, m)
     out = Dict{String,Any}()
-    for (desc, _) in fns
-        out[desc] = TREELESS_WRITERS[desc](n2d, sg, d)
+    for (desc, f) in fns
+        out[desc] = f(n2d, base, d)
     end
     return out
 end
@@ -354,21 +350,22 @@ function evalWritersLCP(g, m, fns)
 end
 
 """
-    evalWriters(g, m, fns) -> Dict{String,Any}
+    evalWriters(g, m, fns; treeless = allTreeless(fns)) -> Dict{String,Any}
 
 Evaluate each CycleWalk writer function in `fns` (a vector of `(desc, f)` pairs) on
-map `m`, returning `desc => value` with every per-district result realigned onto the
-map's districting labels (see `labelPermutation`/`alignResult`), so entry `i`
-describes district `i` of the districting.
+map `m`, returning `desc => value` with entry `i` describing district `i` of the
+districting.
 
-Dispatches on the requested writers: when they are all "treeless" (their statistic
-does not need the random spanning tree, e.g. `get_log_spanning_trees`) it takes the
-faster [`evalWritersTreeless`](@ref) path that builds no partition object at all;
-otherwise it falls back to the always-correct [`evalWritersLCP`](@ref). Both paths
-produce identical values. Shared by `atlas add` and `atlas extract-map-data`.
+When every writer offers the partition-free method (`treeless`, the default,
+determined by [`allTreeless`](@ref)) it takes the faster [`evalWritersTreeless`](@ref)
+path that builds no partition object at all; otherwise it falls back to the
+always-correct [`evalWritersLCP`](@ref) (which realigns per-district results via
+`labelPermutation`/`alignResult`). Both paths agree to machine precision. The `treeless`
+decision depends only on `fns`, so the drivers resolve it once per run and pass it in;
+callers may omit it. Shared by `atlas add` and `atlas extract-map-data`.
 """
-evalWriters(g, m, fns) =
-    allTreeless(fns) ? evalWritersTreeless(g, m, fns) : evalWritersLCP(g, m, fns)
+evalWriters(g, m, fns; treeless::Bool = allTreeless(fns)) =
+    treeless ? evalWritersTreeless(g, m, fns) : evalWritersLCP(g, m, fns)
 
 # ---------------------------------------------------------------------------
 # Driver
@@ -400,6 +397,7 @@ function run_add(functions::AbstractString, A1::AbstractString, A2::AbstractStri
                  cores::Int = Threads.nthreads())
     names = parseFunctionNames(functions)
     fns = resolveFunctions(names)
+    treeless = allTreeless(fns)     # fast-path decision depends only on fns; resolve once
     spec = resolveGraphSpec(; config = config, graph = graph, pop_col = pop_col,
                             node_col = node_col, area_col = area_col,
                             border_col = border_col,
@@ -443,7 +441,7 @@ function run_add(functions::AbstractString, A1::AbstractString, A2::AbstractStri
                         end
                     end
                 end
-                for (desc, val) in evalWriters(g, m, fns)
+                for (desc, val) in evalWriters(g, m, fns; treeless = treeless)
                     m.data[desc] = val
                 end
                 buf = IOBuffer()

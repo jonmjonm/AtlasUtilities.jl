@@ -121,8 +121,10 @@ function run_extract(A1::AbstractString;
     activeAddedNames = [f for f in addNames if shouldWrite(f)]
     activeAddedSet = Set(activeAddedNames)
     activeFns = [(n, f) for (n, f) in fns if n in activeAddedSet]
+    treeless = allTreeless(activeFns)   # fast-path decision depends only on activeFns
 
-    computeAdded(m) = isempty(activeFns) ? Dict{String,Any}() : evalWriters(g, m, activeFns)
+    computeAdded(m) = isempty(activeFns) ? Dict{String,Any}() :
+                      evalWriters(g, m, activeFns; treeless = treeless)
     valueOf(m, field, added) = field in addedSet ? added[field] : get(m.data, field, nothing)
 
     skipped = [f for f in vcat(existingFields, addNames) if !shouldWrite(f)]
