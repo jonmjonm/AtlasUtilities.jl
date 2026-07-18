@@ -1,6 +1,6 @@
-# `atlas reorder` — Specification
+# `atlas relabel` — Specification
 
-The `atlas reorder` command (from the AtlasUtilities package) steps over every
+The `atlas relabel` command (from the AtlasUtilities package) steps over every
 map in an input atlas **A1**, relabels district numbers so that consecutive maps
 are as similar as possible, and writes the relabeled maps to a new atlas **A2**.
 
@@ -115,7 +115,7 @@ for m = 2 … M:
 ## CLI
 
 ```
-atlas reorder <A1> <A2> [<graph.json>] [--first-map] [--quiet]
+atlas relabel <A1> <A2> [<graph.json>] [--first-map] [--quiet]
 ```
 
 - `<A1>` input atlas filename (any AtlasIO-supported extension)
@@ -127,7 +127,7 @@ atlas reorder <A1> <A2> [<graph.json>] [--first-map] [--quiet]
 
 Parsing/serialization runs across the threads Julia was started with. Because the
 installed command runs on a prebuilt system image, set `JULIA_NUM_THREADS`
-(e.g. `JULIA_NUM_THREADS=8 atlas reorder …`) to enable parallelism; the default
+(e.g. `JULIA_NUM_THREADS=8 atlas relabel …`) to enable parallelism; the default
 of one thread runs serially.
 
 A progress bar (live count of maps written, on `stderr`) is shown by default

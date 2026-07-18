@@ -1,7 +1,7 @@
 using Test
 using AtlasIO
 using AtlasUtilities
-using AtlasUtilities: reOrder, relabel, run_reorder, loadHierarchy, expandLabels, BATCH
+using AtlasUtilities: reOrder, relabelMap, run_reorder, loadHierarchy, expandLabels, BATCH
 
 # Fixed node-key set shared by all test maps.
 const NODES = [("a",), ("b",), ("c",), ("dd",)]
@@ -29,7 +29,7 @@ partition(labels) = Set(Set(i for i in eachindex(labels) if labels[i] == d)
         cur = mkmap("cur", [2, 2, 1, 1])      # same partition, labels swapped
         σ = reOrder(ref, cur, 2)
         @test σ == [2, 1]
-        @test labelsof(relabel(cur, σ)) == labelsof(ref)   # exact realignment, distance 0
+        @test labelsof(relabelMap(cur, σ)) == labelsof(ref)   # exact realignment, distance 0
     end
 
     @testset "reOrder: finds an optimal (min-Hamming) alignment" begin
@@ -51,7 +51,7 @@ partition(labels) = Set(Set(i for i in eachindex(labels) if labels[i] == d)
 
     @testset "relabel preserves name/weight/data and permutes labels" begin
         cur = mkmap("foo", [1, 2, 2, 1]; w = 7, data = Dict{String,Any}("x" => 3))
-        r = relabel(cur, [2, 1])
+        r = relabelMap(cur, [2, 1])
         @test r.name == "foo"
         @test r.weight == 7
         @test r.data == Dict{String,Any}("x" => 3)
@@ -60,7 +60,7 @@ partition(labels) = Set(Set(i for i in eachindex(labels) if labels[i] == d)
 
     @testset "relabel never changes the induced partition" begin
         cur = mkmap("p", [1, 2, 2, 1])
-        r = relabel(cur, reOrder(mkmap("ref", [1, 1, 2, 2]), cur, 2))
+        r = relabelMap(cur, reOrder(mkmap("ref", [1, 1, 2, 2]), cur, 2))
         @test partition(labelsof(r)) == partition(labelsof(cur))
     end
 

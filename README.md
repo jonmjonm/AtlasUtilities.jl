@@ -9,7 +9,7 @@ The package installs a single `atlas` command with four subcommands:
 | Command | What it does |
 |---------|--------------|
 | `atlas info <atlas> [--extract-script]` | Print an atlas file's header — the metadata line and the atlas-parameter line. The bulky embedded `script` source is never printed; `--extract-script` writes it to its own file instead. |
-| `atlas reorder <A1> <A2> [<graph.json>] [--first-map] [--quiet]` | Relabel district numbers across every map in atlas `A1` so consecutive maps stay as consistent as possible, writing the result to `A2`. |
+| `atlas relabel <A1> <A2> [<graph.json>] [--first-map] [--quiet]` | Relabel district numbers across every map in atlas `A1` so consecutive maps stay as consistent as possible, writing the result to `A2`. |
 | `atlas add <functions> <A1> <A2> [--config <param.toml>] [column flags] [--overwrite] [--quiet]` | Evaluate one or more CycleWalk "pushable writer" functions (e.g. `get_log_spanning_trees`) on every map in `A1` and add the results to the map data, writing to `A2`. |
 | `atlas extract-map-data <A1> [--add <functions>] [--no-compression] [--force] [column flags]` | Write each map-data field to its own CSV (one row per map) in a directory named after the atlas; `--add` also computes writer functions to extract. |
 
@@ -66,7 +66,7 @@ julia --project deps/build.jl        # installs the `atlas` launcher + sysimg
 
 ## Usage
 
-> **`--quiet`** — the map-processing subcommands (`reorder`, `add`,
+> **`--quiet`** — the map-processing subcommands (`relabel`, `add`,
 > `extract-map-data`) show a live progress bar by default; pass `--quiet` to turn
 > it off (e.g. for logs or non-interactive runs). `info` prints only a header, so
 > it has no progress bar and no `--quiet` flag.
@@ -89,14 +89,14 @@ atlas info examples/cycleWalk_ct_metadata.jsonl.gz --extract-script
 The script is written to the filename recorded in the header's `script_name`
 entry (falling back to `extracted_script.jl`).
 
-### `atlas reorder`
+### `atlas relabel`
 
 ```bash
-atlas reorder examples/demo_grid_4x4.jsonl.gz reordered.jsonl.gz
+atlas relabel examples/demo_grid_4x4.jsonl.gz relabeled.jsonl.gz
 ```
 
 The `demo_grid_4x4` demo holds the same partition in every map but with the
-district labels permuted; reorder canonicalizes them so map-to-map labels stay
+district labels permuted; `atlas relabel` canonicalizes them so map-to-map labels stay
 consistent.
 
 - `--first-map` — align every map to map 1 (the anchor) instead of to its
@@ -108,32 +108,32 @@ consistent.
   graph:
 
   ```bash
-  atlas reorder examples/demo_multiscale.jsonl.gz out.jsonl.gz \
+  atlas relabel examples/demo_multiscale.jsonl.gz out.jsonl.gz \
       examples/demo_multiscale_graph.json
   ```
 
   The real NC multiscale atlases use the precinct graph as their dual graph:
 
   ```bash
-  atlas reorder examples/atlas_ordered.jsonl.gz out.jsonl.gz Data/NC_pct21.json
+  atlas relabel examples/atlas_ordered.jsonl.gz out.jsonl.gz Data/NC_pct21.json
   ```
 
-  See [`reorder.md`](reorder.md) for the full specification.
+  See [`relabel.md`](relabel.md) for the full specification.
 
 ## Threading
 
-`reorder`, `add`, and `extract-map-data` process maps in parallel across the
+`relabel`, `add`, and `extract-map-data` process maps in parallel across the
 threads Julia was started with (each map is independent; results are written in
 input order). For `add` and `extract-map-data --add` the win is large — the
 per-map partition reconstruction and writer-function evaluation dominate — while
-for `reorder` and plain extraction it speeds up map parsing.
+for `relabel` and plain extraction it speeds up map parsing.
 
 Because the installed command runs on the Comonicon system image, control the
 thread count with the `JULIA_NUM_THREADS` environment variable, e.g.:
 
 ```bash
 JULIA_NUM_THREADS=8 atlas add get_log_spanning_trees A1.jsonl.gz A2.jsonl.gz --config param.toml
-JULIA_NUM_THREADS=8 atlas reorder input.jsonl.gz reordered.jsonl.gz
+JULIA_NUM_THREADS=8 atlas relabel input.jsonl.gz relabeled.jsonl.gz
 ```
 
 Threaded and serial runs agree to machine precision. They are not bitwise
@@ -238,9 +238,9 @@ All files below live in [`examples/`](examples) and are gzip-compressed.
 |------|-----:|-------------|
 | `cycleWalk_ct_metadata.jsonl.gz` | few | A real CycleWalk **CT** run whose header embeds its run script — use it with `atlas info --extract-script`. |
 | `cycleWalk_ct_slice.jsonl.gz` | 41 | A short real CycleWalk **CT** run (5 districts) whose maps carry the writer fields; paired with `Data/CT_pct20.json` it is the `atlas add` oracle fixture (recomputed values reproduce CycleWalk's own to machine precision). |
-| `demo_grid_4x4.jsonl.gz` | 6 | Toy 4×4 grid, 4 districts, same partition with permuted labels — shows `atlas reorder` canonicalization. |
+| `demo_grid_4x4.jsonl.gz` | 6 | Toy 4×4 grid, 4 districts, same partition with permuted labels — shows `atlas relabel` canonicalization. |
 | `demo_grid_3x3.jsonl.gz` | 4 | Toy 3×3 grid, 3 row districts, permuted labels across four maps. |
-| `demo_multiscale.jsonl.gz` (+ `demo_multiscale_graph.json`) | 3 | Tiny mixed-resolution atlas + its dual graph — shows graph-based reorder. |
+| `demo_multiscale.jsonl.gz` (+ `demo_multiscale_graph.json`) | 3 | Tiny mixed-resolution atlas + its dual graph — shows graph-based relabeling. |
 | `atlas_ordered.jsonl.gz`, `atlas_measureID12.jsonl.gz` | 100 | **NC** multiscale atlases (county/precinct levels, 14 districts). Reorder with `Data/NC_pct21.json` as the dual graph. |
 | `cycleWalk_v0p2_thread3_walkVSinternal_0.01_gamma0.5.jsonl.gz`, `…_iso0.15.jsonl.gz` | 100 | **NC** single-resolution CycleWalk atlases (14 districts). Reorder directly, no graph needed. |
 
@@ -263,7 +263,7 @@ the launcher:
 
 ```bash
 julia --project=. --threads=8 -e 'using AtlasUtilities; AtlasUtilities.command_main()' -- \
-    reorder input.jsonl.gz reordered.jsonl.gz --quiet
+    relabel input.jsonl.gz relabeled.jsonl.gz --quiet
 ```
 
 ## Development
@@ -272,7 +272,7 @@ julia --project=. --threads=8 -e 'using AtlasUtilities; AtlasUtilities.command_m
 julia --project=. -e 'using Pkg; Pkg.test()'
 ```
 
-The suite covers the reorder logic (`test/runtests.jl`) and the info formatting
+The suite covers the relabel logic (`test/runtests.jl`) and the info formatting
 and extraction (`test/infoTests.jl`).
 
 ## Repository layout
@@ -280,10 +280,10 @@ and extraction (`test/infoTests.jl`).
 ```
 src/AtlasUtilities.jl   module + Comonicon @cast subcommands (the CLI surface)
 src/info.jl             `atlas info` implementation
-src/reorder.jl          `atlas reorder` implementation
+src/reorder.jl          `atlas relabel` implementation
 deps/build.jl           Comonicon install (launcher + sysimg)
 deps/precompile.jl      exercises both subcommands while the sysimg is built
 test/                   test suite
 examples/               sample atlases (+ make_demos.jl that generates them)
-reorder.md              reorder algorithm specification
+relabel.md              relabel command / reOrder algorithm spec
 ```

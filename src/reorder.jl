@@ -1,4 +1,4 @@
-# reorder.jl -- the `atlas reorder` subcommand.
+# reorder.jl -- the `atlas relabel` subcommand.
 #
 # Walk every map in an input atlas A1, relabel district numbers so consecutive
 # maps are as similar as possible, and write the relabeled maps to a new atlas A2.
@@ -10,7 +10,7 @@
 # read (serial) -> parse (parallel) -> reorder (serial) -> serialize (parallel) ->
 # write (serial, in order).
 #
-# See reorder.md for the full specification.
+# See relabel.md for the full specification.
 
 # ---------------------------------------------------------------------------
 # Dual-graph hierarchy (for multiscale atlases)
@@ -129,7 +129,7 @@ function reOrder(ref::Map, cur::Map, d::Int, h::Hierarchy)
 end
 
 """
-    relabel(m::Map, σ::Vector{Int}) -> Map
+    relabelMap(m::Map, σ::Vector{Int}) -> Map
 
 `m` with districting values relabeled by `σ` (`j -> σ[j]`), preserving
 name/weight/data and the map's original (possibly coarse) node-key encoding.
@@ -137,7 +137,7 @@ Mutates `m.districting`'s values in place (only the value slots change, not the
 key set, so this is safe) rather than rehashing a fresh `Dict`; `m` must not be
 used again after this call under its old labels.
 """
-function relabel(m::Map, σ::Vector{Int})
+function relabelMap(m::Map, σ::Vector{Int})
     for node in keys(m.districting)
         m.districting[node] = σ[m.districting[node]]
     end
@@ -212,7 +212,7 @@ function run_reorder(A1::AbstractString, A2::AbstractString,
         reordered = Vector{Map{mpt,wt}}(undef, n)                # reorder (serial chain)
         for i in 1:n
             σ = h === nothing ? reOrder(ref, maps[i], d) : reOrder(ref, maps[i], d, h)
-            reordered[i] = relabel(maps[i], σ)
+            reordered[i] = relabelMap(maps[i], σ)
             firstMap || (ref = reordered[i])
         end
 

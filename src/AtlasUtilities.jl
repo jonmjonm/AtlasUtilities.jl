@@ -7,7 +7,7 @@ https://github.com/jonmjonm/AtlasIO.jl/blob/main/atlas_format.md).
 Installs a single `atlas` command with four subcommands:
 
   * `atlas info <atlas> [--extract-script]` — print an atlas file's header.
-  * `atlas reorder <A1> <A2> [<graph.json>] [--first-map] [--quiet]` — relabel
+  * `atlas relabel <A1> <A2> [<graph.json>] [--first-map] [--quiet]` — relabel
     district numbers across an atlas so consecutive maps stay consistent.
   * `atlas add <functions> <A1> <A2> [--config <param.toml>] [column flags]
     [--overwrite] [--quiet]` — evaluate one or more CycleWalk "pushable writer"
@@ -67,7 +67,7 @@ Relabel district numbers across atlas A1 so consecutive maps stay as similar as 
 - `--first-map`: align every map to map 1 (anchor) instead of to its predecessor.
 - `--quiet`: suppress the progress bar.
 """
-@cast function reorder(a1::String, a2::String, graph::String = "";
+@cast function relabel(a1::String, a2::String, graph::String = "";
                        first_map::Bool = false, quiet::Bool = false)
     run_reorder(a1, a2, isempty(graph) ? nothing : graph;
                 firstMap = first_map, quiet = quiet)
