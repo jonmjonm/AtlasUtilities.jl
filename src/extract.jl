@@ -79,11 +79,13 @@ function run_extract(A1::AbstractString;
                      node_col::AbstractString = "", area_col::AbstractString = "",
                      border_col::AbstractString = "",
                      edge_perimeter_col::AbstractString = "",
-                     node_data::AbstractString = "", quiet::Bool = false,
-                     cores::Int = Threads.nthreads())
+                     node_data::AbstractString = "", vote_cols::AbstractString = "",
+                     quiet::Bool = false, cores::Int = Threads.nthreads())
     addNames = isempty(add) ? String[] : parseFunctionNames(add)
-    fns = resolveFunctions(addNames)          # validate names up front
-    addedSet = Set(addNames)
+    votePairs = parseVotePairs(vote_cols)
+    fns = resolveFunctions(addNames, votePairs)   # validate + expand partisan names
+    addFields = [desc for (desc, _) in fns]       # actual field names (partisan names expand)
+    addedSet = Set(addFields)
 
     # The graph (and its columns) is only needed when computing `--add` functions.
     g = nothing
@@ -93,6 +95,7 @@ function run_extract(A1::AbstractString;
                                 border_col = border_col,
                                 edge_perimeter_col = edge_perimeter_col,
                                 node_data = node_data)
+        union!(spec.node_data, Set(voteColumns(votePairs)))   # keep vote columns on the graph
         g = buildGraph(spec)
     end
 
@@ -118,14 +121,16 @@ function run_extract(A1::AbstractString;
     # (unless --force); compute only the --add functions we will actually write.
     existingFields = sort([k for k in keys(first.data) if !(k in addedSet)])
     activeExisting = [f for f in existingFields if shouldWrite(f)]
-    activeAddedNames = [f for f in addNames if shouldWrite(f)]
+    activeAddedNames = [f for f in addFields if shouldWrite(f)]
     activeAddedSet = Set(activeAddedNames)
     activeFns = [(n, f) for (n, f) in fns if n in activeAddedSet]
+    treeless = allTreeless(activeFns)   # fast-path decision depends only on activeFns
 
-    computeAdded(m) = isempty(activeFns) ? Dict{String,Any}() : evalWriters(g, m, activeFns)
+    computeAdded(m) = isempty(activeFns) ? Dict{String,Any}() :
+                      evalWriters(g, m, activeFns; treeless = treeless)
     valueOf(m, field, added) = field in addedSet ? added[field] : get(m.data, field, nothing)
 
-    skipped = [f for f in vcat(existingFields, addNames) if !shouldWrite(f)]
+    skipped = [f for f in vcat(existingFields, addFields) if !shouldWrite(f)]
     isempty(skipped) || @info "extract-map-data: skipping existing file(s) " *
         "(use --force to overwrite): " * join(string.(skipped) .* ext, ", ")
 

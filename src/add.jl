@@ -42,17 +42,62 @@ function parseFunctionNames(s::AbstractString)
     return names
 end
 
-"""
-    resolveFunctions(names) -> Vector{Tuple{String,Function}}
+# CycleWalk writers that need a pair of vote columns: they are not nullary
+# `f(partition)` writers but are parameterized by two vote columns, and CycleWalk
+# provides a `build_<name>(votes1, votes2)` factory returning the actual
+# `f(partition)` closure. These are driven by the `--vote-cols` flag (see
+# `parseVotePairs`); each requested vote pair produces its own output field
+# `<name>_<votes1>_<votes2>`.
+const PARTISAN_WRITERS = Set(["get_partisan_margins", "get_partisan_seats"])
 
-Map each name to the CycleWalk function it names (the function is looked up by
-name in the `CycleWalk` module, exactly the set of names usable with
-`push_writer!`). Each returned pair is `(desc, f)` where `desc` is the name used
-as the map-data field, matching CycleWalk's own `push_writer!` default.
 """
-function resolveFunctions(names::Vector{String})
+    parseVotePairs(s) -> Vector{Tuple{String,String}}
+
+Parse the `--vote-cols` argument into `(votes1, votes2)` column pairs. Elections are
+separated by `;`, the two columns of a pair by `,` -- e.g.
+`"G20_PR_D,G20_PR_R;G16_PR_D,G16_PR_R"` gives two pairs. Empty input gives no pairs.
+"""
+function parseVotePairs(s::AbstractString)
+    pairs = Tuple{String,String}[]
+    for part in split(strip(s), ';')
+        isempty(strip(part)) && continue
+        cols = strip.(split(part, ','))
+        length(cols) == 2 && all(!isempty, cols) ||
+            error("atlas add: --vote-cols pair \"$part\" must be exactly two " *
+                  "comma-separated columns (votes1,votes2).")
+        push!(pairs, (String(cols[1]), String(cols[2])))
+    end
+    return pairs
+end
+
+"""All distinct vote column names referenced by `votePairs` (for keeping on the graph)."""
+voteColumns(votePairs) = unique!(String[c for p in votePairs for c in p])
+
+"""
+    resolveFunctions(names, votePairs = Tuple{String,String}[])
+        -> Vector{Tuple{String,Function}}
+
+Map each name to the CycleWalk writer it names, returning `(desc, f)` pairs where
+`desc` is the map-data field and `f(partition)` computes it. A plain writer resolves
+to `CycleWalk.<name>` directly (the set of names usable with `push_writer!`). A
+"partisan" writer (see `PARTISAN_WRITERS`) is expanded once per vote pair in
+`votePairs`: for pair `(v1, v2)` it builds `CycleWalk.build_<name>(v1, v2)` and emits
+the field `<name>_<v1>_<v2>`; requesting one with no `votePairs` is an error.
+"""
+function resolveFunctions(names::Vector{String},
+                          votePairs::Vector{Tuple{String,String}} = Tuple{String,String}[])
     fns = Tuple{String,Function}[]
     for name in names
+        if name in PARTISAN_WRITERS
+            isempty(votePairs) &&
+                error("atlas add: \"$name\" needs vote columns; pass --vote-cols " *
+                      "\"votes1,votes2\" (one or more `;`-separated pairs).")
+            builder = getfield(CycleWalk, Symbol("build_" * name))
+            for (v1, v2) in votePairs
+                push!(fns, ("$(name)_$(v1)_$(v2)", builder(v1, v2)))
+            end
+            continue
+        end
         sym = Symbol(name)
         isdefined(CycleWalk, sym) ||
             error("atlas add: CycleWalk has no name \"$name\"; it must be a " *
@@ -247,22 +292,99 @@ function alignResult(val, σ::Vector{Int})
     return aligned
 end
 
-"""
-    evalWriters(g, m, fns) -> Dict{String,Any}
+# ---------------------------------------------------------------------------
+# Treeless fast path
+# ---------------------------------------------------------------------------
+#
+# Most writer statistics are deterministic functions of the districting (which
+# nodes lie in which district) and the graph -- they do NOT depend on the random
+# spanning tree `LinkCutPartition` draws. For those we can skip BOTH reconstruction
+# steps that dominate a rebuild: the `LinkCutPartition` (drawing a random spanning
+# tree per district and loading it into a link-cut / splay-tree structure, ~56% of
+# per-map cost) AND the `MultiLevelPartition` (building per-district subgraphs,
+# vmaps, populations and cross-district edges, ~32%). Instead we resolve each finest
+# node straight to its districting label with `coverLabel` (from reorder.jl) and call
+# the writer on that `node_to_dist` plus the finest `BaseGraph`. This reproduces the
+# `LinkCutPartition` path (to machine precision) while building no partition at all.
+#
+# Dispatch is by CONVENTION, not a hard-coded name list: a CycleWalk writer offers a
+# fast path iff it defines a method with the uniform signature
+# `f(node_to_dist::Vector{Int}, ::BaseGraph, num_dists::Int)` -- the partition-free
+# form that returns per-district values in `node_to_dist`'s own numbering. We simply
+# ask each requested function whether it has that method (`hasFastMethod`). A request
+# whose writers ALL have it takes the fast path; anything else (a writer with only the
+# `LinkCutPartition` method, or an unrecognized one) falls back to the always-correct
+# `evalWritersLCP`. Any writer CycleWalk later gives a partition-free method to is then
+# picked up automatically, with no change here.
 
-Evaluate each CycleWalk writer function in `fns` (a vector of `(desc, f)` pairs) on
-map `m`, reconstructing `m`'s partition on graph `g` exactly as CycleWalk does at
-startup (`MultiLevelPartition(g, districting)` -> `LinkCutPartition`) and evaluating
-`f(partition)` the way CycleWalk's `output` does. Each per-district result is
-realigned onto the map's districting labels (see `labelPermutation`/`alignResult`),
-so entry `i` describes district `i` of the districting. Returns `desc => value`.
+# The uniform partition-free signature a writer must provide to be fast.
+const _FAST_SIG = Tuple{Vector{Int}, CycleWalk.BaseGraph, Int}
 
-The partition is rebuilt once and all functions share it. The statistics depend
-only on the districting, not on which random spanning tree the partition picks, so
-`LinkCutPartition`'s default RNG is fine (no RNG dependency is needed here). Shared
-by `atlas add` and `atlas extract-map-data`.
+"""True if CycleWalk writer `f` provides the partition-free `(node_to_dist, ::BaseGraph,
+num_dists)` method (checked once via `hasmethod`, no call made)."""
+hasFastMethod(f) = hasmethod(f, _FAST_SIG)
+
+"""True if every writer in `fns` (a vector of `(desc, f)` pairs) has the partition-free
+fast method, so the whole request can take `evalWritersTreeless`."""
+allTreeless(fns) = all(hasFastMethod(f) for (_, f) in fns)
+
 """
-function evalWriters(g, m, fns)
+    nodeToDist(g, m) -> (base_graph, node_to_dist, num_dists)
+
+Resolve map `m`'s districting to an integer node-to-district vector on graph `g`
+WITHOUT building a `MultiLevelPartition` or `LinkCutPartition`. Each finest
+`BaseGraph` node is mapped to its district straight from `m.districting` via
+`coverLabel`, which matches the node's level-value tuple (over `g.levels`) against
+the districting keys -- so a coarse districting key (e.g. a whole county) covers all
+of its finest units, exactly as `reorder.jl` resolves multiscale maps. `coverLabel`
+returns the districting's own label, so `node_to_dist` is already in the map's
+district numbering and needs no realignment.
+
+Returns the finest `BaseGraph`, the `node_to_dist` vector (indexed by base-graph node
+order, matching the graph's vertices), and the district count (the largest label; a
+districting partitions all nodes into contiguously-numbered, nonempty districts, so
+this is the number of districts).
+"""
+function nodeToDist(g, m)
+    base   = g.graphs_by_level[end]          # finest BaseGraph
+    levels = g.levels
+    n2d    = Vector{Int}(undef, base.num_nodes)
+    for ni in 1:base.num_nodes
+        key = Tuple(string(base.node_attributes[ni][lev]) for lev in levels)
+        n2d[ni] = coverLabel(m.districting, key)
+    end
+    return (base, n2d, maximum(n2d))
+end
+
+"""
+    evalWritersTreeless(g, m, fns) -> Dict{String,Any}
+
+Fast path of [`evalWriters`](@ref): every writer in `fns` must provide the
+partition-free method (see `hasFastMethod`). Resolves the districting to
+`node_to_dist` with `nodeToDist` (no partition object built) and calls each writer as
+`f(node_to_dist, base_graph, num_dists)`. The result is already in the map's district
+numbering, so no realignment is needed. Returns `desc => value`.
+"""
+function evalWritersTreeless(g, m, fns)
+    base, n2d, d = nodeToDist(g, m)
+    out = Dict{String,Any}()
+    for (desc, f) in fns
+        out[desc] = f(n2d, base, d)
+    end
+    return out
+end
+
+"""
+    evalWritersLCP(g, m, fns) -> Dict{String,Any}
+
+General (always-correct) path of [`evalWriters`](@ref): reconstruct `m`'s partition
+on graph `g` exactly as CycleWalk does at startup (`MultiLevelPartition(g,
+districting)` -> `LinkCutPartition`) and evaluate `f(partition)` the way CycleWalk's
+`output` does, realigning per-district results onto the map's districting labels.
+The partition is rebuilt once and all functions share it; the statistics depend only
+on the districting, not on the random spanning tree, so the default RNG is fine.
+"""
+function evalWritersLCP(g, m, fns)
     partition = LinkCutPartition(MultiLevelPartition(g, m.districting))
     σ = labelPermutation(partition, m)
     out = Dict{String,Any}()
@@ -271,6 +393,24 @@ function evalWriters(g, m, fns)
     end
     return out
 end
+
+"""
+    evalWriters(g, m, fns; treeless = allTreeless(fns)) -> Dict{String,Any}
+
+Evaluate each CycleWalk writer function in `fns` (a vector of `(desc, f)` pairs) on
+map `m`, returning `desc => value` with entry `i` describing district `i` of the
+districting.
+
+When every writer offers the partition-free method (`treeless`, the default,
+determined by [`allTreeless`](@ref)) it takes the faster [`evalWritersTreeless`](@ref)
+path that builds no partition object at all; otherwise it falls back to the
+always-correct [`evalWritersLCP`](@ref) (which realigns per-district results via
+`labelPermutation`/`alignResult`). Both paths agree to machine precision. The `treeless`
+decision depends only on `fns`, so the drivers resolve it once per run and pass it in;
+callers may omit it. Shared by `atlas add` and `atlas extract-map-data`.
+"""
+evalWriters(g, m, fns; treeless::Bool = allTreeless(fns)) =
+    treeless ? evalWritersTreeless(g, m, fns) : evalWritersLCP(g, m, fns)
 
 # ---------------------------------------------------------------------------
 # Driver
@@ -297,20 +437,25 @@ function run_add(functions::AbstractString, A1::AbstractString, A2::AbstractStri
                  pop_col::AbstractString = "", node_col::AbstractString = "",
                  area_col::AbstractString = "", border_col::AbstractString = "",
                  edge_perimeter_col::AbstractString = "",
-                 node_data::AbstractString = "",
+                 node_data::AbstractString = "", vote_cols::AbstractString = "",
                  overwrite::Bool = false, quiet::Bool = false,
                  cores::Int = Threads.nthreads())
     names = parseFunctionNames(functions)
-    fns = resolveFunctions(names)
+    votePairs = parseVotePairs(vote_cols)
+    fns = resolveFunctions(names, votePairs)
+    treeless = allTreeless(fns)     # fast-path decision depends only on fns; resolve once
     spec = resolveGraphSpec(; config = config, graph = graph, pop_col = pop_col,
                             node_col = node_col, area_col = area_col,
                             border_col = border_col,
                             edge_perimeter_col = edge_perimeter_col,
                             node_data = node_data)
+    # Keep the vote columns on the graph so the partisan writers can read them.
+    union!(spec.node_data, Set(voteColumns(votePairs)))
     g = buildGraph(spec)
 
-    # Start A2 with A1's header plus a provenance stamp, then append maps to it.
-    writeHeaderWithProvenance(String(A1), String(A2), names, spec)
+    # Start A2 with A1's header plus a provenance stamp (the actual field names, so
+    # expanded partisan fields are recorded), then append maps to it.
+    writeHeaderWithProvenance(String(A1), String(A2), [d for (d, _) in fns], spec)
     outIO = smartOpen(String(A2), "a")
 
     inIO = smartOpen(String(A1), "r")
@@ -345,7 +490,7 @@ function run_add(functions::AbstractString, A1::AbstractString, A2::AbstractStri
                         end
                     end
                 end
-                for (desc, val) in evalWriters(g, m, fns)
+                for (desc, val) in evalWriters(g, m, fns; treeless = treeless)
                     m.data[desc] = val
                 end
                 buf = IOBuffer()

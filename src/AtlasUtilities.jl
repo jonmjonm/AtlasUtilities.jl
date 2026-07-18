@@ -94,6 +94,10 @@ Add CycleWalk "pushable writer" function(s) (e.g. `get_log_spanning_trees`) to e
 - `--border-col <col>`: node border-length column.
 - `--edge-perimeter-col <col>`: shared-edge perimeter column.
 - `--node-data <cols>`: extra node attributes to keep (comma-separated list).
+- `--vote-cols <pairs>`: vote columns for the partisan writers
+  (`get_partisan_margins`, `get_partisan_seats`), as `votes1,votes2` pairs
+  separated by `;` (e.g. `"G20_PR_D,G20_PR_R;G16_PR_D,G16_PR_R"`). Each pair adds a
+  field `<writer>_<votes1>_<votes2>`; the columns are kept on the graph automatically.
 
 # Flags
 
@@ -106,11 +110,12 @@ Add CycleWalk "pushable writer" function(s) (e.g. `get_log_spanning_trees`) to e
                    pop_col::String = "", node_col::String = "",
                    area_col::String = "", border_col::String = "",
                    edge_perimeter_col::String = "", node_data::String = "",
+                   vote_cols::String = "",
                    overwrite::Bool = false, quiet::Bool = false)
     run_add(functions, a1, a2; config = config, graph = graph, pop_col = pop_col,
             node_col = node_col, area_col = area_col, border_col = border_col,
             edge_perimeter_col = edge_perimeter_col, node_data = node_data,
-            overwrite = overwrite, quiet = quiet)
+            vote_cols = vote_cols, overwrite = overwrite, quiet = quiet)
 end
 
 """
@@ -131,6 +136,10 @@ Write each map-data field of atlas A1 to its own CSV (one row per map) in a dire
 - `--border-col <col>`: node border-length column.
 - `--edge-perimeter-col <col>`: shared-edge perimeter column.
 - `--node-data <cols>`: extra node attributes to keep (comma-separated list).
+- `--vote-cols <pairs>`: vote columns for the partisan `--add` writers
+  (`get_partisan_margins`, `get_partisan_seats`), as `votes1,votes2` pairs separated
+  by `;` (e.g. `"G20_PR_D,G20_PR_R;G16_PR_D,G16_PR_R"`); each pair yields a field
+  `<writer>_<votes1>_<votes2>`.
 
 # Flags
 
@@ -144,12 +153,13 @@ Write each map-data field of atlas A1 to its own CSV (one row per map) in a dire
                                 pop_col::String = "", node_col::String = "",
                                 area_col::String = "", border_col::String = "",
                                 edge_perimeter_col::String = "",
-                                node_data::String = "", quiet::Bool = false)
+                                node_data::String = "", vote_cols::String = "",
+                                quiet::Bool = false)
     run_extract(a1; add = add, compress = !no_compression, force = force,
                 config = config, graph = graph, pop_col = pop_col,
                 node_col = node_col, area_col = area_col, border_col = border_col,
                 edge_perimeter_col = edge_perimeter_col, node_data = node_data,
-                quiet = quiet)
+                vote_cols = vote_cols, quiet = quiet)
 end
 
 # Designate this module as the CLI entry point; its `@cast` functions above

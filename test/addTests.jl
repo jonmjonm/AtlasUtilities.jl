@@ -5,9 +5,12 @@
 
 using Test
 using AtlasIO
+using JSON3
 using CycleWalk: get_log_spanning_trees, get_isoperimetric_scores
 using AtlasUtilities: parseFunctionNames, resolveFunctions, resolveGraphSpec,
-                     writeHeaderWithProvenance, GraphSpec, run_add
+                     writeHeaderWithProvenance, GraphSpec, run_add, buildGraph,
+                     evalWriters, evalWritersTreeless, evalWritersLCP, allTreeless,
+                     hasFastMethod, parseVotePairs, voteColumns
 
 # resolveGraphSpec takes only keyword arguments; default them all to "".
 rgs(; kw...) = resolveGraphSpec(; config = "", graph = "", pop_col = "",
@@ -162,6 +165,138 @@ rgs(; kw...) = resolveGraphSpec(; config = "", graph = "", pop_col = "",
             # precision; 1e-6 leaves headroom for BLAS/platform variation.
             @test maxrel < 1e-6
         end
+    end
+
+    # The treeless fast path (builds no partition object -- resolves node_to_dist
+    # straight from the districting via coverLabel) must reproduce the general
+    # LinkCutPartition path (to machine precision) for the writers it covers. This
+    # pins the fast == slow invariant directly, independent of the oracle fixtures'
+    # stored values.
+    #
+    # Dispatch is by method existence (hasFastMethod), so these assertions are robust
+    # to the CycleWalk version: against a CycleWalk that provides the partition-free
+    # writer methods the fast path is exercised in full; against one that does not,
+    # everything correctly routes to the LinkCutPartition path (validated by the
+    # oracle test above) and the fast==slow value checks are skipped.
+    @testset "treeless fast path == LinkCutPartition path" begin
+        treelessNames = ["get_log_spanning_trees", "get_log_spanning_forests",
+                         "get_isoperimetric_scores"]
+
+        # allTreeless follows hasFastMethod for every candidate, whichever way it goes.
+        for f in treelessNames
+            fn = resolveFunctions([f])[1][2]
+            @test allTreeless(resolveFunctions([f])) == hasFastMethod(fn)
+        end
+        # A writer with ONLY the LinkCutPartition method (get_isoperimetric_score,
+        # singular -- the summed scalar) is never fast and taints a mixed request, so
+        # it always routes to the LCP fallback.
+        @test !hasFastMethod(resolveFunctions(["get_isoperimetric_score"])[1][2])
+        @test !allTreeless(resolveFunctions(["get_isoperimetric_score"]))
+        @test !allTreeless(resolveFunctions(["get_log_spanning_trees",
+                                             "get_isoperimetric_score"]))
+
+        treelessFns = resolveFunctions(treelessNames)
+        if !allTreeless(treelessFns)
+            @info "CycleWalk lacks the partition-free writer methods; skipping " *
+                  "fast==LCP value checks (all writers route to the LinkCutPartition path)."
+        else
+            g = buildGraph(rgs(graph = graph, pop_col = "POP20", node_col = "NAME",
+                               area_col = "area", border_col = "border_length",
+                               edge_perimeter_col = "length",
+                               node_data = "COUNTY,NAME,POP20,area,border_length"))
+            maps = readall(joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_slice.jsonl.gz"))
+            @test length(maps) >= 40
+            for m in maps
+                fast = evalWritersTreeless(g, m, treelessFns)
+                slow = evalWritersLCP(g, m, treelessFns)
+                # Per-district tree counts are the same induced-subgraph logdets in
+                # both paths, so they agree bit-for-bit.
+                @test asvec(fast["get_log_spanning_trees"]) == asvec(slow["get_log_spanning_trees"])
+                # The forest count is their SUM; the two paths sum in different
+                # district orders, so it agrees only to machine precision.
+                @test fast["get_log_spanning_forests"] ≈ slow["get_log_spanning_forests"]
+                # Isoperimetric scores match to machine precision: both accumulate the
+                # same node areas/border lengths and cross-edge perimeters, but the
+                # fast path walks the graph's edges while the LCP path walks the
+                # partition's cross_district_edges dict, so the perimeter sums land in
+                # a different order (~1e-14 -- the same summation-order noise).
+                @test asvec(fast["get_isoperimetric_scores"]) ≈ asvec(slow["get_isoperimetric_scores"])
+                # evalWriters dispatches to the fast path and matches it exactly.
+                @test evalWriters(g, m, treelessFns)["get_log_spanning_trees"] ==
+                      fast["get_log_spanning_trees"]
+            end
+        end
+    end
+
+    @testset "parseVotePairs / voteColumns" begin
+        @test parseVotePairs("") == Tuple{String,String}[]
+        @test parseVotePairs("A,B") == [("A", "B")]
+        @test parseVotePairs("A,B;C,D") == [("A", "B"), ("C", "D")]
+        @test parseVotePairs(" A , B ; C , D ") == [("A", "B"), ("C", "D")]  # spaces trimmed
+        @test parseVotePairs("A,B;") == [("A", "B")]                         # trailing ; ignored
+        @test_throws ErrorException parseVotePairs("A")                      # not a pair
+        @test_throws ErrorException parseVotePairs("A,B,C")                  # too many cols
+        @test voteColumns([("A", "B"), ("C", "A")]) == ["A", "B", "C"]       # distinct, in order
+    end
+
+    @testset "resolveFunctions: partisan writers expand per vote pair" begin
+        # nullary writers unaffected by vote pairs
+        f1 = resolveFunctions(["get_log_spanning_trees"])
+        @test [d for (d, _) in f1] == ["get_log_spanning_trees"]
+
+        # partisan name expands to one field per vote pair
+        fp = resolveFunctions(["get_partisan_margins"], [("G20_D", "G20_R"), ("G16_D", "G16_R")])
+        @test [d for (d, _) in fp] ==
+              ["get_partisan_margins_G20_D_G20_R", "get_partisan_margins_G16_D_G16_R"]
+        @test all(f isa Function for (_, f) in fp)
+        # partisan writers take the treeless fast path iff CycleWalk provides the
+        # partition-free method on the built functor (dispatch follows hasFastMethod).
+        @test allTreeless(fp) == all(hasFastMethod(f) for (_, f) in fp)
+
+        # mixing a partisan and a plain writer
+        fm = resolveFunctions(["get_partisan_seats", "get_isoperimetric_scores"], [("D", "R")])
+        @test [d for (d, _) in fm] == ["get_partisan_seats_D_R", "get_isoperimetric_scores"]
+
+        # a partisan writer without vote columns is an error
+        @test_throws ErrorException resolveFunctions(["get_partisan_margins"])
+    end
+
+    # End-to-end: add per-district vote shares and check them against an independent
+    # aggregation of the graph's vote columns over each map's own districting.
+    @testset "run_add: partisan margins == independent tally" begin
+        graphPath = joinpath(@__DIR__, "..", "Data", "CT_pct20.json")
+        src = joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_slice.jsonl.gz")
+        v1, v2 = "G20PREDEM", "G20PREREP"
+        field = "get_partisan_margins_$(v1)_$(v2)"
+
+        A2 = joinpath(mktempdir(), "votes.jsonl.gz")
+        run_add("get_partisan_margins", src, A2; graph = graphPath, pop_col = "POP20",
+                node_col = "NAME", vote_cols = "$v1,$v2", overwrite = true, quiet = true)
+
+        # graph vote data keyed by NAME
+        graph = JSON3.read(read(graphPath, String))
+        vote = Dict(string(n["NAME"]) => (Float64(n[Symbol(v1)]), Float64(n[Symbol(v2)]))
+                    for n in graph.nodes)
+
+        a = openAtlas(smartOpen(A2, "r"))
+        nmaps = 0
+        maxerr = 0.0
+        while !eof(a)
+            m = nextMap(a); nmaps += 1
+            got = Float64.(m.data[field])
+            d = Int(a.atlasParam["districts"])
+            dv = zeros(d); rv = zeros(d)
+            for (key, lab) in m.districting                 # key is a 1-tuple of NAME
+                dd, rr = vote[string(key[1])]
+                dv[lab] += dd; rv[lab] += rr
+            end
+            want = [100.0 * dv[i] / (dv[i] + rv[i]) for i in 1:d]
+            @test length(got) == d
+            maxerr = max(maxerr, maximum(abs.(got .- want)))
+        end
+        close(a)
+        @test nmaps >= 40
+        @test maxerr < 1e-9        # exact per-district vote-share aggregation
     end
 
 end
