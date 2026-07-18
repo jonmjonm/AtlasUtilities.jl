@@ -42,17 +42,62 @@ function parseFunctionNames(s::AbstractString)
     return names
 end
 
-"""
-    resolveFunctions(names) -> Vector{Tuple{String,Function}}
+# CycleWalk writers that need a pair of vote columns: they are not nullary
+# `f(partition)` writers but are parameterized by two vote columns, and CycleWalk
+# provides a `build_<name>(votes1, votes2)` factory returning the actual
+# `f(partition)` closure. These are driven by the `--vote-cols` flag (see
+# `parseVotePairs`); each requested vote pair produces its own output field
+# `<name>_<votes1>_<votes2>`.
+const PARTISAN_WRITERS = Set(["get_partisan_margins", "get_partisan_seats"])
 
-Map each name to the CycleWalk function it names (the function is looked up by
-name in the `CycleWalk` module, exactly the set of names usable with
-`push_writer!`). Each returned pair is `(desc, f)` where `desc` is the name used
-as the map-data field, matching CycleWalk's own `push_writer!` default.
 """
-function resolveFunctions(names::Vector{String})
+    parseVotePairs(s) -> Vector{Tuple{String,String}}
+
+Parse the `--vote-cols` argument into `(votes1, votes2)` column pairs. Elections are
+separated by `;`, the two columns of a pair by `,` -- e.g.
+`"G20_PR_D,G20_PR_R;G16_PR_D,G16_PR_R"` gives two pairs. Empty input gives no pairs.
+"""
+function parseVotePairs(s::AbstractString)
+    pairs = Tuple{String,String}[]
+    for part in split(strip(s), ';')
+        isempty(strip(part)) && continue
+        cols = strip.(split(part, ','))
+        length(cols) == 2 && all(!isempty, cols) ||
+            error("atlas add: --vote-cols pair \"$part\" must be exactly two " *
+                  "comma-separated columns (votes1,votes2).")
+        push!(pairs, (String(cols[1]), String(cols[2])))
+    end
+    return pairs
+end
+
+"""All distinct vote column names referenced by `votePairs` (for keeping on the graph)."""
+voteColumns(votePairs) = unique!(String[c for p in votePairs for c in p])
+
+"""
+    resolveFunctions(names, votePairs = Tuple{String,String}[])
+        -> Vector{Tuple{String,Function}}
+
+Map each name to the CycleWalk writer it names, returning `(desc, f)` pairs where
+`desc` is the map-data field and `f(partition)` computes it. A plain writer resolves
+to `CycleWalk.<name>` directly (the set of names usable with `push_writer!`). A
+"partisan" writer (see `PARTISAN_WRITERS`) is expanded once per vote pair in
+`votePairs`: for pair `(v1, v2)` it builds `CycleWalk.build_<name>(v1, v2)` and emits
+the field `<name>_<v1>_<v2>`; requesting one with no `votePairs` is an error.
+"""
+function resolveFunctions(names::Vector{String},
+                          votePairs::Vector{Tuple{String,String}} = Tuple{String,String}[])
     fns = Tuple{String,Function}[]
     for name in names
+        if name in PARTISAN_WRITERS
+            isempty(votePairs) &&
+                error("atlas add: \"$name\" needs vote columns; pass --vote-cols " *
+                      "\"votes1,votes2\" (one or more `;`-separated pairs).")
+            builder = getfield(CycleWalk, Symbol("build_" * name))
+            for (v1, v2) in votePairs
+                push!(fns, ("$(name)_$(v1)_$(v2)", builder(v1, v2)))
+            end
+            continue
+        end
         sym = Symbol(name)
         isdefined(CycleWalk, sym) ||
             error("atlas add: CycleWalk has no name \"$name\"; it must be a " *
@@ -407,23 +452,26 @@ function run_add(functions::AbstractString, A1::AbstractString, A2::AbstractStri
                  pop_col::AbstractString = "", node_col::AbstractString = "",
                  area_col::AbstractString = "", border_col::AbstractString = "",
                  edge_perimeter_col::AbstractString = "",
-                 node_data::AbstractString = "",
+                 node_data::AbstractString = "", vote_cols::AbstractString = "",
                  overwrite::Bool = false, quiet::Bool = false,
                  cores::Int = Threads.nthreads())
     names = parseFunctionNames(functions)
-    fns = resolveFunctions(names)
+    votePairs = parseVotePairs(vote_cols)
+    fns = resolveFunctions(names, votePairs)
     treeless = allTreeless(fns)     # fast-path decision depends only on fns; resolve once
     spec = resolveGraphSpec(; config = config, graph = graph, pop_col = pop_col,
                             node_col = node_col, area_col = area_col,
                             border_col = border_col,
                             edge_perimeter_col = edge_perimeter_col,
                             node_data = node_data)
+    # Keep the vote columns on the graph so the partisan writers can read them.
+    union!(spec.node_data, Set(voteColumns(votePairs)))
     g = buildGraph(spec)
 
-    # Start A2 with A1's header plus a provenance stamp, then append maps to it.
-    # For .gz output, `AtlasOutput` compresses the map body as byte-targeted gzip
-    # members in parallel (the serial write is only raw I/O); plain/.bz2 stream as before.
-    outIO = openAtlasOutput(String(A2), provenanceHeaderBytes(String(A1), names, spec), cores)
+    # Start A2 with A1's header plus a provenance stamp (the actual field names, so
+    # expanded partisan fields are recorded), then append maps to it.
+    writeHeaderWithProvenance(String(A1), String(A2), [d for (d, _) in fns], spec)
+    outIO = smartOpen(String(A2), "a")
 
     inIO = smartOpen(String(A1), "r")
     atlas = openAtlas(inIO)

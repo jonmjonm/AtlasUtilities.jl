@@ -188,6 +188,25 @@ By default it is an error for a requested field to already exist on a map; pass
 fields, the graph used, and the date; adding fields does not change the map data
 type (`Dict{String,Any}`), so the atlas stays readable by any existing reader.
 
+#### Partisan writers (vote margins / seats)
+
+The writers `get_partisan_margins` (each district's first-party two-party vote
+share, `100·votes1/(votes1+votes2)`) and `get_partisan_seats` (count of districts
+the first party wins) are parameterized by a pair of vote columns, supplied with
+`--vote-cols` (columns your graph JSON must carry). Give one or more `votes1,votes2`
+pairs separated by `;`:
+
+```bash
+atlas add get_partisan_margins run.jsonl.gz out.jsonl.gz \
+  --graph NC_pct21.json --pop-col TOTPOP --node-col NAME \
+  --vote-cols "G20_PR_D,G20_PR_R;G16_PR_D,G16_PR_R"
+```
+
+Each pair adds its own field `get_partisan_margins_<votes1>_<votes2>` (here two
+fields, one per election); the vote columns are kept on the graph automatically. The
+same `--add get_partisan_margins --vote-cols …` works for `atlas extract-map-data`,
+writing one CSV per expanded field.
+
 ### `atlas extract-map-data`
 
 Write the per-map data of an atlas to CSV — one file per data field:

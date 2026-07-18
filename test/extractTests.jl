@@ -86,6 +86,37 @@ rowsof(s) = filter(!isempty, split(s, "\n"))
         @test maxrel < 1e-6
     end
 
+    # --add a partisan writer with --vote-cols: the CSV is named for the expanded
+    # field and its rows are the per-district vote shares.
+    @testset "--add partisan margins with vote-cols" begin
+        graph = joinpath(@__DIR__, "..", "Data", "CT_pct20.json")
+        src = joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_slice.jsonl.gz")
+        v1, v2 = "G20PREDEM", "G20PREREP"
+        field = "get_partisan_margins_$(v1)_$(v2)"
+
+        dir = mktempdir()
+        atlaspath = joinpath(dir, "run.jsonl.gz"); cp(src, atlaspath)
+        run_extract(atlaspath; add = "get_partisan_margins", graph = graph,
+                    pop_col = "POP20", node_col = "NAME", vote_cols = "$v1,$v2",
+                    force = true, quiet = true)
+
+        csv = joinpath(dir, "run", field * ".csv.gz")
+        @test isfile(csv)
+        rows = rowsof(readtext(csv))
+
+        a = openAtlas(smartOpen(atlaspath, "r"))
+        d = Int(a.atlasParam["districts"])
+        nmaps = length(rows) - 1
+        @test nmaps >= 40
+        @test rows[1] == "name," * join(["$(field)_$i" for i in 1:d], ",")   # per-district header
+        for r in rows[2:end]
+            cells = parse.(Float64, split(r, ",")[2:end])
+            @test length(cells) == d
+            @test all(0 .<= cells .<= 100)                                    # vote shares
+        end
+        close(a)
+    end
+
     @testset "--no-compression writes plain .csv" begin
         src = joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_metadata.jsonl.gz")
         dir = mktempdir()
