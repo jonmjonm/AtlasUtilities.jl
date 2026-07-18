@@ -114,7 +114,7 @@ Add CycleWalk "pushable writer" function(s) (e.g. `get_log_spanning_trees`) to e
 end
 
 """
-Write each map-data field of atlas A1 to its own CSV (one row per map) in a directory named after the atlas; `--add` also computes CycleWalk writer functions to extract, using the same graph inputs as `atlas add`.
+Write each map-data field of atlas A1 to its own CSV (one row per map) in a directory named after the atlas, plus an `about.md` describing the atlas (its `atlas info` header, minus the embedded script, with the source atlas name and extraction date); `--add` also computes CycleWalk writer functions to extract, using the same graph inputs as `atlas add`.
 
 # Args
 
