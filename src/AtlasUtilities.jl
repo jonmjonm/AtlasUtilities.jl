@@ -21,7 +21,6 @@ Run `atlas --help` or `atlas <subcommand> --help` for details.
 module AtlasUtilities
 
 using AtlasIO
-using CodecZlib
 using CycleWalk
 using Dates
 using Hungarian
@@ -31,8 +30,9 @@ using ProgressMeter
 using TOML
 using Comonicon
 
+# Byte-targeted parallel gzip atlas output (`AtlasOutput`/`openAtlasOutput`/
+# `writeMaps!`/`atlasHeaderBytes`) is provided by AtlasIO (>= 0.1.3) and used below.
 include("threading.jl")
-include("pargzip.jl")
 include("info.jl")
 include("reorder.jl")
 include("add.jl")
