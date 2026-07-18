@@ -7,7 +7,9 @@ using Test
 using AtlasIO
 using CycleWalk: get_log_spanning_trees, get_isoperimetric_scores
 using AtlasUtilities: parseFunctionNames, resolveFunctions, resolveGraphSpec,
-                     writeHeaderWithProvenance, GraphSpec, run_add
+                     writeHeaderWithProvenance, GraphSpec, run_add, buildGraph,
+                     evalWriters, evalWritersTreeless, evalWritersLCP, allTreeless,
+                     TREELESS_WRITERS
 
 # resolveGraphSpec takes only keyword arguments; default them all to "".
 rgs(; kw...) = resolveGraphSpec(; config = "", graph = "", pop_col = "",
@@ -161,6 +163,46 @@ rgs(; kw...) = resolveGraphSpec(; config = "", graph = "", pop_col = "",
             # CycleWalk's stored values are reproduced to (essentially) machine
             # precision; 1e-6 leaves headroom for BLAS/platform variation.
             @test maxrel < 1e-6
+        end
+    end
+
+    # The treeless fast path (skip LinkCutPartition) must reproduce the general
+    # LinkCutPartition path bit-for-bit for the writers it covers. This pins the
+    # fast == slow invariant directly, independent of the oracle fixtures' stored
+    # values (the oracle test above already exercises the fast path against ground
+    # truth, since run_add now routes trees/forests through it).
+    @testset "treeless fast path == LinkCutPartition path" begin
+        # Dispatch: trees/forests are treeless; anything with iso (or unknown) isn't.
+        @test allTreeless(resolveFunctions(["get_log_spanning_trees"]))
+        @test allTreeless(resolveFunctions(["get_log_spanning_trees",
+                                            "get_log_spanning_forests"]))
+        @test !allTreeless(resolveFunctions(["get_log_spanning_trees",
+                                             "get_isoperimetric_scores"]))
+        @test !allTreeless(resolveFunctions(["get_isoperimetric_scores"]))
+        @test Set(keys(TREELESS_WRITERS)) ==
+              Set(["get_log_spanning_trees", "get_log_spanning_forests"])
+
+        g = buildGraph(rgs(graph = graph, pop_col = "POP20", node_col = "NAME",
+                           area_col = "area", border_col = "border_length",
+                           edge_perimeter_col = "length",
+                           node_data = "COUNTY,NAME,POP20,area,border_length"))
+        treelessFns = resolveFunctions(["get_log_spanning_trees",
+                                        "get_log_spanning_forests"])
+
+        maps = readall(joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_slice.jsonl.gz"))
+        @test length(maps) >= 40
+        for m in maps
+            fast = evalWritersTreeless(g, m, treelessFns)
+            slow = evalWritersLCP(g, m, treelessFns)
+            # Per-district tree counts are the same induced-subgraph logdets in both
+            # paths, so they agree bit-for-bit.
+            @test asvec(fast["get_log_spanning_trees"]) == asvec(slow["get_log_spanning_trees"])
+            # The forest count is their SUM; the two paths sum in different district
+            # orders, so it agrees only to machine precision (summation-order noise).
+            @test fast["get_log_spanning_forests"] ≈ slow["get_log_spanning_forests"]
+            # evalWriters dispatches to the fast path and matches it exactly.
+            @test evalWriters(g, m, treelessFns)["get_log_spanning_trees"] ==
+                  fast["get_log_spanning_trees"]
         end
     end
 
