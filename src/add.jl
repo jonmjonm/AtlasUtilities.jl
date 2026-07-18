@@ -469,9 +469,11 @@ function run_add(functions::AbstractString, A1::AbstractString, A2::AbstractStri
     g = buildGraph(spec)
 
     # Start A2 with A1's header plus a provenance stamp (the actual field names, so
-    # expanded partisan fields are recorded), then append maps to it.
-    writeHeaderWithProvenance(String(A1), String(A2), [d for (d, _) in fns], spec)
-    outIO = smartOpen(String(A2), "a")
+    # expanded partisan fields are recorded), then append maps to it. For .gz output,
+    # `AtlasOutput` compresses the map body as byte-targeted gzip members in parallel
+    # (the serial write is only raw I/O); plain/.bz2 stream as before.
+    header = provenanceHeaderBytes(String(A1), [d for (d, _) in fns], spec)
+    outIO = openAtlasOutput(String(A2), header, cores)
 
     inIO = smartOpen(String(A1), "r")
     atlas = openAtlas(inIO)
