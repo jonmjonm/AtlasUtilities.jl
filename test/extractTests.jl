@@ -123,8 +123,38 @@ rowsof(s) = filter(!isempty, split(s, "\n"))
         atlaspath = joinpath(dir, "meta.jsonl.gz"); cp(src, atlaspath)
         run_extract(atlaspath; compress = false, quiet = true)
         files = readdir(joinpath(dir, "meta"))
-        @test !isempty(files)
-        @test all(endswith(f, ".csv") for f in files)
+        @test "about.md" in files                        # about.md accompanies the CSVs
+        @test !isempty(filter(f -> endswith(f, ".csv"), files))
+        @test all(f -> endswith(f, ".csv") || f == "about.md", files)
+    end
+
+    # about.md carries the atlas info (minus the embedded script) plus provenance.
+    @testset "about.md content" begin
+        # This fixture embeds its generating script in the header.
+        src = joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_metadata.jsonl.gz")
+        dir = mktempdir()
+        atlaspath = joinpath(dir, "meta.jsonl.gz"); cp(src, atlaspath)
+        run_extract(atlaspath; quiet = true)
+
+        about = joinpath(dir, "meta", "about.md")
+        @test isfile(about)
+        txt = read(about, String)
+
+        # source atlas name + extraction date + the atlas info blocks
+        @test occursin("meta.jsonl.gz", txt)             # source atlas name
+        @test occursin("Source atlas:", txt)
+        @test occursin("Extraction date:", txt)
+        @test occursin("Atlas Header", txt)
+        @test occursin("Atlas Parameters", txt)
+        @test occursin("districts", txt)                 # a real header param
+
+        # the embedded script source is NOT leaked (only its script_name may appear)
+        a = openAtlas(smartOpen(atlaspath, "r"))
+        script = get(a.atlasParam, "script", nothing)
+        close(a)
+        @test script !== nothing                         # fixture really has a script
+        token = String(script)[1:min(60, length(String(script)))]
+        @test !occursin(token, txt)                      # script body absent from about.md
     end
 
 end

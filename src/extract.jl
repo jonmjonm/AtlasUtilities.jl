@@ -16,6 +16,10 @@
 # writes plain `.csv`. A field whose output file already exists is skipped unless
 # `--force` is given. One stream is kept open per output file for the whole pass,
 # so each file is opened and closed exactly once.
+#
+# Alongside the CSVs an `about.md` is written describing the extraction: the source
+# atlas name, the extraction date, and the atlas's header info (everything `atlas
+# info` shows except the bulky embedded generating script).
 
 # ---------------------------------------------------------------------------
 # CSV / value helpers
@@ -53,6 +57,36 @@ function valueRow(name::AbstractString, val, width::Int)
     cells = val === nothing ? String[] : [string(x) for x in flattenVal(val)]
     length(cells) < width && append!(cells, fill("", width - length(cells)))
     return csvcell(name) * "," * join(cells, ",") * "\n"
+end
+
+# ---------------------------------------------------------------------------
+# About file
+# ---------------------------------------------------------------------------
+
+"""
+    writeAboutFile(outdir, A1, atlas) -> String
+
+Write an `about.md` into `outdir` describing the extraction: the source atlas name,
+the extraction date, and the atlas's header information -- everything `atlas info`
+shows except the bulky embedded generating script (see `atlasHeaderInfo`). Returns
+the path written.
+"""
+function writeAboutFile(outdir::AbstractString, A1::AbstractString, atlas)
+    path = joinpath(outdir, "about.md")
+    open(path, "w") do io
+        println(io, "# ", basename(String(A1)), " — extracted map data")
+        println(io)
+        println(io, "- **Source atlas:** `", String(A1), "`")
+        println(io, "- **Extraction date:** ", string(Dates.now()))
+        println(io)
+        println(io, "Atlas header below (the same information `atlas info` prints; the ",
+                    "embedded generating script is omitted):")
+        println(io)
+        println(io, "```")
+        print(io, atlasHeaderInfo(atlas))
+        println(io, "```")
+    end
+    return path
 end
 
 # ---------------------------------------------------------------------------
@@ -155,6 +189,9 @@ function run_extract(A1::AbstractString;
         return nothing
     end
 
+    # Now that we know CSVs are being written, drop an about.md describing the atlas.
+    writeAboutFile(outdir, String(A1), atlas)
+
     # --- stream the remaining maps in batches ---------------------------------
     # Read serially, then per map parse + compute (--add) + render each field's row
     # in parallel, then write the rows to their streams serially in map order.
@@ -197,6 +234,6 @@ function run_extract(A1::AbstractString;
     for (_, io, _) in streams
         close(io)
     end
-    quiet || println("Wrote ", length(streams), " file(s) to ", outdir, "/")
+    quiet || println("Wrote ", length(streams), " file(s) + about.md to ", outdir, "/")
     return nothing
 end

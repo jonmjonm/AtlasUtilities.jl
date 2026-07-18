@@ -217,10 +217,11 @@ atlas extract-map-data cycleWalk_ct_slice.jsonl.gz
 
 This creates a directory named after the atlas (its path with the `.jsonl` /
 `.jsonl.gz` / `.jsonl.bz2` extension removed — e.g. `cycleWalk_ct_slice/`) and
-writes one CSV per field found in the map data:
+writes one CSV per field found in the map data, plus an `about.md`:
 
 ```
 cycleWalk_ct_slice/
+  about.md
   get_log_spanning_trees.csv.gz
   get_log_spanning_forests.csv.gz
   get_isoperimetric_scores.csv.gz
@@ -229,6 +230,10 @@ cycleWalk_ct_slice/
 Each map is one row. The first column is the map name; the remaining columns are
 the field's value — a scalar is a single column, a vector is one column per entry
 — under a header row (`name,get_isoperimetric_scores_1,get_isoperimetric_scores_2,…`).
+
+`about.md` describes the extraction: the source atlas name, the extraction date, and
+the atlas's header information — everything [`atlas info`](#atlas-info) prints except
+the bulky embedded generating script.
 
 Output is gzip-compressed by default; `--no-compression` writes plain `.csv`. A
 field whose output file already exists is **skipped**; pass `--force` to overwrite.

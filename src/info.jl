@@ -41,18 +41,49 @@ function formatValue(v; indent::Int = 0)
     end
 end
 
-"""Print a titled block, `key: value` per entry, keys sorted alphabetically and
-right-padded to align."""
-function printBlock(title::String, pairs::Vector{<:Pair})
-    println(title)
-    println("="^length(title))
-    isempty(pairs) && (println("  (none)"); println(); return)
+"""Render a titled block as a string, `key: value` per entry, keys sorted
+alphabetically and right-padded to align."""
+function blockString(title::String, pairs::Vector{<:Pair})
+    io = IOBuffer()
+    println(io, title)
+    println(io, "="^length(title))
+    if isempty(pairs)
+        println(io, "  (none)")
+        println(io)
+        return String(take!(io))
+    end
     sort!(pairs; by = p -> string(first(p)))
     width = maximum(length(string(first(p))) for p in pairs)
     for (k, v) in pairs
-        println("  ", rpad(string(k), width), " : ", formatValue(v))
+        println(io, "  ", rpad(string(k), width), " : ", formatValue(v))
     end
-    println()
+    println(io)
+    return String(take!(io))
+end
+
+"""Print a titled block (see [`blockString`](@ref))."""
+printBlock(title::String, pairs::Vector{<:Pair}) = print(blockString(title, pairs))
+
+"""
+    atlasHeaderInfo(atlas) -> String
+
+The atlas's header rendered as text: the "Atlas Header" block (description, date,
+map/weight types) followed by the "Atlas Parameters" block, with the bulky embedded
+generating `script` entry omitted. This is exactly what `atlas info` prints (minus
+the script) and is reused verbatim in the `about.md` that `atlas extract-map-data`
+writes alongside the CSVs.
+"""
+function atlasHeaderInfo(atlas)
+    hdr = blockString("Atlas Header", Pair[
+        "description"    => atlas.description,
+        "date"           => atlas.date,
+        "map param type" => string(atlas.mapParamType),
+        "weight type"    => string(atlas.weightType),
+    ])
+    param = atlas.atlasParam
+    keysToShow = filter(!isequal(SCRIPT_KEY), collect(keys(param)))
+    params = blockString("Atlas Parameters", Pair[k => param[k] for k in keysToShow])
+    return hdr * params
 end
 
 """
@@ -66,19 +97,10 @@ function run_info(atlasPath::AbstractString; extract_script::Bool = false)
     io = smartOpen(String(atlasPath), "r")
     atlas = openAtlas(io)
 
-    # Line 2: header metadata.
-    printBlock("Atlas Header", Pair[
-        "description"    => atlas.description,
-        "date"           => atlas.date,
-        "map param type" => string(atlas.mapParamType),
-        "weight type"    => string(atlas.weightType),
-    ])
+    # Header metadata (line 2) + atlas parameters (line 3), minus the script source.
+    print(atlasHeaderInfo(atlas))
 
-    # Line 3: atlas parameters, minus the script source (printBlock sorts them).
     param = atlas.atlasParam
-    keysToShow = filter(!isequal(SCRIPT_KEY), collect(keys(param)))
-    printBlock("Atlas Parameters", Pair[k => param[k] for k in keysToShow])
-
     if extract_script
         if haskey(param, SCRIPT_KEY)
             outName = get(param, SCRIPT_NAME_KEY, "extracted_script.jl")
