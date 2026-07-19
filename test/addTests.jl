@@ -12,7 +12,7 @@ using AtlasUtilities: parseFunctionNames, resolveFunctions, resolveGraphSpec,
                      evalWriters, evalWritersTreeless, evalWritersLCP, allTreeless,
                      hasFastMethod, parseVotePairs, voteColumns,
                      cycleWalkWriterNames, run_list_writers, PARTISAN_WRITERS,
-                     add
+                     add, smokeTestPartition, writerWorks
 
 # capture_stdout is defined in infoTests.jl, included before this file (see runtests.jl).
 
@@ -54,6 +54,39 @@ rgs(; kw...) = resolveGraphSpec(; config = "", graph = "", pop_col = "",
             fns = resolveFunctions([n])
             @test fns[1][1] == n
         end
+    end
+
+    @testset "cycleWalkWriterNames: every listed writer actually runs end-to-end" begin
+        # Codifies the audit that motivated writerWorks: cycleWalkWriterNames should
+        # list only writers usable in practice, not just ones with a matching method
+        # signature (e.g. CycleWalk 0.2.1's get_degree_distributions / get_average_degrees
+        # / get_center_moments / get_center_leaves_moments all HAVE a `f(::LinkCutPartition)`
+        # method but unconditionally throw `UndefVarError: LiftedTreeWalk not defined`
+        # when called -- an upstream CycleWalk bug, not reachable via hasmethod).
+        writerNames = cycleWalkWriterNames()
+
+        graph = joinpath(@__DIR__, "..", "Data", "CT_pct20.json")
+        oracle = joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_slice.jsonl.gz")
+        A2 = joinpath(mktempdir(), "listed_writers_smoke.jsonl.gz")
+        run_add(join(writerNames, ","), oracle, A2;
+                graph = graph, pop_col = "POP20", node_col = "NAME",
+                area_col = "area", border_col = "border_length",
+                edge_perimeter_col = "length",
+                node_data = "COUNTY,NAME,POP20,area,border_length",
+                overwrite = true, quiet = true)   # must not throw
+
+        a = openAtlas(smartOpen(A2, "r"))
+        m = nextMap(a)
+        close(a)
+        for n in writerNames
+            @test haskey(m.data, n)
+        end
+    end
+
+    @testset "writerWorks: catches a writer that throws" begin
+        p = smokeTestPartition()
+        @test writerWorks(get_log_spanning_trees, p)
+        @test !writerWorks((_p) -> error("boom"), p)
     end
 
     @testset "run_list_writers: prints plain + partisan writers" begin

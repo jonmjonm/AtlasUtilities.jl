@@ -169,7 +169,10 @@ atlas add get_log_spanning_trees A1.jsonl.gz A2.jsonl.gz --config param.toml
 
 Not sure which writer names are available? `--list-writers` prints every usable
 CycleWalk writer function (and exits — `functions`/`A1`/`A2` aren't required with
-this flag):
+this flag). "Usable" is checked, not assumed: each candidate is smoke-tested against
+a real reconstructed partition, so a writer that merely has a matching method
+signature but errors when actually called (e.g. an internal bug referencing an
+undefined name) is left off the list:
 
 ```bash
 atlas add --list-writers

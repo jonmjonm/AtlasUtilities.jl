@@ -111,19 +111,72 @@ function resolveFunctions(names::Vector{String},
 end
 
 """
+    smokeTestPartition() -> LinkCutPartition
+
+A tiny (4-node, 2-district) synthetic `LinkCutPartition`, built the same way
+`evalWritersLCP` builds a real one (`Graph` -> `MultiLevelPartition` ->
+`LinkCutPartition`), for probing whether a writer function actually runs (see
+[`writerWorks`](@ref)) rather than merely having a matching method signature. Built
+fresh (not cached) since it's only used for the rare `--list-writers` path; the
+underlying `Graph`/`MultiLevelGraph` construction is the same cost `atlas add`
+already pays once per real invocation.
+"""
+function smokeTestPartition()
+    mktempdir() do dir
+        gpath = joinpath(dir, "smoke_test_graph.json")
+        # Two 2-node district trees (edges n0-n1, n2-n3) joined by one cross-district
+        # edge (n1-n2) -- enough structure to exercise tree/degree/center/perimeter
+        # writers without needing any real map data.
+        write(gpath, """
+            {"directed": false, "multigraph": false, "graph": [], "nodes": [
+                {"id": 0, "NAME": "n0", "POP": 10, "area": 1.0, "border_length": 1.0},
+                {"id": 1, "NAME": "n1", "POP": 10, "area": 1.0, "border_length": 1.0},
+                {"id": 2, "NAME": "n2", "POP": 10, "area": 1.0, "border_length": 1.0},
+                {"id": 3, "NAME": "n3", "POP": 10, "area": 1.0, "border_length": 1.0}
+            ], "adjacency": [
+                [{"id": 1, "length": 1.0}],
+                [{"id": 0, "length": 1.0}, {"id": 2, "length": 1.0}],
+                [{"id": 1, "length": 1.0}, {"id": 3, "length": 1.0}],
+                [{"id": 2, "length": 1.0}]
+            ]}
+            """)
+        g = buildGraph(GraphSpec(gpath, "POP", ["NAME"], "area", "border_length",
+                                 "length", Set{String}()))
+        districting = Districting(("n0",) => 1, ("n1",) => 1, ("n2",) => 2, ("n3",) => 2)
+        return LinkCutPartition(MultiLevelPartition(g, districting))
+    end
+end
+
+"""True if calling CycleWalk writer `f` on `partition` completes without throwing
+(a runtime check, unlike `hasmethod` -- catches e.g. a writer whose body references
+an undefined name, which type-checks fine but always errors when called)."""
+function writerWorks(f, partition)
+    try
+        f(partition)
+        return true
+    catch
+        return false
+    end
+end
+
+"""
     cycleWalkWriterNames() -> Vector{String}
 
 The names of plain CycleWalk writer functions usable with `atlas add` / `--add`:
 every `get_*` function CycleWalk defines with a method accepting a single
 `LinkCutPartition` (the object [`evalWritersLCP`](@ref) reconstructs and calls
-`f(partition)` on), sorted alphabetically. This is exactly the set `resolveFunctions`
-would accept for a non-partisan name -- computed by inspecting methods rather than a
-hard-coded list, so it stays correct as CycleWalk adds writers. Excludes writers that
-only accept some other representation (e.g. `MultiLevelPartition`, a raw edge vector),
-since `atlas add` can't call those, and excludes the partisan writers (see
-`PARTISAN_WRITERS`), which take vote columns rather than a bare partition.
+`f(partition)` on) that actually runs without erroring on a real partition (see
+[`writerWorks`](@ref)), sorted alphabetically. This is exactly the set of names
+`atlas add`/`resolveFunctions` would accept AND successfully compute for a
+non-partisan name -- computed by inspecting methods and smoke-testing rather than a
+hard-coded list, so it stays correct as CycleWalk adds writers, fixes bugs, or
+introduces new ones. Excludes writers that only accept some other representation
+(e.g. `MultiLevelPartition`, a raw edge vector), since `atlas add` can't call those,
+and excludes the partisan writers (see `PARTISAN_WRITERS`), which take vote columns
+rather than a bare partition.
 """
 function cycleWalkWriterNames()
+    partition = smokeTestPartition()
     writerNames = String[]
     for n in names(CycleWalk; all = true)
         s = string(n)
@@ -131,7 +184,8 @@ function cycleWalkWriterNames()
         isdefined(CycleWalk, n) || continue
         f = getfield(CycleWalk, n)
         f isa Function || continue
-        hasmethod(f, Tuple{LinkCutPartition}) && push!(writerNames, s)
+        hasmethod(f, Tuple{LinkCutPartition}) || continue
+        writerWorks(f, partition) && push!(writerNames, s)
     end
     return sort!(writerNames)
 end
