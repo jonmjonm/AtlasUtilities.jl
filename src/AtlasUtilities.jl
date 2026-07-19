@@ -4,7 +4,7 @@
 Command-line utilities for redistricting Atlas files (see the Atlas format at
 https://github.com/jonmjonm/AtlasIO.jl/blob/main/atlas_format.md).
 
-Installs a single `atlas` command with six subcommands:
+Installs a single `atlas` command with seven subcommands:
 
   * `atlas info <atlas> [--extract-script]` — print an atlas file's header, plus
     the data field names found in its first map.
@@ -20,6 +20,8 @@ Installs a single `atlas` command with six subcommands:
   * `atlas extract-map-data <A1> [--add <functions>] [--no-compression] [--force]
     [column flags]` — write each map-data field to its own CSV file (one row per
     map) in a directory named after the atlas.
+  * `atlas extract-assignments <A1> [--no-compression] [--force] [--quiet]` —
+    write a single wide CSV of each map's per-node district assignment.
 
 Run `atlas --help` or `atlas <subcommand> --help` for details.
 """
@@ -43,6 +45,7 @@ include("nodes.jl")
 include("reorder.jl")
 include("add.jl")
 include("extract.jl")
+include("assignments.jl")
 
 """
 Print the header of an Atlas file (metadata and atlas parameters); the bulky embedded generating `script` is never printed (use `--extract-script` to write it out).
@@ -204,6 +207,25 @@ Write each map-data field of atlas A1 to its own CSV (one row per map) in a dire
                 node_col = node_col, area_col = area_col, border_col = border_col,
                 edge_perimeter_col = edge_perimeter_col, node_data = node_data,
                 vote_cols = vote_cols, quiet = quiet)
+end
+
+"""
+Write atlas A1's per-map district assignments to a single wide CSV named `<A1 basename>-assignments.csv[.gz]`: one row per map, columns `name` (the map name) then one column per node (the sorted node ids found in A1's first map) holding that node's district number in the map. Errors if any map's node set doesn't exactly match the first map's, including multiscale atlases (whose node ids have more than one component) — these are not supported yet.
+
+# Args
+
+- `a1`: input atlas (`.jsonl` / `.jsonl.gz` / `.jsonl.bz2`).
+
+# Flags
+
+- `--no-compression`: write plain `.csv` instead of gzip-compressed `.csv.gz`.
+- `--force`: overwrite the output file if it already exists (otherwise it is skipped).
+- `--quiet`: suppress the progress bar.
+"""
+@cast function extract_assignments(a1::String;
+                                   no_compression::Bool = false, force::Bool = false,
+                                   quiet::Bool = false)
+    run_extract_assignments(a1; compress = !no_compression, force = force, quiet = quiet)
 end
 
 # Designate this module as the CLI entry point; its `@cast` functions above
