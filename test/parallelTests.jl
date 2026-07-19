@@ -47,11 +47,11 @@ asvec(x) = x isa AbstractVector ? Float64.(x) : [Float64(x)]
 
     @testset "add: cores=1 vs cores=4" begin
         d = mktempdir()
-        a1 = joinpath(d, "s1.jsonl.gz"); a4 = joinpath(d, "s4.jsonl.gz")
-        run_add(funcs, src, a1; gargs..., overwrite = true, quiet = true, cores = 1)
+        atlas1 = joinpath(d, "s1.jsonl.gz"); a4 = joinpath(d, "s4.jsonl.gz")
+        run_add(funcs, src, atlas1; gargs..., overwrite = true, quiet = true, cores = 1)
         run_add(funcs, src, a4; gargs..., overwrite = true, quiet = true, cores = 4)
 
-        m1, m4 = readmaps(a1), readmaps(a4)
+        m1, m4 = readmaps(atlas1), readmaps(a4)
         @test length(m1) == length(m4)
         @test [m.name for m in m1] == [m.name for m in m4]       # order preserved (exact)
         for (x, y) in zip(m1, m4)

@@ -11,10 +11,10 @@ The package installs a single `atlas` command with seven subcommands:
 | `atlas info <atlas> [--extract-script]` | Print an atlas file's header — the metadata line, the atlas-parameter line, and the data field names found in its first map. The bulky embedded `script` source is never printed; `--extract-script` writes it to its own file instead. |
 | `atlas list-map-data <atlas>` | List the names of the data fields (e.g. `log_spanning_trees`) contained in the atlas's first map, one per line. |
 | `atlas list-nodes <atlas> [--map k]` | List the node ids in the atlas's k-th map (k=1 by default) as a JSON array of strings. |
-| `atlas relabel <A1> <A2> [<graph.json>] [--first-map] [--quiet]` | Relabel district numbers across every map in atlas `A1` so consecutive maps stay as consistent as possible, writing the result to `A2`. |
-| `atlas add <functions> <A1> <A2> [--config <param.toml>] [column flags] [--overwrite] [--quiet]` / `atlas add --list-writers` | Evaluate one or more CycleWalk "pushable writer" functions (e.g. `get_log_spanning_trees`) on every map in `A1` and add the results to the map data, writing to `A2`; `--list-writers` prints the usable writer function names instead. |
-| `atlas extract-map-data <A1> [--add <functions>] [--no-compression] [--force] [column flags]` | Write each map-data field to its own CSV (one row per map) in a directory named after the atlas; `--add` also computes writer functions to extract. |
-| `atlas extract-assignments <A1> [--no-compression] [--force] [--quiet]` | Write a single wide CSV (`name`, then one column per node) with each map's per-node district number; errors on multiscale atlases. |
+| `atlas relabel <Atlas1> <Atlas2> [<graph.json>] [--first-map] [--quiet]` | Relabel district numbers across every map in atlas `Atlas1` so consecutive maps stay as consistent as possible, writing the result to `Atlas2`. |
+| `atlas add <functions> <Atlas1> <Atlas2> [--config <param.toml>] [column flags] [--overwrite] [--quiet]` / `atlas add --list-writers` | Evaluate one or more CycleWalk "pushable writer" functions (e.g. `get_log_spanning_trees`) on every map in `Atlas1` and add the results to the map data, writing to `Atlas2`; `--list-writers` prints the usable writer function names instead. |
+| `atlas extract-map-data <Atlas1> [--add <functions>] [--no-compression] [--force] [column flags]` | Write each map-data field to its own CSV (one row per map) in a directory named after the atlas; `--add` also computes writer functions to extract. |
+| `atlas extract-assignments <Atlas1> [--no-compression] [--force] [--quiet]` | Write a single wide CSV (`name`, then one column per node) with each map's per-node district number; errors on multiscale atlases. |
 
 Run `atlas --help` or `atlas <subcommand> --help` for full option details.
 
@@ -159,7 +159,7 @@ Because the installed command runs on the Comonicon system image, control the
 thread count with the `JULIA_NUM_THREADS` environment variable, e.g.:
 
 ```bash
-JULIA_NUM_THREADS=8 atlas add get_log_spanning_trees A1.jsonl.gz A2.jsonl.gz --config param.toml
+JULIA_NUM_THREADS=8 atlas add get_log_spanning_trees Atlas1.jsonl.gz Atlas2.jsonl.gz --config param.toml
 JULIA_NUM_THREADS=8 atlas relabel input.jsonl.gz relabeled.jsonl.gz
 JULIA_NUM_THREADS=8 atlas extract-map-data run.jsonl.gz --add get_log_spanning_trees --config param.toml
 ```
@@ -180,11 +180,11 @@ stored in the map's data under the function's name, exactly as CycleWalk does
 when it writes out the data:
 
 ```bash
-atlas add get_log_spanning_trees A1.jsonl.gz A2.jsonl.gz --config param.toml
+atlas add get_log_spanning_trees Atlas1.jsonl.gz Atlas2.jsonl.gz --config param.toml
 ```
 
 Not sure which writer names are available? `--list-writers` prints every usable
-CycleWalk writer function (and exits — `functions`/`A1`/`A2` aren't required with
+CycleWalk writer function (and exits — `functions`/`Atlas1`/`Atlas2` aren't required with
 this flag). "Usable" is checked, not assumed: each candidate is smoke-tested against
 a real reconstructed partition, so a writer that merely has a matching method
 signature but errors when actually called (e.g. an internal bug referencing an
@@ -198,7 +198,7 @@ Pass a single name, a comma-separated list, or a bracketed list to add several i
 one pass:
 
 ```bash
-atlas add "get_log_spanning_trees,get_isoperimetric_scores" A1.jsonl.gz A2.jsonl.gz --config param.toml
+atlas add "get_log_spanning_trees,get_isoperimetric_scores" Atlas1.jsonl.gz Atlas2.jsonl.gz --config param.toml
 ```
 
 Because a CycleWalk atlas stores only districtings (not the graph), the **dual
@@ -208,7 +208,7 @@ the graph path and column names) or with explicit column flags — or a mix, whe
 a flag overrides / fills in the TOML:
 
 ```bash
-atlas add get_isoperimetric_scores A1.jsonl.gz A2.jsonl.gz \
+atlas add get_isoperimetric_scores Atlas1.jsonl.gz Atlas2.jsonl.gz \
   --graph NC_pct21.json --pop-col POP20 --node-col NAME \
   --area-col area --border-col border_length --edge-perimeter-col length
 ```
@@ -226,7 +226,7 @@ run's TOML and swap in just the piece that's different — e.g. reuse `param.tom
 graph and columns but point at a different population column:
 
 ```bash
-atlas add get_isoperimetric_scores A1.jsonl.gz A2.jsonl.gz \
+atlas add get_isoperimetric_scores Atlas1.jsonl.gz Atlas2.jsonl.gz \
   --config param.toml --pop-col TOTPOP
 ```
 
@@ -235,7 +235,7 @@ that read them (or downstream analysis of the extracted CSVs) can see them —
 for example, carrying the county each node belongs to:
 
 ```bash
-atlas add get_isoperimetric_scores A1.jsonl.gz A2.jsonl.gz \
+atlas add get_isoperimetric_scores Atlas1.jsonl.gz Atlas2.jsonl.gz \
   --graph NC_pct21.json --pop-col POP20 --node-col NAME \
   --area-col area --border-col border_length --edge-perimeter-col length \
   --node-data COUNTY
@@ -245,7 +245,7 @@ By default it is an error for a requested field to already exist on a map; pass
 `--overwrite` to recompute it instead, e.g. after fixing a bug in a writer:
 
 ```bash
-atlas add get_isoperimetric_scores A1.jsonl.gz A2.jsonl.gz \
+atlas add get_isoperimetric_scores Atlas1.jsonl.gz Atlas2.jsonl.gz \
   --graph NC_pct21.json --pop-col POP20 --node-col NAME --overwrite
 ```
 

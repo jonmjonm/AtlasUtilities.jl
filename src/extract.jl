@@ -1,6 +1,6 @@
 # extract.jl -- the `atlas extract-map-data` subcommand.
 #
-# Read every map in an input atlas A1 and write its map data out as CSV: one CSV
+# Read every map in an input atlas Atlas1 and write its map data out as CSV: one CSV
 # file per data field, inside a directory named after the atlas (its path with the
 # `.jsonl`/`.jsonl.gz`/`.jsonl.bz2` extension stripped). Each map is one row --
 # first column the map name, remaining columns the field's value (a scalar is one
@@ -64,7 +64,7 @@ end
 # ---------------------------------------------------------------------------
 
 """
-    writeAboutFile(outdir, A1, atlas, fieldNames) -> String
+    writeAboutFile(outdir, Atlas1, atlas, fieldNames) -> String
 
 Write an `about.md` into `outdir` describing the extraction: the source atlas name,
 the extraction date, and the atlas's header information -- everything `atlas info`
@@ -72,13 +72,13 @@ shows except the bulky embedded generating script (see `atlasHeaderInfo`), inclu
 `fieldNames` (the data field names found in the first map, e.g.
 `log_spanning_trees`). Returns the path written.
 """
-function writeAboutFile(outdir::AbstractString, A1::AbstractString, atlas,
+function writeAboutFile(outdir::AbstractString, Atlas1::AbstractString, atlas,
                         fieldNames::AbstractVector{<:AbstractString})
     path = joinpath(outdir, "about.md")
     open(path, "w") do io
-        println(io, "# ", basename(String(A1)), " — extracted map data")
+        println(io, "# ", basename(String(Atlas1)), " — extracted map data")
         println(io)
-        println(io, "- **Source atlas:** `", String(A1), "`")
+        println(io, "- **Source atlas:** `", String(Atlas1), "`")
         println(io, "- **Extraction date:** ", string(Dates.now()))
         println(io)
         println(io, "Atlas header below (the same information `atlas info` prints; the ",
@@ -96,11 +96,11 @@ end
 # ---------------------------------------------------------------------------
 
 """
-    run_extract(A1; add, compress, force, config, graph, pop_col, node_col,
+    run_extract(Atlas1; add, compress, force, config, graph, pop_col, node_col,
                 area_col, border_col, edge_perimeter_col, node_data, quiet)
 
-Extract the map data of atlas `A1` to per-field CSV files in a directory named
-after `A1` (its path minus the atlas extension). Every existing data field is
+Extract the map data of atlas `Atlas1` to per-field CSV files in a directory named
+after `Atlas1` (its path minus the atlas extension). Every existing data field is
 extracted; `add` (a writer-function name, or comma-separated / bracketed list) is
 additionally computed via the graph described by `config` and/or the column
 keyword arguments (see `resolveGraphSpec`) and extracted too. `compress` gzips the
@@ -108,7 +108,7 @@ CSVs (`.csv.gz`); with `compress = false` they are plain `.csv`. A field whose
 output file already exists is skipped unless `force = true`. `quiet` suppresses the
 progress bar.
 """
-function run_extract(A1::AbstractString;
+function run_extract(Atlas1::AbstractString;
                      add::AbstractString = "", compress::Bool = true,
                      force::Bool = false, config::AbstractString = "",
                      graph::AbstractString = "", pop_col::AbstractString = "",
@@ -135,15 +135,15 @@ function run_extract(A1::AbstractString;
         g = buildGraph(spec)
     end
 
-    outdir = stripAtlasExt(String(A1))
+    outdir = stripAtlasExt(String(Atlas1))
     isdir(outdir) || mkpath(outdir)
     ext = compress ? ".csv.gz" : ".csv"
 
-    atlas = openAtlas(smartOpen(String(A1), "r"))
+    atlas = openAtlas(smartOpen(String(Atlas1), "r"))
     mpt, wt = atlas.mapParamType, atlas.weightType
     if eof(atlas)
         close(atlas)
-        println("atlas extract-map-data: $A1 has no maps; nothing written.")
+        println("atlas extract-map-data: $Atlas1 has no maps; nothing written.")
         return nothing
     end
 
@@ -153,7 +153,7 @@ function run_extract(A1::AbstractString;
     # Always (re)write about.md, regardless of which CSV fields are actually
     # written below -- it should describe the atlas even on a re-run where every
     # target CSV already exists and is skipped.
-    writeAboutFile(outdir, String(A1), atlas, sort(collect(keys(first.data))))
+    writeAboutFile(outdir, String(Atlas1), atlas, sort(collect(keys(first.data))))
 
     shouldWrite(field) = force || !isfile(joinpath(outdir, field * ext))
 

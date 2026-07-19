@@ -1,6 +1,6 @@
 # assignments.jl -- the `atlas extract-assignments` subcommand.
 #
-# Read every map in atlas A1 and write a single wide CSV: one row per map,
+# Read every map in atlas Atlas1 and write a single wide CSV: one row per map,
 # first column the map name, remaining columns node1, node2, ... (the node
 # ids found in the first map, sorted) holding that node's district number in
 # the map. Every map must have exactly the first map's node set; multiscale
@@ -12,20 +12,20 @@
 # message) if the target file already exists, unless `--force`.
 
 """
-    run_extract_assignments(A1; compress = true, force = false, quiet = false,
+    run_extract_assignments(Atlas1; compress = true, force = false, quiet = false,
                             cores = Threads.nthreads())
 
-Write `<A1 basename>-assignments.csv[.gz]`: one row per map (map name, then
+Write `<Atlas1 basename>-assignments.csv[.gz]`: one row per map (map name, then
 each node's district number in that map), columns being the sorted node ids
-found in `A1`'s first map. Errors if any map's node set doesn't exactly match
+found in `Atlas1`'s first map. Errors if any map's node set doesn't exactly match
 the first map's, including multiscale atlases (whose node ids have more than
 one component).
 """
-function run_extract_assignments(A1::AbstractString;
+function run_extract_assignments(Atlas1::AbstractString;
                                  compress::Bool = true, force::Bool = false,
                                  quiet::Bool = false, cores::Int = Threads.nthreads())
     ext = compress ? ".csv.gz" : ".csv"
-    outpath = stripAtlasExt(String(A1)) * "-assignments" * ext
+    outpath = stripAtlasExt(String(Atlas1)) * "-assignments" * ext
 
     if isfile(outpath) && !force
         println("atlas extract-assignments: $outpath already exists; ",
@@ -33,11 +33,11 @@ function run_extract_assignments(A1::AbstractString;
         return nothing
     end
 
-    atlas = openAtlas(smartOpen(String(A1), "r"))
+    atlas = openAtlas(smartOpen(String(Atlas1), "r"))
     mpt, wt = atlas.mapParamType, atlas.weightType
     if eof(atlas)
         close(atlas)
-        println("atlas extract-assignments: $A1 has no maps; nothing written.")
+        println("atlas extract-assignments: $Atlas1 has no maps; nothing written.")
         return nothing
     end
 
@@ -59,7 +59,7 @@ function run_extract_assignments(A1::AbstractString;
     # Write to a temp file and rename into place only on success, so a mismatched
     # node set found partway through (e.g. a multiscale atlas) never leaves a
     # partial/corrupt output file behind.
-    tmppath = stripAtlasExt(String(A1)) * "-assignments.tmp" * ext
+    tmppath = stripAtlasExt(String(Atlas1)) * "-assignments.tmp" * ext
     written = 1
     try
         io = smartOpen(tmppath, "w")

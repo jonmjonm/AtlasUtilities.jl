@@ -12,15 +12,15 @@ Installs a single `atlas` command with seven subcommands:
     `log_spanning_trees`) contained in the atlas's first map, one per line.
   * `atlas list-nodes <atlas> [--map k]` — list the node ids in the atlas's
     k-th map (k=1 by default) as a JSON array of strings.
-  * `atlas relabel <A1> <A2> [<graph.json>] [--first-map] [--quiet]` — relabel
+  * `atlas relabel <Atlas1> <Atlas2> [<graph.json>] [--first-map] [--quiet]` — relabel
     district numbers across an atlas so consecutive maps stay consistent.
-  * `atlas add <functions> <A1> <A2> [--config <param.toml>] [column flags]
+  * `atlas add <functions> <Atlas1> <Atlas2> [--config <param.toml>] [column flags]
     [--overwrite] [--quiet]` — evaluate one or more CycleWalk "pushable writer"
     functions on every map and add the results to the map data.
-  * `atlas extract-map-data <A1> [--add <functions>] [--no-compression] [--force]
+  * `atlas extract-map-data <Atlas1> [--add <functions>] [--no-compression] [--force]
     [column flags]` — write each map-data field to its own CSV file (one row per
     map) in a directory named after the atlas.
-  * `atlas extract-assignments <A1> [--no-compression] [--force] [--quiet]` —
+  * `atlas extract-assignments <Atlas1> [--no-compression] [--force] [--quiet]` —
     write a single wide CSV of each map's per-node district assignment.
 
 Run `atlas --help` or `atlas <subcommand> --help` for details.
@@ -64,7 +64,7 @@ Print the header of an Atlas file (metadata and atlas parameters); the bulky emb
 end
 
 """
-List the names of the data fields (e.g. `log_spanning_trees`) contained in atlas A1 first map, one per line, sorted.
+List the names of the data fields (e.g. `log_spanning_trees`) contained in atlas Atlas1 first map, one per line, sorted.
 
 # Args
 
@@ -75,7 +75,7 @@ List the names of the data fields (e.g. `log_spanning_trees`) contained in atlas
 end
 
 """
-List the node ids in atlas A1 k-th map (1-based, k=1 by default), as a JSON array of strings.
+List the node ids in atlas Atlas1 k-th map (1-based, k=1 by default), as a JSON array of strings.
 
 # Args
 
@@ -90,12 +90,12 @@ List the node ids in atlas A1 k-th map (1-based, k=1 by default), as a JSON arra
 end
 
 """
-Relabel district numbers across atlas A1 so consecutive maps stay as similar as possible, writing the result to A2.
+Relabel district numbers across atlas Atlas1 so consecutive maps stay as similar as possible, writing the result to Atlas2.
 
 # Args
 
-- `a1`: input atlas (`.jsonl` / `.jsonl.gz` / `.jsonl.bz2`).
-- `a2`: output atlas.
+- `atlas1`: input atlas (`.jsonl` / `.jsonl.gz` / `.jsonl.bz2`).
+- `atlas2`: output atlas.
 - `graph`: optional dual-graph hierarchy (NetworkX node-link JSON). Required for
   multiscale/hierarchical atlases whose per-map node sets vary.
 
@@ -104,20 +104,20 @@ Relabel district numbers across atlas A1 so consecutive maps stay as similar as 
 - `--first-map`: align every map to map 1 (anchor) instead of to its predecessor.
 - `--quiet`: suppress the progress bar.
 """
-@cast function relabel(a1::String, a2::String, graph::String = "";
+@cast function relabel(atlas1::String, atlas2::String, graph::String = "";
                        first_map::Bool = false, quiet::Bool = false)
-    run_reorder(a1, a2, isempty(graph) ? nothing : graph;
+    run_reorder(atlas1, atlas2, isempty(graph) ? nothing : graph;
                 firstMap = first_map, quiet = quiet)
 end
 
 """
-Add CycleWalk pushable writer function(s) (e.g. `get_log_spanning_trees`) to every map in atlas A1, writing the augmented atlas to A2; the dual graph is supplied via `--config` and/or the column flags.
+Add CycleWalk pushable writer function(s) (e.g. `get_log_spanning_trees`) to every map in atlas Atlas1, writing the augmented atlas to Atlas2; the dual graph is supplied via `--config` and/or the column flags.
 
 # Args
 
 - `functions`: writer function name, or a comma-separated / bracketed list.
-- `a1`: input atlas (`.jsonl` / `.jsonl.gz` / `.jsonl.bz2`).
-- `a2`: output atlas.
+- `atlas1`: input atlas (`.jsonl` / `.jsonl.gz` / `.jsonl.bz2`).
+- `atlas2`: output atlas.
 
 # Options
 
@@ -140,12 +140,12 @@ Add CycleWalk pushable writer function(s) (e.g. `get_log_spanning_trees`) to eve
 # Flags
 
 - `--list-writers`: print the CycleWalk writer function names usable as `functions`
-  (plain and partisan) and exit; `functions`/`a1`/`a2` are not required with this flag.
+  (plain and partisan) and exit; `functions`/`atlas1`/`atlas2` are not required with this flag.
 - `--overwrite`: recompute a field even if a map already has it (otherwise it is
   an error for a requested field to already exist).
 - `--quiet`: suppress the progress bar.
 """
-@cast function add(functions::String = "", a1::String = "", a2::String = "";
+@cast function add(functions::String = "", atlas1::String = "", atlas2::String = "";
                    list_writers::Bool = false,
                    config::String = "", graph::String = "",
                    pop_col::String = "", node_col::String = "",
@@ -157,20 +157,20 @@ Add CycleWalk pushable writer function(s) (e.g. `get_log_spanning_trees`) to eve
         run_list_writers()
         return
     end
-    (isempty(functions) || isempty(a1) || isempty(a2)) &&
-        error("atlas add: <functions> <a1> <a2> are required (unless --list-writers).")
-    run_add(functions, a1, a2; config = config, graph = graph, pop_col = pop_col,
+    (isempty(functions) || isempty(atlas1) || isempty(atlas2)) &&
+        error("atlas add: <functions> <atlas1> <atlas2> are required (unless --list-writers).")
+    run_add(functions, atlas1, atlas2; config = config, graph = graph, pop_col = pop_col,
             node_col = node_col, area_col = area_col, border_col = border_col,
             edge_perimeter_col = edge_perimeter_col, node_data = node_data,
             vote_cols = vote_cols, overwrite = overwrite, quiet = quiet)
 end
 
 """
-Write each map-data field of atlas A1 to its own CSV (one row per map) in a directory named after the atlas, plus an `about.md` describing the atlas (its `atlas info` header, minus the embedded script, with the source atlas name and extraction date); `--add` also computes CycleWalk writer functions to extract, using the same graph inputs as `atlas add`.
+Write each map-data field of atlas Atlas1 to its own CSV (one row per map) in a directory named after the atlas, plus an `about.md` describing the atlas (its `atlas info` header, minus the embedded script, with the source atlas name and extraction date); `--add` also computes CycleWalk writer functions to extract, using the same graph inputs as `atlas add`.
 
 # Args
 
-- `a1`: input atlas (`.jsonl` / `.jsonl.gz` / `.jsonl.bz2`).
+- `atlas1`: input atlas (`.jsonl` / `.jsonl.gz` / `.jsonl.bz2`).
 
 # Options
 
@@ -194,7 +194,7 @@ Write each map-data field of atlas A1 to its own CSV (one row per map) in a dire
 - `--force`: overwrite an output file that already exists (otherwise it is skipped).
 - `--quiet`: suppress the progress bar.
 """
-@cast function extract_map_data(a1::String; add::String = "",
+@cast function extract_map_data(atlas1::String; add::String = "",
                                 no_compression::Bool = false, force::Bool = false,
                                 config::String = "", graph::String = "",
                                 pop_col::String = "", node_col::String = "",
@@ -202,7 +202,7 @@ Write each map-data field of atlas A1 to its own CSV (one row per map) in a dire
                                 edge_perimeter_col::String = "",
                                 node_data::String = "", vote_cols::String = "",
                                 quiet::Bool = false)
-    run_extract(a1; add = add, compress = !no_compression, force = force,
+    run_extract(atlas1; add = add, compress = !no_compression, force = force,
                 config = config, graph = graph, pop_col = pop_col,
                 node_col = node_col, area_col = area_col, border_col = border_col,
                 edge_perimeter_col = edge_perimeter_col, node_data = node_data,
@@ -210,11 +210,11 @@ Write each map-data field of atlas A1 to its own CSV (one row per map) in a dire
 end
 
 """
-Write atlas A1's per-map district assignments to a single wide CSV named `<A1 basename>-assignments.csv[.gz]`: one row per map, columns `name` (the map name) then one column per node (the sorted node ids found in A1's first map) holding that node's district number in the map. Errors if any map's node set doesn't exactly match the first map's, including multiscale atlases (whose node ids have more than one component) — these are not supported yet.
+Write atlas Atlas1 per-map district assignments to a single wide CSV, named from the Atlas1 basename plus `-assignments.csv` (or `.csv.gz`): one row per map, columns `name` (the map name) then one column per node (the sorted node ids found in the first map of Atlas1) holding that node district number in the map. Errors if any map node set does not exactly match the first map node set, including multiscale atlases (whose node ids have more than one component) — those are not supported yet.
 
 # Args
 
-- `a1`: input atlas (`.jsonl` / `.jsonl.gz` / `.jsonl.bz2`).
+- `atlas1`: input atlas (`.jsonl` / `.jsonl.gz` / `.jsonl.bz2`).
 
 # Flags
 
@@ -222,10 +222,10 @@ Write atlas A1's per-map district assignments to a single wide CSV named `<A1 ba
 - `--force`: overwrite the output file if it already exists (otherwise it is skipped).
 - `--quiet`: suppress the progress bar.
 """
-@cast function extract_assignments(a1::String;
+@cast function extract_assignments(atlas1::String;
                                    no_compression::Bool = false, force::Bool = false,
                                    quiet::Bool = false)
-    run_extract_assignments(a1; compress = !no_compression, force = force, quiet = quiet)
+    run_extract_assignments(atlas1; compress = !no_compression, force = force, quiet = quiet)
 end
 
 # Designate this module as the CLI entry point; its `@cast` functions above

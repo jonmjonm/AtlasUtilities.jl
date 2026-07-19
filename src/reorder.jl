@@ -1,7 +1,7 @@
 # reorder.jl -- the `atlas relabel` subcommand.
 #
-# Walk every map in an input atlas A1, relabel district numbers so consecutive
-# maps are as similar as possible, and write the relabeled maps to a new atlas A2.
+# Walk every map in an input atlas Atlas1, relabel district numbers so consecutive
+# maps are as similar as possible, and write the relabeled maps to a new atlas Atlas2.
 #
 # Parsing the maps dominates runtime (~80%) and is per-map independent, so it is
 # threaded across however many threads Julia was started with (`julia --threads=N`,
@@ -152,25 +152,25 @@ end
 # ---------------------------------------------------------------------------
 
 """
-    run_reorder(A1, A2, jsonPath = nothing; firstMap = false, quiet = false,
+    run_reorder(Atlas1, Atlas2, jsonPath = nothing; firstMap = false, quiet = false,
                 cores = Threads.nthreads())
 
-Reorder atlas `A1` into `A2`. `jsonPath` is an optional dual-graph JSON, required
+Reorder atlas `Atlas1` into `Atlas2`. `jsonPath` is an optional dual-graph JSON, required
 for multiscale/hierarchical atlases whose per-map node sets vary. `firstMap`
 aligns every map to map 1 (anchor) instead of to its predecessor; `quiet`
 suppresses the progress bar. `cores` is the parse/serialize worker count; it
 defaults to the threads Julia was started with, so a single thread runs serially.
 """
-function run_reorder(A1::AbstractString, A2::AbstractString,
+function run_reorder(Atlas1::AbstractString, Atlas2::AbstractString,
                      jsonPath::Union{AbstractString,Nothing} = nothing;
                      firstMap::Bool = false, quiet::Bool = false,
                      cores::Int = Threads.nthreads())
-    # Start A2 by cloning A1's header (lines 1-3), then append maps to it. For .gz
+    # Start Atlas2 by cloning Atlas1's header (lines 1-3), then append maps to it. For .gz
     # output, `AtlasOutput` compresses the map body as byte-targeted gzip members in
     # parallel (the serial write is only raw I/O); plain/.bz2 stream as before.
-    outIO = openAtlasOutput(String(A2), atlasHeaderBytes(String(A1)), cores)
+    outIO = openAtlasOutput(String(Atlas2), atlasHeaderBytes(String(Atlas1)), cores)
 
-    inIO = smartOpen(String(A1), "r")
+    inIO = smartOpen(String(Atlas1), "r")
     atlas = openAtlas(inIO)
     mpt = atlas.mapParamType
     wt = atlas.weightType

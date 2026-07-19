@@ -88,12 +88,12 @@ partition(labels) = Set(Set(i for i in eachindex(labels) if labels[i] == d)
 
     @testset "end-to-end: default (chained) mode" begin
         dir = mktempdir()
-        A1, A2 = joinpath(dir, "A1.jsonl"), joinpath(dir, "A2.jsonl")
+        Atlas1, Atlas2 = joinpath(dir, "Atlas1.jsonl"), joinpath(dir, "Atlas2.jsonl")
         src = [[1, 1, 2, 2], [2, 2, 1, 1], [1, 2, 2, 1]]
-        buildatlas(A1, src)
+        buildatlas(Atlas1, src)
 
-        run_reorder(A1, A2; quiet = true, cores = 1)
-        out = readatlas(A2)
+        run_reorder(Atlas1, Atlas2; quiet = true, cores = 1)
+        out = readatlas(Atlas2)
 
         @test length(out) == 3
         @test [m.name for m in out] == ["m1", "m2", "m3"]
@@ -106,12 +106,12 @@ partition(labels) = Set(Set(i for i in eachindex(labels) if labels[i] == d)
 
     @testset "end-to-end: --firstMap mode" begin
         dir = mktempdir()
-        A1, A2 = joinpath(dir, "A1.jsonl"), joinpath(dir, "A2.jsonl")
+        Atlas1, Atlas2 = joinpath(dir, "Atlas1.jsonl"), joinpath(dir, "Atlas2.jsonl")
         src = [[1, 1, 2, 2], [2, 2, 1, 1], [1, 2, 2, 1]]
-        buildatlas(A1, src)
+        buildatlas(Atlas1, src)
 
-        run_reorder(A1, A2; firstMap = true, quiet = true, cores = 1)
-        out = readatlas(A2)
+        run_reorder(Atlas1, Atlas2; firstMap = true, quiet = true, cores = 1)
+        out = readatlas(Atlas2)
 
         @test length(out) == 3
         @test labelsof(out[1]) == [1, 1, 2, 2]                 # anchor verbatim
@@ -134,8 +134,8 @@ partition(labels) = Set(Set(i for i in eachindex(labels) if labels[i] == d)
                Districting(("X","1")=>2, ("X","2")=>2, ("Y","1")=>1, ("Y","2")=>1), # same partition, swapped
                Districting(("X","1")=>1, ("X","2")=>2, ("Y","1")=>2, ("Y","2")=>1)] # different partition
 
-        A1, A2 = joinpath(dir, "A1.jsonl"), joinpath(dir, "A2.jsonl")
-        io = smartOpen(A1, "w")
+        Atlas1, Atlas2 = joinpath(dir, "Atlas1.jsonl"), joinpath(dir, "Atlas2.jsonl")
+        io = smartOpen(Atlas1, "w")
         newAtlas(io, AtlasHeader("ms", Dict{String,Any}, Dict{String,Any}),
                  Dict{String,Any}("districts" => 2, "levels in graph" => ["county", "prec"]))
         for (k, dist) in enumerate(src)
@@ -143,8 +143,8 @@ partition(labels) = Set(Set(i for i in eachindex(labels) if labels[i] == d)
         end
         close(io)
 
-        run_reorder(A1, A2, gpath; quiet = true, cores = 1)
-        out = readatlas(A2)
+        run_reorder(Atlas1, Atlas2, gpath; quiet = true, cores = 1)
+        out = readatlas(Atlas2)
         h = loadHierarchy(gpath, ["county", "prec"])
 
         @test length(out) == 3
@@ -157,24 +157,24 @@ partition(labels) = Set(Set(i for i in eachindex(labels) if labels[i] == d)
 
     @testset "progress bar path (no --quiet) runs and is correct" begin
         dir = mktempdir()
-        A1, A2 = joinpath(dir, "A1.jsonl"), joinpath(dir, "A2.jsonl")
-        buildatlas(A1, [[1, 1, 2, 2], [2, 2, 1, 1], [1, 2, 2, 1]])
-        run_reorder(A1, A2; cores = 1)       # progress enabled; must not error
-        out = readatlas(A2)
+        Atlas1, Atlas2 = joinpath(dir, "Atlas1.jsonl"), joinpath(dir, "Atlas2.jsonl")
+        buildatlas(Atlas1, [[1, 1, 2, 2], [2, 2, 1, 1], [1, 2, 2, 1]])
+        run_reorder(Atlas1, Atlas2; cores = 1)       # progress enabled; must not error
+        out = readatlas(Atlas2)
         @test length(out) == 3
         @test labelsof(out[2]) == [1, 1, 2, 2]
     end
 
     @testset "threaded batches: parallel output matches serial, order preserved" begin
         dir = mktempdir()
-        A1 = joinpath(dir, "A1.jsonl")
+        Atlas1 = joinpath(dir, "Atlas1.jsonl")
         # Span several batches so the pipeline's batching/carry-over is exercised.
         nmaps = 2 * BATCH + 37
         src = [rand(1:2, 4) for _ in 1:nmaps]
         for v in src                          # ensure both districts are non-empty
             v[1] = 1; v[2] = 2
         end
-        io = smartOpen(A1, "w")
+        io = smartOpen(Atlas1, "w")
         newAtlas(io, AtlasHeader("t", Dict{String,Any}, Dict{String,Any}),
                  Dict{String,Any}("districts" => 2))
         for (k, v) in enumerate(src)
@@ -185,8 +185,8 @@ partition(labels) = Set(Set(i for i in eachindex(labels) if labels[i] == d)
         # Compare an explicitly serial run against one using this process's full
         # thread count. Run the suite with `julia -t N` to exercise true parallelism.
         ser = joinpath(dir, "serial.jsonl"); par = joinpath(dir, "par.jsonl")
-        run_reorder(A1, ser; quiet = true, cores = 1)
-        run_reorder(A1, par; quiet = true, cores = Threads.nthreads())
+        run_reorder(Atlas1, ser; quiet = true, cores = 1)
+        run_reorder(Atlas1, par; quiet = true, cores = Threads.nthreads())
 
         os, op = readatlas(ser), readatlas(par)
         @test length(os) == nmaps && length(op) == nmaps

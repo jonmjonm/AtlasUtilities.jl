@@ -1,10 +1,10 @@
 # add.jl -- the `atlas add` subcommand.
 #
-# Read every map in an input atlas A1, reconstruct each map's LinkCutPartition on
+# Read every map in an input atlas Atlas1, reconstruct each map's LinkCutPartition on
 # a supplied dual graph, evaluate one or more CycleWalk "pushable writer"
 # functions on it (the very functions you would hand to `push_writer!` during a
 # CycleWalk run), append their results to the map's data, and write the augmented
-# maps to A2.
+# maps to Atlas2.
 #
 # A CycleWalk atlas stores only districtings (keys like `("DAVIDSON_18",)`), not
 # the graph, so the graph and the columns needed to build it must be supplied
@@ -314,9 +314,9 @@ end
 # ---------------------------------------------------------------------------
 
 """
-    provenanceHeaderBytes(A1, names, spec) -> Vector{UInt8}
+    provenanceHeaderBytes(Atlas1, names, spec) -> Vector{UInt8}
 
-A1's header (its three lines) with an `"added map data"` provenance entry appended
+Atlas1's header (its three lines) with an `"added map data"` provenance entry appended
 to line 3 (the atlas params) -- recording which fields were added, from which graph,
 and when -- returned as raw bytes ready to emit through an `AtlasOutput`. Lines 1-2
 are copied verbatim. The entry is purely additive to the params dict, so older
@@ -324,8 +324,8 @@ readers ignore it while `atlas info` surfaces it; the declared `mapParamType`
 (`Dict{String,Any}`) is unchanged, since adding keys to each map's data does not
 change its type.
 """
-function provenanceHeaderBytes(A1::AbstractString, names::Vector{String}, spec::GraphSpec)
-    src = smartOpen(String(A1), "r")
+function provenanceHeaderBytes(Atlas1::AbstractString, names::Vector{String}, spec::GraphSpec)
+    src = smartOpen(String(Atlas1), "r")
     line1 = readline(src)   # fixed description line
     line2 = readline(src)   # AtlasHeader
     line3 = readline(src)   # atlasParam
@@ -352,17 +352,17 @@ function provenanceHeaderBytes(A1::AbstractString, names::Vector{String}, spec::
 end
 
 """
-    writeHeaderWithProvenance(A1, A2, names, spec)
+    writeHeaderWithProvenance(Atlas1, Atlas2, names, spec)
 
-Write A2's header from A1's with the `atlas add` provenance stamp (see
-[`provenanceHeaderBytes`](@ref)), through a plain/compressed stream chosen by A2's
+Write Atlas2's header from Atlas1's with the `atlas add` provenance stamp (see
+[`provenanceHeaderBytes`](@ref)), through a plain/compressed stream chosen by Atlas2's
 extension. Used on its own (e.g. in tests); `run_add` instead feeds the same header
 bytes to an `AtlasOutput`.
 """
-function writeHeaderWithProvenance(A1::AbstractString, A2::AbstractString,
+function writeHeaderWithProvenance(Atlas1::AbstractString, Atlas2::AbstractString,
                                    names::Vector{String}, spec::GraphSpec)
-    out = smartOpen(String(A2), "w")
-    write(out, provenanceHeaderBytes(String(A1), names, spec))
+    out = smartOpen(String(Atlas2), "w")
+    write(out, provenanceHeaderBytes(String(Atlas1), names, spec))
     close(out)
     return nothing
 end
@@ -537,22 +537,22 @@ evalWriters(g, m, fns; treeless::Bool = allTreeless(fns)) =
 # ---------------------------------------------------------------------------
 
 """
-    run_add(functions, A1, A2; config, graph, pop_col, node_col, area_col,
+    run_add(functions, Atlas1, Atlas2; config, graph, pop_col, node_col, area_col,
             border_col, edge_perimeter_col, node_data, overwrite, quiet,
             cores = Threads.nthreads())
 
 Add the CycleWalk writer function(s) named by `functions` to every map in atlas
-`A1`, writing the augmented atlas to `A2`. The graph is described by `config`
+`Atlas1`, writing the augmented atlas to `Atlas2`. The graph is described by `config`
 and/or the column keyword arguments (see `resolveGraphSpec`). By default it is an
 error for a requested field to already exist on a map; pass `overwrite = true` to
 recompute it instead. `quiet` suppresses the progress bar.
 
 The per-map work (parse -> reconstruct partition -> evaluate writers -> serialize)
 is independent across maps and is threaded across `cores` tasks; maps are written
-to `A2` serially in order. `cores` defaults to the threads Julia was started with,
+to `Atlas2` serially in order. `cores` defaults to the threads Julia was started with,
 so a single thread runs serially.
 """
-function run_add(functions::AbstractString, A1::AbstractString, A2::AbstractString;
+function run_add(functions::AbstractString, Atlas1::AbstractString, Atlas2::AbstractString;
                  config::AbstractString = "", graph::AbstractString = "",
                  pop_col::AbstractString = "", node_col::AbstractString = "",
                  area_col::AbstractString = "", border_col::AbstractString = "",
@@ -573,14 +573,14 @@ function run_add(functions::AbstractString, A1::AbstractString, A2::AbstractStri
     union!(spec.node_data, Set(voteColumns(votePairs)))
     g = buildGraph(spec)
 
-    # Start A2 with A1's header plus a provenance stamp (the actual field names, so
+    # Start Atlas2 with Atlas1's header plus a provenance stamp (the actual field names, so
     # expanded partisan fields are recorded), then append maps to it. For .gz output,
     # `AtlasOutput` compresses the map body as byte-targeted gzip members in parallel
     # (the serial write is only raw I/O); plain/.bz2 stream as before.
-    header = provenanceHeaderBytes(String(A1), [d for (d, _) in fns], spec)
-    outIO = openAtlasOutput(String(A2), header, cores)
+    header = provenanceHeaderBytes(String(Atlas1), [d for (d, _) in fns], spec)
+    outIO = openAtlasOutput(String(Atlas2), header, cores)
 
-    inIO = smartOpen(String(A1), "r")
+    inIO = smartOpen(String(Atlas1), "r")
     atlas = openAtlas(inIO)
     mpt, wt = atlas.mapParamType, atlas.weightType
 
@@ -590,7 +590,7 @@ function run_add(functions::AbstractString, A1::AbstractString, A2::AbstractStri
 
     # Process maps in batches: read serially, then parse + reconstruct + evaluate +
     # serialize each map in parallel (into preallocated per-index slots), then write
-    # the serialized bytes to A2 serially in map order.
+    # the serialized bytes to Atlas2 serially in map order.
     with_serial_blas() do
         while !eof(atlas)
             lines = String[]

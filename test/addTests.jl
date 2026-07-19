@@ -67,15 +67,15 @@ rgs(; kw...) = resolveGraphSpec(; config = "", graph = "", pop_col = "",
 
         graph = joinpath(@__DIR__, "..", "Data", "CT_pct20.json")
         oracle = joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_slice.jsonl.gz")
-        A2 = joinpath(mktempdir(), "listed_writers_smoke.jsonl.gz")
-        run_add(join(writerNames, ","), oracle, A2;
+        Atlas2 = joinpath(mktempdir(), "listed_writers_smoke.jsonl.gz")
+        run_add(join(writerNames, ","), oracle, Atlas2;
                 graph = graph, pop_col = "POP20", node_col = "NAME",
                 area_col = "area", border_col = "border_length",
                 edge_perimeter_col = "length",
                 node_data = "COUNTY,NAME,POP20,area,border_length",
                 overwrite = true, quiet = true)   # must not throw
 
-        a = openAtlas(smartOpen(A2, "r"))
+        a = openAtlas(smartOpen(Atlas2, "r"))
         m = nextMap(a)
         close(a)
         for n in writerNames
@@ -99,14 +99,14 @@ rgs(; kw...) = resolveGraphSpec(; config = "", graph = "", pop_col = "",
         @test occursin("--vote-cols", out)
     end
 
-    @testset "atlas add --list-writers: short-circuits without functions/a1/a2" begin
+    @testset "atlas add --list-writers: short-circuits without functions/atlas1/atlas2" begin
         out = capture_stdout() do
             add(; list_writers = true)
         end
         @test occursin("get_log_spanning_trees", out)
     end
 
-    @testset "atlas add: missing functions/a1/a2 errors clearly (without --list-writers)" begin
+    @testset "atlas add: missing functions/atlas1/atlas2 errors clearly (without --list-writers)" begin
         @test_throws ErrorException add()
     end
 
@@ -162,18 +162,18 @@ rgs(; kw...) = resolveGraphSpec(; config = "", graph = "", pop_col = "",
 
     @testset "writeHeaderWithProvenance" begin
         dir = mktempdir()
-        A1 = joinpath(dir, "A1.jsonl")
-        A2 = joinpath(dir, "A2.jsonl")
+        Atlas1 = joinpath(dir, "Atlas1.jsonl")
+        Atlas2 = joinpath(dir, "Atlas2.jsonl")
 
-        io = smartOpen(A1, "w")
+        io = smartOpen(Atlas1, "w")
         newAtlas(io, AtlasHeader("desc", Dict{String,Any}, Dict{String,Any}),
                  Dict{String,Any}("districts" => 3))
         close(io)
 
         spec = rgs(graph = "g.json", pop_col = "POP20", node_col = "NAME")
-        writeHeaderWithProvenance(A1, A2, ["get_log_spanning_trees"], spec)
+        writeHeaderWithProvenance(Atlas1, Atlas2, ["get_log_spanning_trees"], spec)
 
-        atlas = openAtlas(smartOpen(A2, "r"))
+        atlas = openAtlas(smartOpen(Atlas2, "r"))
         @test atlas.atlasParam["districts"] == 3        # original params preserved
         prov = atlas.atlasParam["added map data"]
         @test length(prov) == 1
@@ -184,7 +184,7 @@ rgs(; kw...) = resolveGraphSpec(; config = "", graph = "", pop_col = "",
 
         # A second pass appends to (does not clobber) the provenance log.
         A3 = joinpath(dir, "A3.jsonl")
-        writeHeaderWithProvenance(A2, A3, ["get_isoperimetric_scores"], spec)
+        writeHeaderWithProvenance(Atlas2, A3, ["get_isoperimetric_scores"], spec)
         atlas = openAtlas(smartOpen(A3, "r"))
         @test length(atlas.atlasParam["added map data"]) == 2
         close(atlas)
@@ -214,15 +214,15 @@ rgs(; kw...) = resolveGraphSpec(; config = "", graph = "", pop_col = "",
     for (fixture, minmaps) in fixtures
         @testset "oracle: $fixture" begin
             oracle = joinpath(@__DIR__, "..", "examples", fixture)
-            A2 = joinpath(mktempdir(), "ct_recomputed.jsonl.gz")
-            run_add(join(fields, ","), oracle, A2;
+            Atlas2 = joinpath(mktempdir(), "ct_recomputed.jsonl.gz")
+            run_add(join(fields, ","), oracle, Atlas2;
                     graph = graph, pop_col = "POP20", node_col = "NAME",
                     area_col = "area", border_col = "border_length",
                     edge_perimeter_col = "length",
                     node_data = "COUNTY,NAME,POP20,area,border_length",
                     overwrite = true, quiet = true)
 
-            orig, recomp = readall(oracle), readall(A2)
+            orig, recomp = readall(oracle), readall(Atlas2)
             @test length(orig) == length(recomp)
             @test length(orig) >= minmaps
 
@@ -342,8 +342,8 @@ rgs(; kw...) = resolveGraphSpec(; config = "", graph = "", pop_col = "",
         v1, v2 = "G20PREDEM", "G20PREREP"
         field = "get_partisan_margins_$(v1)_$(v2)"
 
-        A2 = joinpath(mktempdir(), "votes.jsonl.gz")
-        run_add("get_partisan_margins", src, A2; graph = graphPath, pop_col = "POP20",
+        Atlas2 = joinpath(mktempdir(), "votes.jsonl.gz")
+        run_add("get_partisan_margins", src, Atlas2; graph = graphPath, pop_col = "POP20",
                 node_col = "NAME", vote_cols = "$v1,$v2", overwrite = true, quiet = true)
 
         # graph vote data keyed by NAME
@@ -351,7 +351,7 @@ rgs(; kw...) = resolveGraphSpec(; config = "", graph = "", pop_col = "",
         vote = Dict(string(n["NAME"]) => (Float64(n[Symbol(v1)]), Float64(n[Symbol(v2)]))
                     for n in graph.nodes)
 
-        a = openAtlas(smartOpen(A2, "r"))
+        a = openAtlas(smartOpen(Atlas2, "r"))
         nmaps = 0
         maxerr = 0.0
         while !eof(a)
