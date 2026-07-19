@@ -197,6 +197,8 @@ partition(labels) = Set(Set(i for i in eachindex(labels) if labels[i] == d)
 end
 
 include(joinpath(@__DIR__, "infoTests.jl"))
+include(joinpath(@__DIR__, "nodesTests.jl"))
+include(joinpath(@__DIR__, "assignmentsTests.jl"))
 include(joinpath(@__DIR__, "addTests.jl"))
 include(joinpath(@__DIR__, "extractTests.jl"))
 include(joinpath(@__DIR__, "parallelTests.jl"))

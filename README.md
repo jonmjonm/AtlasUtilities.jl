@@ -4,15 +4,17 @@ Command-line utilities for working with redistricting **Atlas** files (the map
 container produced by the Quantifying Gerrymandering tooling; see the
 [Atlas format](https://github.com/jonmjonm/AtlasIO.jl/blob/main/atlas_format.md)).
 
-The package installs a single `atlas` command with five subcommands:
+The package installs a single `atlas` command with seven subcommands:
 
 | Command | What it does |
 |---------|--------------|
 | `atlas info <atlas> [--extract-script]` | Print an atlas file's header — the metadata line, the atlas-parameter line, and the data field names found in its first map. The bulky embedded `script` source is never printed; `--extract-script` writes it to its own file instead. |
 | `atlas list-map-data <atlas>` | List the names of the data fields (e.g. `log_spanning_trees`) contained in the atlas's first map, one per line. |
+| `atlas list-nodes <atlas> [--map k]` | List the node ids in the atlas's k-th map (k=1 by default) as a JSON array of strings. |
 | `atlas relabel <A1> <A2> [<graph.json>] [--first-map] [--quiet]` | Relabel district numbers across every map in atlas `A1` so consecutive maps stay as consistent as possible, writing the result to `A2`. |
 | `atlas add <functions> <A1> <A2> [--config <param.toml>] [column flags] [--overwrite] [--quiet]` / `atlas add --list-writers` | Evaluate one or more CycleWalk "pushable writer" functions (e.g. `get_log_spanning_trees`) on every map in `A1` and add the results to the map data, writing to `A2`; `--list-writers` prints the usable writer function names instead. |
 | `atlas extract-map-data <A1> [--add <functions>] [--no-compression] [--force] [column flags]` | Write each map-data field to its own CSV (one row per map) in a directory named after the atlas; `--add` also computes writer functions to extract. |
+| `atlas extract-assignments <A1> [--no-compression] [--force] [--quiet]` | Write a single wide CSV (`name`, then one column per node) with each map's per-node district number; errors on multiscale atlases. |
 
 Run `atlas --help` or `atlas <subcommand> --help` for full option details.
 
@@ -100,6 +102,19 @@ Prints the names of the data fields (e.g. `log_spanning_trees`) contained in the
 atlas's first map, one per line, sorted. This is the same field list shown in the
 "Map Data Fields" section of `atlas info` and in the `about.md` written by `atlas
 extract-map-data`.
+
+### `atlas list-nodes`
+
+```bash
+atlas list-nodes examples/demo_grid_3x3.jsonl.gz
+atlas list-nodes examples/demo_grid_3x3.jsonl.gz --map 2
+```
+
+Prints the node ids in the atlas's k-th map (`k=1` by default; `--map` selects
+another 1-based map index) as a sorted JSON array of strings, e.g.
+`["n0","n1",...,"n8"]`. For multiscale atlases, whose node ids have more than
+one component (e.g. county + tract), each id's components are joined with `:`
+(e.g. `"county:tract"`).
 
 ### `atlas relabel`
 
@@ -304,6 +319,30 @@ atlas extract-map-data run.jsonl.gz \
 
 Without `--add`, no graph is needed — it simply streams the maps and dumps their
 existing data.
+
+### `atlas extract-assignments`
+
+```bash
+atlas extract-assignments examples/demo_grid_3x3.jsonl.gz
+```
+
+Writes a single wide CSV named after the atlas (its path with the `.jsonl` /
+`.jsonl.gz` / `.jsonl.bz2` extension removed, plus `-assignments` — e.g.
+`demo_grid_3x3-assignments.csv.gz`): one row per map, first column `name` (the
+map name), remaining columns one per node — the sorted node ids found in the
+first map — holding that node's district number in the map:
+
+```
+name,n0,n1,n2,n3,n4,n5,n6,n7,n8
+map1,1,1,1,2,2,2,3,3,3
+map2,3,3,3,1,1,1,2,2,2
+```
+
+Output is gzip-compressed by default; `--no-compression` writes plain `.csv`.
+The output file is **skipped** if it already exists; pass `--force` to
+overwrite. Every map must have exactly the first map's node set — **multiscale
+atlases are not supported yet** and produce an error (with no partial output
+file left behind).
 
 ## Example atlases
 

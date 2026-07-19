@@ -4,12 +4,14 @@
 Command-line utilities for redistricting Atlas files (see the Atlas format at
 https://github.com/jonmjonm/AtlasIO.jl/blob/main/atlas_format.md).
 
-Installs a single `atlas` command with five subcommands:
+Installs a single `atlas` command with seven subcommands:
 
   * `atlas info <atlas> [--extract-script]` — print an atlas file's header, plus
     the data field names found in its first map.
   * `atlas list-map-data <atlas>` — list the names of the data fields (e.g.
     `log_spanning_trees`) contained in the atlas's first map, one per line.
+  * `atlas list-nodes <atlas> [--map k]` — list the node ids in the atlas's
+    k-th map (k=1 by default) as a JSON array of strings.
   * `atlas relabel <A1> <A2> [<graph.json>] [--first-map] [--quiet]` — relabel
     district numbers across an atlas so consecutive maps stay consistent.
   * `atlas add <functions> <A1> <A2> [--config <param.toml>] [column flags]
@@ -18,6 +20,8 @@ Installs a single `atlas` command with five subcommands:
   * `atlas extract-map-data <A1> [--add <functions>] [--no-compression] [--force]
     [column flags]` — write each map-data field to its own CSV file (one row per
     map) in a directory named after the atlas.
+  * `atlas extract-assignments <A1> [--no-compression] [--force] [--quiet]` —
+    write a single wide CSV of each map's per-node district assignment.
 
 Run `atlas --help` or `atlas <subcommand> --help` for details.
 """
@@ -37,12 +41,14 @@ using Comonicon
 # `writeMaps!`/`atlasHeaderBytes`) is provided by AtlasIO (>= 0.1.3) and used below.
 include("threading.jl")
 include("info.jl")
+include("nodes.jl")
 include("reorder.jl")
 include("add.jl")
 include("extract.jl")
+include("assignments.jl")
 
 """
-Print an Atlas file's header (metadata and atlas parameters); the bulky embedded generating "script" is never printed (use `--extract-script` to write it out).
+Print the header of an Atlas file (metadata and atlas parameters); the bulky embedded generating `script` is never printed (use `--extract-script` to write it out).
 
 # Args
 
@@ -50,15 +56,15 @@ Print an Atlas file's header (metadata and atlas parameters); the bulky embedded
 
 # Flags
 
-- `--extract-script`: write the header's "script" entry to a file named by the
-  header's "script_name" entry (falling back to `extracted_script.jl`).
+- `--extract-script`: write the header `script` entry to a file named by the
+  header `script_name` entry (falling back to `extracted_script.jl`).
 """
 @cast function info(atlas::String; extract_script::Bool = false)
     run_info(atlas; extract_script = extract_script)
 end
 
 """
-List the names of the data fields (e.g. `log_spanning_trees`) contained in atlas A1's first map, one per line, sorted.
+List the names of the data fields (e.g. `log_spanning_trees`) contained in atlas A1 first map, one per line, sorted.
 
 # Args
 
@@ -66,6 +72,21 @@ List the names of the data fields (e.g. `log_spanning_trees`) contained in atlas
 """
 @cast function list_map_data(atlas::String)
     run_list_map_data(atlas)
+end
+
+"""
+List the node ids in atlas A1 k-th map (1-based, k=1 by default), as a JSON array of strings.
+
+# Args
+
+- `atlas`: path to the atlas file (`.jsonl`, `.jsonl.gz`, or `.jsonl.bz2`).
+
+# Options
+
+- `--map <k>`: 1-based index of the map to list nodes from (default: 1).
+"""
+@cast function list_nodes(atlas::String; map::Int = 1)
+    run_list_nodes(atlas; map = map)
 end
 
 """
@@ -90,7 +111,7 @@ Relabel district numbers across atlas A1 so consecutive maps stay as similar as 
 end
 
 """
-Add CycleWalk "pushable writer" function(s) (e.g. `get_log_spanning_trees`) to every map in atlas A1, writing the augmented atlas to A2; the dual graph is supplied via `--config` and/or the column flags.
+Add CycleWalk pushable writer function(s) (e.g. `get_log_spanning_trees`) to every map in atlas A1, writing the augmented atlas to A2; the dual graph is supplied via `--config` and/or the column flags.
 
 # Args
 
@@ -103,7 +124,7 @@ Add CycleWalk "pushable writer" function(s) (e.g. `get_log_spanning_trees`) to e
 - `--config <param.toml>`: a CycleWalk TOML; its `[plans]` table supplies the
   graph path (`map_directory`/`map_file`) and columns (`pop_col`, `geo_units`,
   `area_col`, `node_border_col`, `edge_perimeter_col`, `node_data`).
-- `--graph <graph.json>`: dual-graph JSON (overrides the TOML's path).
+- `--graph <graph.json>`: dual-graph JSON (overrides the TOML path).
 - `--pop-col <col>`: population column.
 - `--node-col <col>`: node id column (the districting key column).
 - `--area-col <col>`: node area column.
@@ -112,8 +133,9 @@ Add CycleWalk "pushable writer" function(s) (e.g. `get_log_spanning_trees`) to e
 - `--node-data <cols>`: extra node attributes to keep (comma-separated list).
 - `--vote-cols <pairs>`: vote columns for the partisan writers
   (`get_partisan_margins`, `get_partisan_seats`), as `votes1,votes2` pairs
-  separated by `;` (e.g. `"G20_PR_D,G20_PR_R;G16_PR_D,G16_PR_R"`). Each pair adds a
-  field `<writer>_<votes1>_<votes2>`; the columns are kept on the graph automatically.
+  separated by `;` (e.g. `G20_PR_D,G20_PR_R;G16_PR_D,G16_PR_R` — quote it in your
+  shell since it contains a `;`). Each pair adds a field
+  `writer_votes1_votes2`; the columns are kept on the graph automatically.
 
 # Flags
 
@@ -154,7 +176,7 @@ Write each map-data field of atlas A1 to its own CSV (one row per map) in a dire
 
 - `--add <functions>`: also compute and extract these writer function(s).
 - `--config <param.toml>`: CycleWalk TOML supplying the graph (for `--add`).
-- `--graph <graph.json>`: dual-graph JSON (overrides the TOML's path).
+- `--graph <graph.json>`: dual-graph JSON (overrides the TOML path).
 - `--pop-col <col>`: population column.
 - `--node-col <col>`: node id column (the districting key column).
 - `--area-col <col>`: node area column.
@@ -163,8 +185,8 @@ Write each map-data field of atlas A1 to its own CSV (one row per map) in a dire
 - `--node-data <cols>`: extra node attributes to keep (comma-separated list).
 - `--vote-cols <pairs>`: vote columns for the partisan `--add` writers
   (`get_partisan_margins`, `get_partisan_seats`), as `votes1,votes2` pairs separated
-  by `;` (e.g. `"G20_PR_D,G20_PR_R;G16_PR_D,G16_PR_R"`); each pair yields a field
-  `<writer>_<votes1>_<votes2>`.
+  by `;` (e.g. `G20_PR_D,G20_PR_R;G16_PR_D,G16_PR_R` — quote it in your shell since
+  it contains a `;`); each pair yields a field `writer_votes1_votes2`.
 
 # Flags
 
@@ -185,6 +207,25 @@ Write each map-data field of atlas A1 to its own CSV (one row per map) in a dire
                 node_col = node_col, area_col = area_col, border_col = border_col,
                 edge_perimeter_col = edge_perimeter_col, node_data = node_data,
                 vote_cols = vote_cols, quiet = quiet)
+end
+
+"""
+Write atlas A1's per-map district assignments to a single wide CSV named `<A1 basename>-assignments.csv[.gz]`: one row per map, columns `name` (the map name) then one column per node (the sorted node ids found in A1's first map) holding that node's district number in the map. Errors if any map's node set doesn't exactly match the first map's, including multiscale atlases (whose node ids have more than one component) — these are not supported yet.
+
+# Args
+
+- `a1`: input atlas (`.jsonl` / `.jsonl.gz` / `.jsonl.bz2`).
+
+# Flags
+
+- `--no-compression`: write plain `.csv` instead of gzip-compressed `.csv.gz`.
+- `--force`: overwrite the output file if it already exists (otherwise it is skipped).
+- `--quiet`: suppress the progress bar.
+"""
+@cast function extract_assignments(a1::String;
+                                   no_compression::Bool = false, force::Bool = false,
+                                   quiet::Bool = false)
+    run_extract_assignments(a1; compress = !no_compression, force = force, quiet = quiet)
 end
 
 # Designate this module as the CLI entry point; its `@cast` functions above
