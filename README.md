@@ -146,6 +146,7 @@ thread count with the `JULIA_NUM_THREADS` environment variable, e.g.:
 ```bash
 JULIA_NUM_THREADS=8 atlas add get_log_spanning_trees A1.jsonl.gz A2.jsonl.gz --config param.toml
 JULIA_NUM_THREADS=8 atlas relabel input.jsonl.gz relabeled.jsonl.gz
+JULIA_NUM_THREADS=8 atlas extract-map-data run.jsonl.gz --add get_log_spanning_trees --config param.toml
 ```
 
 Threaded and serial runs agree to machine precision. They are not bitwise
@@ -205,8 +206,35 @@ come from the `[plans]` keys `pop_col`, `geo_units`, `area_col`,
 `node_border_col`, `edge_perimeter_col`, and `node_data`, with the graph path
 built from `map_directory` + `map_file`.
 
+A flag overrides / fills in the same key from `--config`, so you can start from a
+run's TOML and swap in just the piece that's different — e.g. reuse `param.toml`'s
+graph and columns but point at a different population column:
+
+```bash
+atlas add get_isoperimetric_scores A1.jsonl.gz A2.jsonl.gz \
+  --config param.toml --pop-col TOTPOP
+```
+
+`--node-data` keeps extra node attributes on the reconstructed graph so writers
+that read them (or downstream analysis of the extracted CSVs) can see them —
+for example, carrying the county each node belongs to:
+
+```bash
+atlas add get_isoperimetric_scores A1.jsonl.gz A2.jsonl.gz \
+  --graph NC_pct21.json --pop-col POP20 --node-col NAME \
+  --area-col area --border-col border_length --edge-perimeter-col length \
+  --node-data COUNTY
+```
+
 By default it is an error for a requested field to already exist on a map; pass
-`--overwrite` to recompute it instead. The output atlas's header records an
+`--overwrite` to recompute it instead, e.g. after fixing a bug in a writer:
+
+```bash
+atlas add get_isoperimetric_scores A1.jsonl.gz A2.jsonl.gz \
+  --graph NC_pct21.json --pop-col POP20 --node-col NAME --overwrite
+```
+
+The output atlas's header records an
 `"added map data"` provenance entry (visible in `atlas info`) listing the added
 fields, the graph used, and the date; adding fields does not change the map data
 type (`Dict{String,Any}`), so the atlas stays readable by any existing reader.
