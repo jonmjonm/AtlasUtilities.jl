@@ -1,6 +1,6 @@
 name = "AtlasUtilities"
 uuid = "020ba7bf-05d8-4817-8da0-aeeb372d76a1"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Jonathan Mattingly <jonathan.mattingly@gmail.com>"]
 
 [deps]
