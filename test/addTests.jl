@@ -10,7 +10,11 @@ using CycleWalk: get_log_spanning_trees, get_isoperimetric_scores
 using AtlasUtilities: parseFunctionNames, resolveFunctions, resolveGraphSpec,
                      writeHeaderWithProvenance, GraphSpec, run_add, buildGraph,
                      evalWriters, evalWritersTreeless, evalWritersLCP, allTreeless,
-                     hasFastMethod, parseVotePairs, voteColumns
+                     hasFastMethod, parseVotePairs, voteColumns,
+                     cycleWalkWriterNames, run_list_writers, PARTISAN_WRITERS,
+                     add
+
+# capture_stdout is defined in infoTests.jl, included before this file (see runtests.jl).
 
 # resolveGraphSpec takes only keyword arguments; default them all to "".
 rgs(; kw...) = resolveGraphSpec(; config = "", graph = "", pop_col = "",
@@ -35,6 +39,42 @@ rgs(; kw...) = resolveGraphSpec(; config = "", graph = "", pop_col = "",
         @test fns[1][2] === get_log_spanning_trees
         @test fns[2][2] === get_isoperimetric_scores
         @test_throws ErrorException resolveFunctions(["no_such_function_xyz"])
+    end
+
+    @testset "cycleWalkWriterNames: sorted, resolvable, excludes partisan writers" begin
+        writerNames = cycleWalkWriterNames()
+        @test !isempty(writerNames)
+        @test issorted(writerNames)
+        @test "get_log_spanning_trees" in writerNames        # a known plain writer
+        @test isempty(intersect(writerNames, PARTISAN_WRITERS))
+
+        # Every listed name must actually resolve via resolveFunctions (the same
+        # path `atlas add <name> ...` takes).
+        for n in writerNames
+            fns = resolveFunctions([n])
+            @test fns[1][1] == n
+        end
+    end
+
+    @testset "run_list_writers: prints plain + partisan writers" begin
+        out = capture_stdout() do
+            run_list_writers()
+        end
+        @test occursin("get_log_spanning_trees", out)
+        @test occursin("get_partisan_margins", out)
+        @test occursin("get_partisan_seats", out)
+        @test occursin("--vote-cols", out)
+    end
+
+    @testset "atlas add --list-writers: short-circuits without functions/a1/a2" begin
+        out = capture_stdout() do
+            add(; list_writers = true)
+        end
+        @test occursin("get_log_spanning_trees", out)
+    end
+
+    @testset "atlas add: missing functions/a1/a2 errors clearly (without --list-writers)" begin
+        @test_throws ErrorException add()
     end
 
     @testset "resolveGraphSpec: flags only" begin

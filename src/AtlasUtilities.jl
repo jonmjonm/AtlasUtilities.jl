@@ -117,17 +117,26 @@ Add CycleWalk "pushable writer" function(s) (e.g. `get_log_spanning_trees`) to e
 
 # Flags
 
+- `--list-writers`: print the CycleWalk writer function names usable as `functions`
+  (plain and partisan) and exit; `functions`/`a1`/`a2` are not required with this flag.
 - `--overwrite`: recompute a field even if a map already has it (otherwise it is
   an error for a requested field to already exist).
 - `--quiet`: suppress the progress bar.
 """
-@cast function add(functions::String, a1::String, a2::String;
+@cast function add(functions::String = "", a1::String = "", a2::String = "";
+                   list_writers::Bool = false,
                    config::String = "", graph::String = "",
                    pop_col::String = "", node_col::String = "",
                    area_col::String = "", border_col::String = "",
                    edge_perimeter_col::String = "", node_data::String = "",
                    vote_cols::String = "",
                    overwrite::Bool = false, quiet::Bool = false)
+    if list_writers
+        run_list_writers()
+        return
+    end
+    (isempty(functions) || isempty(a1) || isempty(a2)) &&
+        error("atlas add: <functions> <a1> <a2> are required (unless --list-writers).")
     run_add(functions, a1, a2; config = config, graph = graph, pop_col = pop_col,
             node_col = node_col, area_col = area_col, border_col = border_col,
             edge_perimeter_col = edge_perimeter_col, node_data = node_data,

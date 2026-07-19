@@ -110,6 +110,57 @@ function resolveFunctions(names::Vector{String},
     return fns
 end
 
+"""
+    cycleWalkWriterNames() -> Vector{String}
+
+The names of plain CycleWalk writer functions usable with `atlas add` / `--add`:
+every `get_*` function CycleWalk defines with a method accepting a single
+`LinkCutPartition` (the object [`evalWritersLCP`](@ref) reconstructs and calls
+`f(partition)` on), sorted alphabetically. This is exactly the set `resolveFunctions`
+would accept for a non-partisan name -- computed by inspecting methods rather than a
+hard-coded list, so it stays correct as CycleWalk adds writers. Excludes writers that
+only accept some other representation (e.g. `MultiLevelPartition`, a raw edge vector),
+since `atlas add` can't call those, and excludes the partisan writers (see
+`PARTISAN_WRITERS`), which take vote columns rather than a bare partition.
+"""
+function cycleWalkWriterNames()
+    writerNames = String[]
+    for n in names(CycleWalk; all = true)
+        s = string(n)
+        (startswith(s, "get_") && !(s in PARTISAN_WRITERS)) || continue
+        isdefined(CycleWalk, n) || continue
+        f = getfield(CycleWalk, n)
+        f isa Function || continue
+        hasmethod(f, Tuple{LinkCutPartition}) && push!(writerNames, s)
+    end
+    return sort!(writerNames)
+end
+
+"""
+    run_list_writers()
+
+Print the CycleWalk writer functions usable with `atlas add <functions>` / `atlas
+extract-map-data --add <functions>` (see [`cycleWalkWriterNames`](@ref)): plain
+writers one per line (marked `(fast)` when they offer the partition-free method
+`allTreeless`/`evalWritersTreeless` can use), then the partisan writers, which
+additionally require `--vote-cols votes1,votes2[;votes1,votes2...]`.
+"""
+function run_list_writers()
+    println("Writer functions usable with atlas add / --add (CycleWalk ",
+            pkgversion(CycleWalk), "):")
+    println()
+    for n in cycleWalkWriterNames()
+        marker = hasFastMethod(getfield(CycleWalk, Symbol(n))) ? " (fast)" : ""
+        println("  ", n, marker)
+    end
+    println()
+    println("Partisan writers (require --vote-cols votes1,votes2[;votes1,votes2...]):")
+    for n in sort(collect(PARTISAN_WRITERS))
+        println("  ", n)
+    end
+    return nothing
+end
+
 # ---------------------------------------------------------------------------
 # Resolving the graph specification
 # ---------------------------------------------------------------------------

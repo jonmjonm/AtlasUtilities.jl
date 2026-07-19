@@ -11,7 +11,7 @@ The package installs a single `atlas` command with five subcommands:
 | `atlas info <atlas> [--extract-script]` | Print an atlas file's header — the metadata line, the atlas-parameter line, and the data field names found in its first map. The bulky embedded `script` source is never printed; `--extract-script` writes it to its own file instead. |
 | `atlas list-map-data <atlas>` | List the names of the data fields (e.g. `log_spanning_trees`) contained in the atlas's first map, one per line. |
 | `atlas relabel <A1> <A2> [<graph.json>] [--first-map] [--quiet]` | Relabel district numbers across every map in atlas `A1` so consecutive maps stay as consistent as possible, writing the result to `A2`. |
-| `atlas add <functions> <A1> <A2> [--config <param.toml>] [column flags] [--overwrite] [--quiet]` | Evaluate one or more CycleWalk "pushable writer" functions (e.g. `get_log_spanning_trees`) on every map in `A1` and add the results to the map data, writing to `A2`. |
+| `atlas add <functions> <A1> <A2> [--config <param.toml>] [column flags] [--overwrite] [--quiet]` / `atlas add --list-writers` | Evaluate one or more CycleWalk "pushable writer" functions (e.g. `get_log_spanning_trees`) on every map in `A1` and add the results to the map data, writing to `A2`; `--list-writers` prints the usable writer function names instead. |
 | `atlas extract-map-data <A1> [--add <functions>] [--no-compression] [--force] [column flags]` | Write each map-data field to its own CSV (one row per map) in a directory named after the atlas; `--add` also computes writer functions to extract. |
 
 Run `atlas --help` or `atlas <subcommand> --help` for full option details.
@@ -165,6 +165,14 @@ when it writes out the data:
 
 ```bash
 atlas add get_log_spanning_trees A1.jsonl.gz A2.jsonl.gz --config param.toml
+```
+
+Not sure which writer names are available? `--list-writers` prints every usable
+CycleWalk writer function (and exits — `functions`/`A1`/`A2` aren't required with
+this flag):
+
+```bash
+atlas add --list-writers
 ```
 
 Pass a single name, a comma-separated list, or a bracketed list to add several in
