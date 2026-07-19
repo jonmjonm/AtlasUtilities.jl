@@ -4,9 +4,12 @@
 Command-line utilities for redistricting Atlas files (see the Atlas format at
 https://github.com/jonmjonm/AtlasIO.jl/blob/main/atlas_format.md).
 
-Installs a single `atlas` command with four subcommands:
+Installs a single `atlas` command with five subcommands:
 
-  * `atlas info <atlas> [--extract-script]` — print an atlas file's header.
+  * `atlas info <atlas> [--extract-script]` — print an atlas file's header, plus
+    the data field names found in its first map.
+  * `atlas list-map-data <atlas>` — list the names of the data fields (e.g.
+    `log_spanning_trees`) contained in the atlas's first map, one per line.
   * `atlas relabel <A1> <A2> [<graph.json>] [--first-map] [--quiet]` — relabel
     district numbers across an atlas so consecutive maps stay consistent.
   * `atlas add <functions> <A1> <A2> [--config <param.toml>] [column flags]
@@ -52,6 +55,17 @@ Print an Atlas file's header (metadata and atlas parameters); the bulky embedded
 """
 @cast function info(atlas::String; extract_script::Bool = false)
     run_info(atlas; extract_script = extract_script)
+end
+
+"""
+List the names of the data fields (e.g. `log_spanning_trees`) contained in atlas A1's first map, one per line, sorted.
+
+# Args
+
+- `atlas`: path to the atlas file (`.jsonl`, `.jsonl.gz`, or `.jsonl.bz2`).
+"""
+@cast function list_map_data(atlas::String)
+    run_list_map_data(atlas)
 end
 
 """

@@ -2,7 +2,8 @@
 
 using Test
 using AtlasIO
-using AtlasUtilities: formatValue, printBlock, run_info
+using AtlasUtilities: formatValue, printBlock, run_info, run_list_map_data,
+                      firstMapFieldNames
 
 """Run `f()` capturing everything it writes to stdout, returned as a String."""
 function capture_stdout(f)
@@ -22,13 +23,22 @@ function capture_stderr(f)
     end
 end
 
-"""Write a minimal atlas at `path` whose header (line 3) is `atlasParam`."""
-function writeAtlas(path, atlasParam)
+"""Write a minimal atlas at `path` whose header (line 3) is `atlasParam`; the one
+trivial map's data is `mapData` (empty by default)."""
+function writeAtlas(path, atlasParam; mapData = Dict{String,Any}())
     io = smartOpen(path, "w")
     newAtlas(io, AtlasHeader("desc", "2026-01-02T03:04:05", Dict{String,Any}, Dict{String,Any}),
              atlasParam)
     # One trivial map so the file is a well-formed atlas.
-    addMap(io, Map("m1", Districting(("a",) => 1, ("b",) => 2), 1, Dict{String,Any}()))
+    addMap(io, Map("m1", Districting(("a",) => 1, ("b",) => 2), 1, mapData))
+    close(io)
+end
+
+"""Write a minimal atlas at `path` with no maps at all (header only)."""
+function writeEmptyAtlas(path, atlasParam)
+    io = smartOpen(path, "w")
+    newAtlas(io, AtlasHeader("desc", "2026-01-02T03:04:05", Dict{String,Any}, Dict{String,Any}),
+             atlasParam)
     close(io)
 end
 
@@ -149,6 +159,78 @@ end
         @test occursin("no \"script\" entry", out)      # and also on stdout
         @test isempty(readdir(dir)) == false            # only the atlas file exists
         @test !any(f -> endswith(f, ".jl"), readdir(dir))
+    end
+
+    @testset "run_info: lists first map's data field names" begin
+        dir = mktempdir()
+        path = joinpath(dir, "a.jsonl")
+        writeAtlas(path, Dict{String,Any}("districts" => 5);
+                  mapData = Dict{String,Any}("log_spanning_trees" => 1.2, "alpha" => 3))
+
+        out = capture_stdout() do
+            run_info(path)
+        end
+
+        @test occursin("Map Data Fields", out)
+        @test occursin("log_spanning_trees", out)
+        # Field names are listed, sorted.
+        @test findfirst("alpha", out).start < findfirst("log_spanning_trees", out).start
+    end
+
+    @testset "run_info: no maps prints (none) for Map Data Fields" begin
+        dir = mktempdir()
+        path = joinpath(dir, "a.jsonl")
+        writeEmptyAtlas(path, Dict{String,Any}("districts" => 1))
+
+        out = capture_stdout() do
+            run_info(path)
+        end
+
+        @test occursin("Map Data Fields", out)
+        @test occursin("(none)", out)
+    end
+
+    @testset "firstMapFieldNames: sorted names, nothing when no maps" begin
+        dir = mktempdir()
+
+        path = joinpath(dir, "a.jsonl")
+        writeAtlas(path, Dict{String,Any}();
+                  mapData = Dict{String,Any}("zeta" => 1, "alpha" => 2))
+        io = smartOpen(path, "r"); atlas = openAtlas(io)
+        @test firstMapFieldNames(atlas) == ["alpha", "zeta"]
+        close(atlas)
+
+        emptyPath = joinpath(dir, "empty.jsonl")
+        writeEmptyAtlas(emptyPath, Dict{String,Any}())
+        io2 = smartOpen(emptyPath, "r"); atlas2 = openAtlas(io2)
+        @test firstMapFieldNames(atlas2) === nothing
+        close(atlas2)
+    end
+
+    @testset "run_list_map_data: prints sorted field names, one per line" begin
+        dir = mktempdir()
+        path = joinpath(dir, "a.jsonl")
+        writeAtlas(path, Dict{String,Any}();
+                  mapData = Dict{String,Any}("log_spanning_trees" => 1.0, "alpha" => 2))
+
+        out = capture_stdout() do
+            run_list_map_data(path)
+        end
+        lines = filter(!isempty, split(out, '\n'))
+
+        @test lines == ["alpha", "log_spanning_trees"]
+    end
+
+    @testset "run_list_map_data: no maps prints a message, no field lines" begin
+        dir = mktempdir()
+        path = joinpath(dir, "a.jsonl")
+        writeEmptyAtlas(path, Dict{String,Any}())
+
+        out = capture_stdout() do
+            run_list_map_data(path)
+        end
+
+        @test occursin("no maps", out)
     end
 
     @testset "run_info: gzip-compressed atlas reads fine" begin

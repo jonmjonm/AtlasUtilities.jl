@@ -64,14 +64,16 @@ end
 # ---------------------------------------------------------------------------
 
 """
-    writeAboutFile(outdir, A1, atlas) -> String
+    writeAboutFile(outdir, A1, atlas, fieldNames) -> String
 
 Write an `about.md` into `outdir` describing the extraction: the source atlas name,
 the extraction date, and the atlas's header information -- everything `atlas info`
-shows except the bulky embedded generating script (see `atlasHeaderInfo`). Returns
-the path written.
+shows except the bulky embedded generating script (see `atlasHeaderInfo`), including
+`fieldNames` (the data field names found in the first map, e.g.
+`log_spanning_trees`). Returns the path written.
 """
-function writeAboutFile(outdir::AbstractString, A1::AbstractString, atlas)
+function writeAboutFile(outdir::AbstractString, A1::AbstractString, atlas,
+                        fieldNames::AbstractVector{<:AbstractString})
     path = joinpath(outdir, "about.md")
     open(path, "w") do io
         println(io, "# ", basename(String(A1)), " — extracted map data")
@@ -83,7 +85,7 @@ function writeAboutFile(outdir::AbstractString, A1::AbstractString, atlas)
                     "embedded generating script is omitted):")
         println(io)
         println(io, "```")
-        print(io, atlasHeaderInfo(atlas))
+        print(io, atlasHeaderInfo(atlas, fieldNames))
         println(io, "```")
     end
     return path
@@ -145,13 +147,13 @@ function run_extract(A1::AbstractString;
         return nothing
     end
 
+    # --- set up output streams from the first map ------------------------------
+    first = nextMap(atlas)
+
     # Always (re)write about.md, regardless of which CSV fields are actually
     # written below -- it should describe the atlas even on a re-run where every
     # target CSV already exists and is skipped.
-    writeAboutFile(outdir, String(A1), atlas)
-
-    # --- set up output streams from the first map ------------------------------
-    first = nextMap(atlas)
+    writeAboutFile(outdir, String(A1), atlas, sort(collect(keys(first.data))))
 
     shouldWrite(field) = force || !isfile(joinpath(outdir, field * ext))
 

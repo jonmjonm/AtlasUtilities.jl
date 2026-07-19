@@ -64,16 +64,48 @@ end
 """Print a titled block (see [`blockString`](@ref))."""
 printBlock(title::String, pairs::Vector{<:Pair}) = print(blockString(title, pairs))
 
+"""Render a titled block listing bare names (no values), one per line, sorted."""
+function nameListBlock(title::String, names::AbstractVector{<:AbstractString})
+    io = IOBuffer()
+    println(io, title)
+    println(io, "="^length(title))
+    if isempty(names)
+        println(io, "  (none)")
+    else
+        for n in sort(collect(names))
+            println(io, "  ", n)
+        end
+    end
+    println(io)
+    return String(take!(io))
+end
+
 """
-    atlasHeaderInfo(atlas) -> String
+    firstMapFieldNames(atlas) -> Union{Vector{String},Nothing}
+
+The sorted names of the data fields (e.g. `log_spanning_trees`) contained in
+`atlas`'s first map, or `nothing` if the atlas has no maps (as opposed to a map
+whose data is empty, which returns `String[]`). Reads (consumes) the first map
+from `atlas`'s stream.
+"""
+function firstMapFieldNames(atlas)
+    eof(atlas) && return nothing
+    m = nextMap(atlas)
+    return sort(collect(keys(m.data)))
+end
+
+"""
+    atlasHeaderInfo(atlas, fieldNames = String[]) -> String
 
 The atlas's header rendered as text: the "Atlas Header" block (description, date,
-map/weight types) followed by the "Atlas Parameters" block, with the bulky embedded
+map/weight types), the "Atlas Parameters" block, and a "Map Data Fields" block
+listing `fieldNames` (the field names found in the first map, e.g.
+`log_spanning_trees`; see [`firstMapFieldNames`](@ref)), with the bulky embedded
 generating `script` entry omitted. This is exactly what `atlas info` prints (minus
 the script) and is reused verbatim in the `about.md` that `atlas extract-map-data`
 writes alongside the CSVs.
 """
-function atlasHeaderInfo(atlas)
+function atlasHeaderInfo(atlas, fieldNames::AbstractVector{<:AbstractString} = String[])
     hdr = blockString("Atlas Header", Pair[
         "description"    => atlas.description,
         "date"           => atlas.date,
@@ -83,24 +115,29 @@ function atlasHeaderInfo(atlas)
     param = atlas.atlasParam
     keysToShow = filter(!isequal(SCRIPT_KEY), collect(keys(param)))
     params = blockString("Atlas Parameters", Pair[k => param[k] for k in keysToShow])
-    return hdr * params
+    fields = nameListBlock("Map Data Fields", fieldNames)
+    return hdr * params * fields
 end
 
 """
     run_info(atlasPath; extract_script = false)
 
-Print the header of the atlas at `atlasPath`. With `extract_script = true`, also
-write the header's "script" entry to a file named by its "script_name" entry
-(falling back to "extracted_script.jl"); warns if there is no script entry.
+Print the header of the atlas at `atlasPath`, plus the names of the data fields
+found in its first map. With `extract_script = true`, also write the header's
+"script" entry to a file named by its "script_name" entry (falling back to
+"extracted_script.jl"); warns if there is no script entry.
 """
 function run_info(atlasPath::AbstractString; extract_script::Bool = false)
     io = smartOpen(String(atlasPath), "r")
     atlas = openAtlas(io)
 
-    # Header metadata (line 2) + atlas parameters (line 3), minus the script source.
-    print(atlasHeaderInfo(atlas))
-
     param = atlas.atlasParam
+    fieldNames = something(firstMapFieldNames(atlas), String[])
+
+    # Header metadata (line 2) + atlas parameters (line 3), minus the script source,
+    # plus the first map's data field names.
+    print(atlasHeaderInfo(atlas, fieldNames))
+
     if extract_script
         if haskey(param, SCRIPT_KEY)
             outName = get(param, SCRIPT_NAME_KEY, "extracted_script.jl")
@@ -116,5 +153,26 @@ function run_info(atlasPath::AbstractString; extract_script::Bool = false)
     end
 
     close(atlas)
+    return nothing
+end
+
+"""
+    run_list_map_data(atlasPath)
+
+Print the names of the data fields (e.g. `log_spanning_trees`) contained in the
+first map of the atlas at `atlasPath`, one per line, sorted.
+"""
+function run_list_map_data(atlasPath::AbstractString)
+    io = smartOpen(String(atlasPath), "r")
+    atlas = openAtlas(io)
+    fieldNames = firstMapFieldNames(atlas)
+    close(atlas)
+    if fieldNames === nothing
+        println("atlas list-map-data: $atlasPath has no maps; nothing to list.")
+    elseif isempty(fieldNames)
+        println("atlas list-map-data: $atlasPath's first map has no data fields.")
+    else
+        foreach(println, fieldNames)
+    end
     return nothing
 end

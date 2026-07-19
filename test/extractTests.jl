@@ -147,6 +147,8 @@ rowsof(s) = filter(!isempty, split(s, "\n"))
         @test occursin("Atlas Header", txt)
         @test occursin("Atlas Parameters", txt)
         @test occursin("districts", txt)                 # a real header param
+        @test occursin("Map Data Fields", txt)
+        @test occursin("get_log_spanning_trees", txt)    # first map's field names
 
         # the embedded script source is NOT leaked (only its script_name may appear)
         a = openAtlas(smartOpen(atlaspath, "r"))
