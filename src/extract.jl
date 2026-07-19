@@ -145,6 +145,11 @@ function run_extract(A1::AbstractString;
         return nothing
     end
 
+    # Always (re)write about.md, regardless of which CSV fields are actually
+    # written below -- it should describe the atlas even on a re-run where every
+    # target CSV already exists and is skipped.
+    writeAboutFile(outdir, String(A1), atlas)
+
     # --- set up output streams from the first map ------------------------------
     first = nextMap(atlas)
 
@@ -188,9 +193,6 @@ function run_extract(A1::AbstractString;
                 "pass --force to overwrite).")
         return nothing
     end
-
-    # Now that we know CSVs are being written, drop an about.md describing the atlas.
-    writeAboutFile(outdir, String(A1), atlas)
 
     # --- stream the remaining maps in batches ---------------------------------
     # Read serially, then per map parse + compute (--add) + render each field's row
