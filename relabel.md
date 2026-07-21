@@ -116,6 +116,7 @@ for m = 2 … M:
 
 ```
 atlas relabel <A1> <A2> [<graph.json>] [--first-map] [--quiet]
+              [--weight-population <pop.json> --population-attr <attr>]
 ```
 
 - `<A1>` input atlas filename (any AtlasIO-supported extension)
@@ -124,14 +125,52 @@ atlas relabel <A1> <A2> [<graph.json>] [--first-map] [--quiet]
   multiscale atlases whose per-map node sets vary
 - `--first-map` optional; switches from chained to anchor alignment
 - `--quiet` optional; suppresses the progress bar
+- `--weight-population <pop.json>` optional; weights the alignment by
+  population instead of raw node counts (see below). Requires
+  `--population-attr`.
+- `--population-attr <attr>` the population attribute name on `<pop.json>`'s
+  nodes (e.g. `pop2020cen`). Required by `--weight-population`.
+
+## Population-weighted distance
+
+By default every node/finest-unit contributes 1 to the confusion matrix, so
+the distance minimized is the plain node-count Hamming distance. Passing
+`--weight-population <pop.json> --population-attr <attr>` instead makes each
+node/finest-unit contribute its population, so the alignment minimizes
+population-displaced-across-districts rather than area count.
+
+`<pop.json>` is a NetworkX node-link JSON — often literally the same file
+passed as `<graph.json>`, since dual-graph files typically already carry a
+population attribute (e.g. NC_pct21.json's nodes have `pop2020cen`) alongside
+the level attributes. Its nodes are keyed the same way as the dual-graph
+hierarchy: by the tuple of attributes named in the atlas param
+`"levels in graph"`. This param is required whether or not `<graph.json>` is
+also given — i.e. population weighting works for both fixed-resolution and
+multiscale atlases:
+
+- **Multiscale** (`<graph.json>` given): each *finest* unit contributes its
+  own population exactly once, no matter how coarsely either map represents
+  it — this falls out naturally since `reOrder` already resolves both maps to
+  finest units before comparing.
+- **Fixed-resolution** (`<graph.json>` omitted): the atlas's node keys must
+  match `<pop.json>`'s keys directly (both at the `"levels in graph"`
+  resolution).
 
 Parsing/serialization runs across the threads Julia was started with. Because the
 installed command runs on a prebuilt system image, set `JULIA_NUM_THREADS`
 (e.g. `JULIA_NUM_THREADS=8 atlas relabel …`) to enable parallelism; the default
 of one thread runs serially.
 
-A progress bar (live count of maps written, on `stderr`) is shown by default
-since the atlas header carries no map count; `--quiet` turns it off.
+A progress bar (on `stderr`) is shown by default since the atlas header carries
+no map count; `--quiet` turns it off. It shows a live count of maps written and
+the running mean achieved Hamming distance — the distance between each map and
+the reference it was just aligned to, after relabeling — as a diagnostic on
+alignment quality. A low mean distance means consecutive maps in the walk are
+genuinely similar (or the alignment is finding a good match despite label
+churn); a high or rising mean can indicate the walk is drifting, or (in
+`--first-map` mode) that later maps are drifting far from the anchor. This
+adds no extra pass over map nodes — it's computed from the same confusion
+matrix already built to find the alignment.
 
 ## Performance & threading
 

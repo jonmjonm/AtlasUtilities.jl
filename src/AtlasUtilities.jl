@@ -12,7 +12,8 @@ Installs a single `atlas` command with seven subcommands:
     `log_spanning_trees`) contained in the atlas's first map, one per line.
   * `atlas list-nodes <atlas> [--map k]` — list the node ids in the atlas's
     k-th map (k=1 by default) as a JSON array of strings.
-  * `atlas relabel <Atlas1> <Atlas2> [<graph.json>] [--first-map] [--quiet]` — relabel
+  * `atlas relabel <Atlas1> <Atlas2> [<graph.json>] [--first-map] [--quiet]
+    [--weight-population <pop.json> --population-attr <attr>]` — relabel
     district numbers across an atlas so consecutive maps stay consistent.
   * `atlas add <functions> <Atlas1> <Atlas2> [--config <param.toml>] [column flags]
     [--overwrite] [--quiet]` — evaluate one or more CycleWalk "pushable writer"
@@ -99,15 +100,28 @@ Relabel district numbers across atlas Atlas1 so consecutive maps stay as similar
 - `graph`: optional dual-graph hierarchy (NetworkX node-link JSON). Required for
   multiscale/hierarchical atlases whose per-map node sets vary.
 
+# Options
+
+- `--weight-population <pop.json>`: weight the alignment by population instead
+  of raw node counts. `<pop.json>` is a node-link JSON (often the same file as
+  `graph`) whose nodes carry a population attribute, named by
+  `--population-attr`, and are keyed by the atlas's `"levels in graph"` param.
+  Requires `--population-attr`.
+- `--population-attr <name>`: the population attribute name on `<pop.json>`'s
+  nodes (e.g. `pop2020cen`). Required by `--weight-population`.
+
 # Flags
 
 - `--first-map`: align every map to map 1 (anchor) instead of to its predecessor.
 - `--quiet`: suppress the progress bar.
 """
 @cast function relabel(atlas1::String, atlas2::String, graph::String = "";
-                       first_map::Bool = false, quiet::Bool = false)
+                       first_map::Bool = false, quiet::Bool = false,
+                       weight_population::String = "", population_attr::String = "")
     run_reorder(atlas1, atlas2, isempty(graph) ? nothing : graph;
-                firstMap = first_map, quiet = quiet)
+                firstMap = first_map, quiet = quiet,
+                popJsonPath = isempty(weight_population) ? nothing : weight_population,
+                popAttr = isempty(population_attr) ? nothing : population_attr)
 end
 
 """
