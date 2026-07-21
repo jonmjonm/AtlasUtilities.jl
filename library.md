@@ -44,6 +44,7 @@ end
 | [`hammingDistance`](#hammingdistance) | District-wise Hamming distance between two maps *as currently labeled*. |
 | [`Hierarchy`](#hierarchy-loadhierarchy-and-loadpopulation), [`loadHierarchy`](#hierarchy-loadhierarchy-and-loadpopulation) | Represent/load a dual-graph hierarchy for multiscale atlases. |
 | [`loadPopulation`](#hierarchy-loadhierarchy-and-loadpopulation) | Load per-node population from a dual-graph JSON, for population-weighted alignment. |
+| [`atlasInfo`](#atlasinfo) | Structured atlas metadata (header, parameters, map data field names) — the data behind `atlas info`. |
 | [`listMapData`](#listmapdata) | List the data field names in an atlas's first map. |
 
 `findRelabeling`, `confusionMatrix`, and `hammingDistance` each have two
@@ -153,6 +154,29 @@ pop = loadPopulation("graph.json", ["county", "prec_id"], "pop2020cen")
 σ = findRelabeling(ref, cur, d, h; pop)
 ```
 
+### `atlasInfo`
+
+```julia
+atlasInfo(atlasPath::AbstractString) -> Dict{String,Any}
+atlasInfo(atlas) -> Dict{String,Any}
+```
+
+Returns the same metadata `atlas info` prints, as data rather than formatted
+text: `"header"` (description, date, map param type, weight type),
+`"parameters"` (`atlas.atlasParam` verbatim, including the bulky `script`
+entry — unlike the CLI's printed output, nothing is filtered out here), and
+`"map_data"` (the sorted field names found in the atlas's first map, or an
+empty vector if it has no maps).
+
+The path/URL form opens and closes the atlas for you (via `smartOpen`/
+`openAtlas`); the other form takes an atlas you already have open — useful if
+you're already mid-stream and don't want to reopen the file.
+
+```julia
+info = atlasInfo("atlas.jsonl.gz")
+info["header"]["description"]
+info["parameters"]["districts"]
+info["map_data"]                  # e.g. ["log_spanning_trees", ...]
 ### `listMapData`
 
 ```julia

@@ -95,6 +95,41 @@ function firstMapFieldNames(atlas)
 end
 
 """
+    atlasInfo(atlasPathOrAtlas) -> Dict{String,Any}
+
+Structured atlas metadata, for programmatic (library) use. Returns a dict with:
+- `"header"`: description, date, map param type, weight type
+- `"parameters"`: `atlas.atlasParam` verbatim (including the bulky `script` entry)
+- `"map_data"`: the sorted field names found in the atlas's first map
+
+Accepts either an already-open atlas (as returned by `AtlasIO.openAtlas`) or a
+path/URL, which is opened via `smartOpen`/`openAtlas` and closed before
+returning. `run_info` builds on this for display, stripping `script` and
+formatting the rest.
+"""
+function atlasInfo(atlasPath::AbstractString)
+    io = smartOpen(String(atlasPath), "r")
+    atlas = openAtlas(io)
+    info = atlasInfo(atlas)
+    close(atlas)
+    return info
+end
+
+function atlasInfo(atlas)
+    fieldNames = something(firstMapFieldNames(atlas), String[])
+    return Dict{String,Any}(
+        "header" => Dict{String,Any}(
+            "description"    => atlas.description,
+            "date"           => atlas.date,
+            "map param type" => string(atlas.mapParamType),
+            "weight type"    => string(atlas.weightType),
+        ),
+        "parameters" => atlas.atlasParam,
+        "map_data"   => fieldNames,
+    )
+end
+
+"""
     atlasHeaderInfo(atlas, fieldNames = String[]) -> String
 
 The atlas's header rendered as text: the "Atlas Header" block (description, date,
@@ -131,8 +166,9 @@ function run_info(atlasPath::AbstractString; extract_script::Bool = false)
     io = smartOpen(String(atlasPath), "r")
     atlas = openAtlas(io)
 
-    param = atlas.atlasParam
-    fieldNames = something(firstMapFieldNames(atlas), String[])
+    info = atlasInfo(atlas)
+    param = info["parameters"]
+    fieldNames = info["map_data"]
 
     # Header metadata (line 2) + atlas parameters (line 3), minus the script source,
     # plus the first map's data field names.
