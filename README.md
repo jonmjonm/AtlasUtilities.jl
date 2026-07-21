@@ -18,8 +18,9 @@ The package installs a single `atlas` command with seven subcommands:
 
 Run `atlas --help` or `atlas <subcommand> --help` for full option details.
 
-The district-relabeling/alignment logic behind `atlas relabel` is also usable
-directly from other Julia code — see [library.md](library.md).
+The district-relabeling/alignment logic behind `atlas relabel`, and the
+structured metadata behind `atlas info`, are also usable directly from other
+Julia code — see [library.md](library.md).
 
 ## Installation
 
@@ -94,6 +95,9 @@ atlas info examples/cycleWalk_ct_metadata.jsonl.gz --extract-script
 
 The script is written to the filename recorded in the header's `script_name`
 entry (falling back to `extracted_script.jl`).
+
+The same metadata is available as data (not just printed text) via the
+`atlasInfo` library function — see [library.md](library.md#atlasinfo).
 
 ### `atlas list-map-data`
 

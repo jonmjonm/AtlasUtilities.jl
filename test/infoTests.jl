@@ -3,7 +3,7 @@
 using Test
 using AtlasIO
 using AtlasUtilities: formatValue, printBlock, run_info, run_list_map_data,
-                      firstMapFieldNames
+                      firstMapFieldNames, atlasInfo
 
 """Run `f()` capturing everything it writes to stdout, returned as a String."""
 function capture_stdout(f)
@@ -205,6 +205,54 @@ end
         io2 = smartOpen(emptyPath, "r"); atlas2 = openAtlas(io2)
         @test firstMapFieldNames(atlas2) === nothing
         close(atlas2)
+    end
+
+    @testset "atlasInfo: header, parameters (incl. script), and map_data" begin
+        dir = mktempdir()
+        path = joinpath(dir, "a.jsonl")
+        writeAtlas(path, Dict{String,Any}(
+            "districts"   => 5,
+            "script_name" => "run.jl",
+            "script"      => "print(\"hello\")\n",
+        ); mapData = Dict{String,Any}("log_spanning_trees" => 1.2, "alpha" => 3))
+
+        info = atlasInfo(path)
+
+        @test info["header"]["description"] == "desc"
+        @test info["header"]["date"] == "2026-01-02T03:04:05"
+        @test haskey(info["header"], "map param type")
+        @test haskey(info["header"], "weight type")
+
+        @test info["parameters"]["districts"] == 5
+        @test info["parameters"]["script"] == "print(\"hello\")\n"  # script IS included
+
+        @test info["map_data"] == ["alpha", "log_spanning_trees"]  # sorted
+    end
+
+    @testset "atlasInfo: no maps yields empty map_data" begin
+        dir = mktempdir()
+        path = joinpath(dir, "empty.jsonl")
+        writeEmptyAtlas(path, Dict{String,Any}("districts" => 1))
+
+        info = atlasInfo(path)
+
+        @test info["map_data"] == String[]
+    end
+
+    @testset "atlasInfo: accepts an already-open atlas, same result as by path" begin
+        dir = mktempdir()
+        path = joinpath(dir, "a.jsonl")
+        writeAtlas(path, Dict{String,Any}("districts" => 7);
+                  mapData = Dict{String,Any}("zeta" => 1))
+
+        io = smartOpen(path, "r")
+        atlas = openAtlas(io)
+        info = atlasInfo(atlas)
+        close(atlas)
+
+        @test info["header"]["description"] == "desc"
+        @test info["parameters"]["districts"] == 7
+        @test info["map_data"] == ["zeta"]
     end
 
     @testset "run_list_map_data: prints sorted field names, one per line" begin
