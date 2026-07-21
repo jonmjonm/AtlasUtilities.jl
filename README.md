@@ -18,6 +18,9 @@ The package installs a single `atlas` command with seven subcommands:
 
 Run `atlas --help` or `atlas <subcommand> --help` for full option details.
 
+The district-relabeling/alignment logic behind `atlas relabel` is also usable
+directly from other Julia code — see [library.md](library.md).
+
 ## Installation
 
 `atlas` is built with [Comonicon](https://comonicon.org). Installing the package
@@ -411,4 +414,5 @@ deps/precompile.jl      exercises both subcommands while the sysimg is built
 test/                   test suite
 examples/               sample atlases (+ make_demos.jl that generates them)
 relabel.md              relabel command / findRelabeling algorithm spec
+library.md              using AtlasUtilities as a Julia library
 ```
