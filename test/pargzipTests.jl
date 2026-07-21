@@ -1,12 +1,12 @@
 # Integration tests for AtlasUtilities' use of AtlasIO's parallel byte-targeted gzip
-# atlas output. The invariant: a `.gz` result from `run_add`/`run_reorder` is a valid
+# atlas output. The invariant: a `.gz` result from `run_add`/`run_relabel` is a valid
 # multi-member gzip that the system `gunzip` accepts and that AtlasIO reads back with
 # the same maps as an uncompressed (`.jsonl`) run. (The low-level writer -- AtlasOutput,
 # writeGzipMembers!, groupByBytes -- is unit-tested in AtlasIO itself.)
 
 using Test
 using AtlasIO
-using AtlasUtilities: run_add, run_reorder
+using AtlasUtilities: run_add, run_relabel
 
 @testset "parallel-gzip output (via AtlasIO)" begin
 
@@ -42,14 +42,14 @@ using AtlasUtilities: run_add, run_reorder
         end
     end
 
-    # --- run_reorder: .gz output == plain output on a small-map atlas ------------
-    @testset "run_reorder: .gz output == plain output" begin
+    # --- run_relabel: .gz output == plain output on a small-map atlas ------------
+    @testset "run_relabel: .gz output == plain output" begin
         demo = joinpath(@__DIR__, "..", "examples", "demo_grid_4x4.jsonl.gz")
         dir = mktempdir()
         A2gz = joinpath(dir, "rel.jsonl.gz")
         A2plain = joinpath(dir, "rel.jsonl")
-        run_reorder(demo, A2gz; quiet = true)
-        run_reorder(demo, A2plain; quiet = true)
+        run_relabel(demo, A2gz; quiet = true)
+        run_relabel(demo, A2plain; quiet = true)
 
         @test success(`gzip -t $A2gz`)
         @test countMembers(A2gz) >= 2          # header member + anchor/body members

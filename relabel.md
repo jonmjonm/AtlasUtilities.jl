@@ -56,9 +56,9 @@ Given a reference map with sets `(D₁,…,D_d)` and a current map with sets
 distance = Σᵢ |Dᵢ Δ D̂ᵢ|        where Δ is symmetric difference
 ```
 
-## reOrder
+## findRelabeling
 
-`reOrder(ref, cur)` returns a permutation `σ` of `{1…d}` such that relabeling
+`findRelabeling(ref, cur)` returns a permutation `σ` of `{1…d}` such that relabeling
 `cur`'s districts by `σ` minimizes `distance(ref, σ(cur))`. In `σ(cur)`, a node
 whose label was `j` becomes `σ[j]`; the set carrying label `i` is `D̂_{σ⁻¹(i)}`,
 so
@@ -93,10 +93,10 @@ read map₁;  write map₁ to A2 verbatim
 ref ← map₁
 
 for m = 2 … M:
-    σ ← reOrder(ref, mapₘ)
+    σ ← findRelabeling(ref, mapₘ)
     r ← σ(mapₘ)                 # relabel districting values; keep name/weight/data
     write r to A2
-    if not --firstMap:  ref ← r # chain: align next map to this reordered map
+    if not --firstMap:  ref ← r # chain: align next map to this relabeled map
 ```
 
 `σ(mapₘ)` changes only the districting label values; `name`, `weight`, and
@@ -104,8 +104,8 @@ for m = 2 … M:
 
 ## Flags
 
-- **(default)** Chained alignment: `ref` advances to the just-written reordered
-  map each step, so each map is aligned to its reordered predecessor. Keeps
+- **(default)** Chained alignment: `ref` advances to the just-written relabeled
+  map each step, so each map is aligned to its relabeled predecessor. Keeps
   labels locally consistent along the walk.
 - **`--first-map`** Absolute alignment: `ref` stays fixed at map₁ for every map.
   Every map is aligned directly to the anchor. (If the walk drifts far from
@@ -116,6 +116,7 @@ for m = 2 … M:
 
 ```
 atlas relabel <A1> <A2> [<graph.json>] [--first-map] [--quiet]
+              [--weight-population <pop.json> --population-attr <attr>]
 ```
 
 - `<A1>` input atlas filename (any AtlasIO-supported extension)
@@ -124,26 +125,64 @@ atlas relabel <A1> <A2> [<graph.json>] [--first-map] [--quiet]
   multiscale atlases whose per-map node sets vary
 - `--first-map` optional; switches from chained to anchor alignment
 - `--quiet` optional; suppresses the progress bar
+- `--weight-population <pop.json>` optional; weights the alignment by
+  population instead of raw node counts (see below). Requires
+  `--population-attr`.
+- `--population-attr <attr>` the population attribute name on `<pop.json>`'s
+  nodes (e.g. `pop2020cen`). Required by `--weight-population`.
+
+## Population-weighted distance
+
+By default every node/finest-unit contributes 1 to the confusion matrix, so
+the distance minimized is the plain node-count Hamming distance. Passing
+`--weight-population <pop.json> --population-attr <attr>` instead makes each
+node/finest-unit contribute its population, so the alignment minimizes
+population-displaced-across-districts rather than area count.
+
+`<pop.json>` is a NetworkX node-link JSON — often literally the same file
+passed as `<graph.json>`, since dual-graph files typically already carry a
+population attribute (e.g. NC_pct21.json's nodes have `pop2020cen`) alongside
+the level attributes. Its nodes are keyed the same way as the dual-graph
+hierarchy: by the tuple of attributes named in the atlas param
+`"levels in graph"`. This param is required whether or not `<graph.json>` is
+also given — i.e. population weighting works for both fixed-resolution and
+multiscale atlases:
+
+- **Multiscale** (`<graph.json>` given): each *finest* unit contributes its
+  own population exactly once, no matter how coarsely either map represents
+  it — this falls out naturally since `findRelabeling` already resolves both maps to
+  finest units before comparing.
+- **Fixed-resolution** (`<graph.json>` omitted): the atlas's node keys must
+  match `<pop.json>`'s keys directly (both at the `"levels in graph"`
+  resolution).
 
 Parsing/serialization runs across the threads Julia was started with. Because the
 installed command runs on a prebuilt system image, set `JULIA_NUM_THREADS`
 (e.g. `JULIA_NUM_THREADS=8 atlas relabel …`) to enable parallelism; the default
 of one thread runs serially.
 
-A progress bar (live count of maps written, on `stderr`) is shown by default
-since the atlas header carries no map count; `--quiet` turns it off.
+A progress bar (on `stderr`) is shown by default since the atlas header carries
+no map count; `--quiet` turns it off. It shows a live count of maps written and
+the running mean achieved Hamming distance — the distance between each map and
+the reference it was just aligned to, after relabeling — as a diagnostic on
+alignment quality. A low mean distance means consecutive maps in the walk are
+genuinely similar (or the alignment is finding a good match despite label
+churn); a high or rising mean can indicate the walk is drifting, or (in
+`--first-map` mode) that later maps are drifting far from the anchor. This
+adds no extra pass over map nodes — it's computed from the same confusion
+matrix already built to find the alignment.
 
 ## Performance & threading
 
 Profiling shows runtime is dominated (~80%) by **parsing the maps** — specifically
 the thousands of stringified-tuple districting keys per map — which is per-map
-independent. The reorder chain is only a few percent, and decompress/IO is
+independent. The relabel chain is only a few percent, and decompress/IO is
 negligible. So maps are processed in **batches**:
 
 ```
 read batch (serial, cheap)
   → parse batch        (parallel, the bottleneck)
-  → reorder            (serial; the chain `ref` carries across batches)
+  → relabel            (serial; the chain `ref` carries across batches)
   → serialize batch    (parallel)
   → write batch        (serial, in order)
 ```
@@ -185,7 +224,7 @@ hierarchy level attributes named in the atlas param `"levels in graph"`
 (e.g. `["county","prec_id"]`). Each graph node is a finest-resolution unit keyed
 by the tuple of its level values — the same tuple form as the districting keys.
 
-`reOrder` then:
+`findRelabeling` then:
 
 1. builds the list of finest units from the graph;
 2. **resolves each map to the finest resolution** — a finest unit's label is the
@@ -196,7 +235,7 @@ by the tuple of its level values — the same tuple form as the districting keys
 
 `σ` is still applied to the map's **original** (possibly coarse) encoding, so A2
 preserves the multiscale representation; only labels change. Without the JSON,
-`reOrder` requires a fixed node set and raises a clear error if maps differ.
+`findRelabeling` requires a fixed node set and raises a clear error if maps differ.
 
 Verified on real 14-district NC congressional ReCom data (500 maps, 2650 finest
 units): the anchor is written verbatim, every output map is a pure relabeling of
