@@ -1,5 +1,5 @@
 # threading.jl -- small batched-parallelism helpers shared by the map-processing
-# subcommands (`reorder`, `add`, `extract-map-data`).
+# subcommands (`relabel`, `add`, `extract-map-data`).
 #
 # The common pattern is: read a batch of map lines serially, do the per-map work
 # (parse / reconstruct / evaluate / serialize) in parallel across `cores` tasks

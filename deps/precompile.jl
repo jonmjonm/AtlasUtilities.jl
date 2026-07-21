@@ -1,6 +1,6 @@
 # Exercised while building the Comonicon system image so the compiled `atlas`
 # command has both subcommands' code paths baked in (fast startup). Builds a
-# tiny throwaway atlas and runs `info` and `reorder` over it.
+# tiny throwaway atlas and runs `info` and `relabel` over it.
 using AtlasIO
 using AtlasUtilities
 
@@ -28,7 +28,7 @@ mktempdir() do dir
         redirect_stderr(devnull) do
             AtlasUtilities.run_info(a1)
             AtlasUtilities.run_info(a1; extract_script = true)
-            AtlasUtilities.run_reorder(a1, a2; quiet = true)
+            AtlasUtilities.run_relabel(a1, a2; quiet = true)
         end
     end
 end

@@ -43,10 +43,13 @@ using Comonicon
 include("threading.jl")
 include("info.jl")
 include("nodes.jl")
-include("reorder.jl")
+include("relabel.jl")
 include("add.jl")
 include("extract.jl")
 include("assignments.jl")
+
+export confusionMatrix, permutationFromConfusion, hammingDistance, relabelMap,
+       findRelabeling, Hierarchy, loadHierarchy, loadPopulation
 
 """
 Print the header of an Atlas file (metadata and atlas parameters); the bulky embedded generating `script` is never printed (use `--extract-script` to write it out).
@@ -118,7 +121,7 @@ Relabel district numbers across atlas Atlas1 so consecutive maps stay as similar
 @cast function relabel(atlas1::String, atlas2::String, graph::String = "";
                        first_map::Bool = false, quiet::Bool = false,
                        weight_population::String = "", population_attr::String = "")
-    run_reorder(atlas1, atlas2, isempty(graph) ? nothing : graph;
+    run_relabel(atlas1, atlas2, isempty(graph) ? nothing : graph;
                 firstMap = first_map, quiet = quiet,
                 popJsonPath = isempty(weight_population) ? nothing : weight_population,
                 popAttr = isempty(population_attr) ? nothing : population_attr)

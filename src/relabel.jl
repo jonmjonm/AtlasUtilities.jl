@@ -1,4 +1,4 @@
-# reorder.jl -- the `atlas relabel` subcommand.
+# relabel.jl -- the `atlas relabel` subcommand.
 #
 # Walk every map in an input atlas Atlas1, relabel district numbers so consecutive
 # maps are as similar as possible, and write the relabeled maps to a new atlas Atlas2.
@@ -6,8 +6,8 @@
 # Parsing the maps dominates runtime (~80%) and is per-map independent, so it is
 # threaded across however many threads Julia was started with (`julia --threads=N`,
 # or the JULIA_NUM_THREADS env var); with a single thread it runs serially. The
-# reorder chain is serial but cheap. Maps are processed in batches:
-# read (serial) -> parse (parallel) -> reorder (serial) -> serialize (parallel) ->
+# relabel chain is serial but cheap. Maps are processed in batches:
+# read (serial) -> parse (parallel) -> relabel (serial) -> serialize (parallel) ->
 # write (serial, in order).
 #
 # See relabel.md for the full specification.
@@ -91,7 +91,7 @@ expandLabels(h::Hierarchy, districting::Districting) =
     Int[coverLabel(districting, t) for t in h.finest]
 
 # ---------------------------------------------------------------------------
-# Reordering
+# Relabeling
 # ---------------------------------------------------------------------------
 
 """
@@ -159,8 +159,8 @@ function confusionMatrix(ref::Map, cur::Map, d::Int, h::Hierarchy; pop::Union{Ab
 end
 
 """
-    reOrder(ref::Map, cur::Map, d::Int; pop = nothing) -> Vector{Int}
-    reOrder(ref::Map, cur::Map, d::Int, h::Hierarchy; pop = nothing) -> Vector{Int}
+    findRelabeling(ref::Map, cur::Map, d::Int; pop = nothing) -> Vector{Int}
+    findRelabeling(ref::Map, cur::Map, d::Int, h::Hierarchy; pop = nothing) -> Vector{Int}
 
 Permutation `σ` of `1:d` minimizing the district-wise Hamming distance between
 `ref` and the relabeled `cur` (a node whose label was `j` becomes `σ[j]`). The
@@ -168,10 +168,10 @@ Permutation `σ` of `1:d` minimizing the district-wise Hamming distance between
 atlas); the `Hierarchy` form resolves both to finest units first, so node sets
 may differ (multiscale atlas). See [`confusionMatrix`](@ref) for `pop`.
 """
-reOrder(ref::Map, cur::Map, d::Int; pop::Union{AbstractDict,Nothing} = nothing) =
+findRelabeling(ref::Map, cur::Map, d::Int; pop::Union{AbstractDict,Nothing} = nothing) =
     permutationFromConfusion(confusionMatrix(ref, cur, d; pop), d)
 
-reOrder(ref::Map, cur::Map, d::Int, h::Hierarchy; pop::Union{AbstractDict,Nothing} = nothing) =
+findRelabeling(ref::Map, cur::Map, d::Int, h::Hierarchy; pop::Union{AbstractDict,Nothing} = nothing) =
     permutationFromConfusion(confusionMatrix(ref, cur, d, h; pop), d)
 
 """
@@ -180,7 +180,7 @@ reOrder(ref::Map, cur::Map, d::Int, h::Hierarchy; pop::Union{AbstractDict,Nothin
 
 The district-wise Hamming distance between `ref` and `cur` **as currently
 labeled** (no realignment): `Σᵢ |Dᵢ Δ D̂ᵢ|`, or its population-weighted analogue
-if `pop` is given. Built from the same confusion matrix `reOrder` uses, so
+if `pop` is given. Built from the same confusion matrix `findRelabeling` uses, so
 calling both on the same pair (e.g. to report the distance achieved after
 `relabelMap`) does not repeat the node scan — pass a precomputed `O` via the
 `confusionMatrix` methods directly to share it explicitly.
@@ -201,7 +201,7 @@ hammingDistanceFromConfusion(O::Matrix{Int}) = 2 * (sum(O) - sum(O[i, i] for i i
 
 The Hamming distance (or population-weighted analogue) `ref` and `cur` will
 have *after* relabeling `cur` by `σ`, computed from the confusion matrix `O`
-and `σ` that `reOrder` already produced — no extra pass over nodes. `σ[j] = i`
+and `σ` that `findRelabeling` already produced — no extra pass over nodes. `σ[j] = i`
 pairs cur-label `j` with ref-label `i`, so the matched overlap is
 `Σⱼ O[σ[j], j]`.
 """
@@ -232,10 +232,10 @@ end
 # ---------------------------------------------------------------------------
 
 """
-    run_reorder(Atlas1, Atlas2, jsonPath = nothing; firstMap = false, quiet = false,
+    run_relabel(Atlas1, Atlas2, jsonPath = nothing; firstMap = false, quiet = false,
                 cores = Threads.nthreads(), popJsonPath = nothing, popAttr = nothing)
 
-Reorder atlas `Atlas1` into `Atlas2`. `jsonPath` is an optional dual-graph JSON, required
+Relabel atlas `Atlas1` into `Atlas2`. `jsonPath` is an optional dual-graph JSON, required
 for multiscale/hierarchical atlases whose per-map node sets vary. `firstMap`
 aligns every map to map 1 (anchor) instead of to its predecessor; `quiet`
 suppresses the progress bar. `cores` is the parse/serialize worker count; it
@@ -252,7 +252,7 @@ aligned to, after relabeling — as a diagnostic on alignment quality. It is
 computed from the same confusion matrix used to find `σ`, so it adds no extra
 pass over map nodes.
 """
-function run_reorder(Atlas1::AbstractString, Atlas2::AbstractString,
+function run_relabel(Atlas1::AbstractString, Atlas2::AbstractString,
                      jsonPath::Union{AbstractString,Nothing} = nothing;
                      firstMap::Bool = false, quiet::Bool = false,
                      cores::Int = Threads.nthreads(),
@@ -291,10 +291,10 @@ function run_reorder(Atlas1::AbstractString, Atlas2::AbstractString,
     # The atlas has no map count in its header, so the total is unknown; show a
     # live count of maps written and the running mean chained-alignment Hamming
     # distance (unless suppressed with --quiet).
-    progress = quiet ? nothing : ProgressUnknown(desc = "Reordering maps:", spinner = true)
+    progress = quiet ? nothing : ProgressUnknown(desc = "Relabeling maps:", spinner = true)
     written = 0
     totalDistance = 0
-    aligned = 0     # maps that went through reOrder (excludes the anchor)
+    aligned = 0     # maps that went through findRelabeling (excludes the anchor)
     function tick()
         progress === nothing && return
         meanDistance = aligned == 0 ? 0.0 : totalDistance / aligned
@@ -312,7 +312,7 @@ function run_reorder(Atlas1::AbstractString, Atlas2::AbstractString,
     tick()
 
     # Process the remaining maps in batches: parse and serialize in parallel,
-    # reorder serially (the chain `ref` carries across batches), write in order.
+    # relabel serially (the chain `ref` carries across batches), write in order.
     while !eof(atlas)
         lines = String[]
         while length(lines) < BATCH && !eof(atlas)
@@ -324,20 +324,20 @@ function run_reorder(Atlas1::AbstractString, Atlas2::AbstractString,
         maps = Vector{Map{mpt,wt}}(undef, n)                     # parse (parallel)
         parallelDo!(i -> (maps[i] = JSON3.read(lines[i], Map{mpt,wt})), n, cores)
 
-        reordered = Vector{Map{mpt,wt}}(undef, n)                # reorder (serial chain)
+        relabeled = Vector{Map{mpt,wt}}(undef, n)                # relabel (serial chain)
         for i in 1:n
             O = h === nothing ? confusionMatrix(ref, maps[i], d; pop) : confusionMatrix(ref, maps[i], d, h; pop)
             σ = permutationFromConfusion(O, d)
             totalDistance += achievedHammingDistance(O, σ)
             aligned += 1
-            reordered[i] = relabelMap(maps[i], σ)
-            firstMap || (ref = reordered[i])
+            relabeled[i] = relabelMap(maps[i], σ)
+            firstMap || (ref = relabeled[i])
         end
 
         bytes = Vector{Vector{UInt8}}(undef, n)                 # serialize (parallel)
         parallelDo!(n, cores) do i
             buf = IOBuffer()
-            addMap(buf, reordered[i])
+            addMap(buf, relabeled[i])
             bytes[i] = take!(buf)
         end
 

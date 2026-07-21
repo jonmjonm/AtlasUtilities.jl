@@ -423,7 +423,7 @@ end
 # tree per district and loading it into a link-cut / splay-tree structure, ~56% of
 # per-map cost) AND the `MultiLevelPartition` (building per-district subgraphs,
 # vmaps, populations and cross-district edges, ~32%). Instead we resolve each finest
-# node straight to its districting label with `coverLabel` (from reorder.jl) and call
+# node straight to its districting label with `coverLabel` (from relabel.jl) and call
 # the writer on that `node_to_dist` plus the finest `BaseGraph`. This reproduces the
 # `LinkCutPartition` path (to machine precision) while building no partition at all.
 #
@@ -456,7 +456,7 @@ WITHOUT building a `MultiLevelPartition` or `LinkCutPartition`. Each finest
 `BaseGraph` node is mapped to its district straight from `m.districting` via
 `coverLabel`, which matches the node's level-value tuple (over `g.levels`) against
 the districting keys -- so a coarse districting key (e.g. a whole county) covers all
-of its finest units, exactly as `reorder.jl` resolves multiscale maps. `coverLabel`
+of its finest units, exactly as `relabel.jl` resolves multiscale maps. `coverLabel`
 returns the districting's own label, so `node_to_dist` is already in the map's
 district numbering and needs no realignment.
 

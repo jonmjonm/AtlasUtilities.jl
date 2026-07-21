@@ -1,7 +1,7 @@
 using Test
 using AtlasIO
 using AtlasUtilities
-using AtlasUtilities: reOrder, relabelMap, run_reorder, loadHierarchy, loadPopulation, expandLabels, BATCH,
+using AtlasUtilities: findRelabeling, relabelMap, run_relabel, loadHierarchy, loadPopulation, expandLabels, BATCH,
                        hammingDistance, confusionMatrix
 
 # Fixed node-key set shared by all test maps.
@@ -18,31 +18,31 @@ labelsof(m) = [m.districting[n] for n in NODES]
 partition(labels) = Set(Set(i for i in eachindex(labels) if labels[i] == d)
                         for d in unique(labels))
 
-@testset "reorder" begin
+@testset "relabel" begin
 
-    @testset "reOrder: identical maps give identity permutation" begin
+    @testset "findRelabeling: identical maps give identity permutation" begin
         m = mkmap("m", [1, 1, 2, 2])
-        @test reOrder(m, m, 2) == [1, 2]
+        @test findRelabeling(m, m, 2) == [1, 2]
     end
 
-    @testset "reOrder: detects and undoes a label swap" begin
+    @testset "findRelabeling: detects and undoes a label swap" begin
         ref = mkmap("ref", [1, 1, 2, 2])
         cur = mkmap("cur", [2, 2, 1, 1])      # same partition, labels swapped
-        σ = reOrder(ref, cur, 2)
+        σ = findRelabeling(ref, cur, 2)
         @test σ == [2, 1]
         @test labelsof(relabelMap(cur, σ)) == labelsof(ref)   # exact realignment, distance 0
     end
 
-    @testset "reOrder: finds an optimal (min-Hamming) alignment" begin
+    @testset "findRelabeling: finds an optimal (min-Hamming) alignment" begin
         # ref: {a,b,c}=1, {dd}=2 ;  cur: {a,b}=2, {c,dd}=1
         ref = mkmap("ref", [1, 1, 1, 2])
         cur = mkmap("cur", [2, 2, 1, 1])
-        σ = reOrder(ref, cur, 2)
+        σ = findRelabeling(ref, cur, 2)
         # Best match: cur-label-2 -> 1 (overlap {a,b}=2), cur-label-1 -> 2 (overlap {dd}=1).
         @test σ == [2, 1]
     end
 
-    @testset "reOrder: population weighting can flip the optimal alignment" begin
+    @testset "findRelabeling: population weighting can flip the optimal alignment" begin
         # ref: {a,b,c}=1, {dd}=2 ;  cur: {a,b}=2, {c,dd}=1
         # Unweighted: cur-label-2 -> 1 (overlap {a,b}=2 nodes) wins over cur-label-1 -> 1 (overlap {c}=1 node).
         # Weight "dd" heavily so the {c,dd} overlap with ref-label-1 (via "c") is no longer decisive;
@@ -50,8 +50,8 @@ partition(labels) = Set(Set(i for i in eachindex(labels) if labels[i] == d)
         ref = mkmap("ref", [1, 1, 1, 2])
         cur = mkmap("cur", [2, 2, 1, 1])
         pop = Dict(("a",) => 1, ("b",) => 1, ("c",) => 100, ("dd",) => 1)
-        σ_unweighted = reOrder(ref, cur, 2)
-        σ_weighted = reOrder(ref, cur, 2; pop)
+        σ_unweighted = findRelabeling(ref, cur, 2)
+        σ_weighted = findRelabeling(ref, cur, 2; pop)
         @test σ_unweighted == [2, 1]   # baseline from the test above
         @test σ_weighted == [1, 2]     # heavy "c" pulls cur-label-1 to ref-label-1
     end
@@ -78,20 +78,20 @@ partition(labels) = Set(Set(i for i in eachindex(labels) if labels[i] == d)
         @test hammingDistance(ref, cur, 2; pop) == 24
     end
 
-    @testset "confusionMatrix: shared between reOrder and hammingDistance" begin
+    @testset "confusionMatrix: shared between findRelabeling and hammingDistance" begin
         ref = mkmap("ref", [1, 1, 1, 2])
         cur = mkmap("cur", [2, 2, 1, 1])
         O = confusionMatrix(ref, cur, 2)
-        @test AtlasUtilities.permutationFromConfusion(O, 2) == reOrder(ref, cur, 2)
+        @test AtlasUtilities.permutationFromConfusion(O, 2) == findRelabeling(ref, cur, 2)
         @test AtlasUtilities.hammingDistanceFromConfusion(O) == hammingDistance(ref, cur, 2)
     end
 
-    @testset "reOrder: errors clearly on mismatched node sets (multiscale)" begin
+    @testset "findRelabeling: errors clearly on mismatched node sets (multiscale)" begin
         ref = mkmap("ref", [1, 1, 2, 2])
         # cur expressed over a different node set (missing "dd", extra "e")
         cur = Map("cur", Districting(("a",) => 1, ("b",) => 2, ("c",) => 2, ("e",) => 1),
                   1, Dict{String,Any}())
-        @test_throws ErrorException reOrder(ref, cur, 2)
+        @test_throws ErrorException findRelabeling(ref, cur, 2)
     end
 
     @testset "relabel preserves name/weight/data and permutes labels" begin
@@ -105,7 +105,7 @@ partition(labels) = Set(Set(i for i in eachindex(labels) if labels[i] == d)
 
     @testset "relabel never changes the induced partition" begin
         cur = mkmap("p", [1, 2, 2, 1])
-        r = relabelMap(cur, reOrder(mkmap("ref", [1, 1, 2, 2]), cur, 2))
+        r = relabelMap(cur, findRelabeling(mkmap("ref", [1, 1, 2, 2]), cur, 2))
         @test partition(labelsof(r)) == partition(labelsof(cur))
     end
 
@@ -137,7 +137,7 @@ partition(labels) = Set(Set(i for i in eachindex(labels) if labels[i] == d)
         src = [[1, 1, 2, 2], [2, 2, 1, 1], [1, 2, 2, 1]]
         buildatlas(Atlas1, src)
 
-        run_reorder(Atlas1, Atlas2; quiet = true, cores = 1)
+        run_relabel(Atlas1, Atlas2; quiet = true, cores = 1)
         out = readatlas(Atlas2)
 
         @test length(out) == 3
@@ -155,7 +155,7 @@ partition(labels) = Set(Set(i for i in eachindex(labels) if labels[i] == d)
         src = [[1, 1, 2, 2], [2, 2, 1, 1], [1, 2, 2, 1]]
         buildatlas(Atlas1, src)
 
-        run_reorder(Atlas1, Atlas2; firstMap = true, quiet = true, cores = 1)
+        run_relabel(Atlas1, Atlas2; firstMap = true, quiet = true, cores = 1)
         out = readatlas(Atlas2)
 
         @test length(out) == 3
@@ -188,7 +188,7 @@ partition(labels) = Set(Set(i for i in eachindex(labels) if labels[i] == d)
         end
         close(io)
 
-        run_reorder(Atlas1, Atlas2, gpath; quiet = true, cores = 1)
+        run_relabel(Atlas1, Atlas2, gpath; quiet = true, cores = 1)
         out = readatlas(Atlas2)
         h = loadHierarchy(gpath, ["county", "prec"])
 
@@ -220,15 +220,15 @@ partition(labels) = Set(Set(i for i in eachindex(labels) if labels[i] == d)
         cur = Districting(("X","1")=>2, ("X","2")=>2, ("Y",)=>1)
         refMap, curMap = Map("ref", ref, 1, Dict{String,Any}()), Map("cur", cur, 1, Dict{String,Any}())
 
-        @test reOrder(refMap, curMap, 2, h) == [2, 1]            # unweighted baseline
-        @test reOrder(refMap, curMap, 2, h; pop) == [1, 2]       # heavy ("Y","1") flips the match
+        @test findRelabeling(refMap, curMap, 2, h) == [2, 1]            # unweighted baseline
+        @test findRelabeling(refMap, curMap, 2, h; pop) == [1, 2]       # heavy ("Y","1") flips the match
     end
 
     @testset "progress bar path (no --quiet) runs and is correct" begin
         dir = mktempdir()
         Atlas1, Atlas2 = joinpath(dir, "Atlas1.jsonl"), joinpath(dir, "Atlas2.jsonl")
         buildatlas(Atlas1, [[1, 1, 2, 2], [2, 2, 1, 1], [1, 2, 2, 1]])
-        run_reorder(Atlas1, Atlas2; cores = 1)       # progress enabled; must not error
+        run_relabel(Atlas1, Atlas2; cores = 1)       # progress enabled; must not error
         out = readatlas(Atlas2)
         @test length(out) == 3
         @test labelsof(out[2]) == [1, 1, 2, 2]
@@ -254,8 +254,8 @@ partition(labels) = Set(Set(i for i in eachindex(labels) if labels[i] == d)
         # Compare an explicitly serial run against one using this process's full
         # thread count. Run the suite with `julia -t N` to exercise true parallelism.
         ser = joinpath(dir, "serial.jsonl"); par = joinpath(dir, "par.jsonl")
-        run_reorder(Atlas1, ser; quiet = true, cores = 1)
-        run_reorder(Atlas1, par; quiet = true, cores = Threads.nthreads())
+        run_relabel(Atlas1, ser; quiet = true, cores = 1)
+        run_relabel(Atlas1, par; quiet = true, cores = Threads.nthreads())
 
         os, op = readatlas(ser), readatlas(par)
         @test length(os) == nmaps && length(op) == nmaps
