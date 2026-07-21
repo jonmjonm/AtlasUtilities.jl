@@ -49,7 +49,7 @@ include("extract.jl")
 include("assignments.jl")
 
 export confusionMatrix, permutationFromConfusion, hammingDistance, relabelMap,
-       findRelabeling, Hierarchy, loadHierarchy, loadPopulation, atlasInfo
+       findRelabeling, Hierarchy, loadHierarchy, loadPopulation, atlasInfo, listMapData
 
 """
 Print the header of an Atlas file (metadata and atlas parameters); the bulky embedded generating `script` is never printed (use `--extract-script` to write it out).

@@ -193,16 +193,28 @@ function run_info(atlasPath::AbstractString; extract_script::Bool = false)
 end
 
 """
+    listMapData(atlasPath) -> Union{Vector{String},Nothing}
+
+The sorted names of the data fields (e.g. `log_spanning_trees`) contained in
+the first map of the atlas at `atlasPath`, or `nothing` if the atlas has no
+maps (as opposed to a map whose data is empty, which returns `String[]`).
+"""
+function listMapData(atlasPath::AbstractString)
+    io = smartOpen(String(atlasPath), "r")
+    atlas = openAtlas(io)
+    fieldNames = firstMapFieldNames(atlas)
+    close(atlas)
+    return fieldNames
+end
+
+"""
     run_list_map_data(atlasPath)
 
 Print the names of the data fields (e.g. `log_spanning_trees`) contained in the
 first map of the atlas at `atlasPath`, one per line, sorted.
 """
 function run_list_map_data(atlasPath::AbstractString)
-    io = smartOpen(String(atlasPath), "r")
-    atlas = openAtlas(io)
-    fieldNames = firstMapFieldNames(atlas)
-    close(atlas)
+    fieldNames = listMapData(atlasPath)
     if fieldNames === nothing
         println("atlas list-map-data: $atlasPath has no maps; nothing to list.")
     elseif isempty(fieldNames)
