@@ -148,11 +148,9 @@ end
     oh = StreamHist(binRange=(-6.0, 6.0), binNum=200, momentPowers=[1, 2, 4])
     add!(oh, randn(20_000))
     finalize!(oh)
-    q = densityQuality(oh; threshold=0.15)
-    for p in (1, 2, 4)
-        @test haskey(q, p)
-        @test q[p].ok
-    end
+    relerrs = densityQuality(oh)
+    @test length(relerrs) == length(oh.momentPowers)
+    @test all(relerrs .<= 0.15)
 end
 
 @testset "histogram(oh, bins) integrates density into custom bins" begin

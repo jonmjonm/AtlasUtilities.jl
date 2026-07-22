@@ -88,10 +88,10 @@ packages; everything about *where* the bins/range sit is owned by
   un-finalizes `oh` again, requiring another `finalize!` before reading.
 - `density(oh)` — a callable `x -> density(x)`, linearly interpolating the
   ASH. Errors in integer mode.
-- `densityQuality(oh; threshold=0.05)` — for each requested moment power,
-  numerically integrates the ASH density against `(x-mean)^p` and compares
-  it to the true moment accumulator value; returns a `Dict{Int,NamedTuple}`
-  of `power => (exact=, fromdensity=, relerr=, ok=)`.
+- `densityQuality(oh)` — for each requested moment power (in the order of
+  `oh.momentPowers`), numerically integrates the ASH density against
+  `(x-mean)^p` and compares it to the true moment accumulator value; returns
+  a `Vector{Float64}` of the relative error between the two estimates.
 - `exactHistogram(oh)` — the underlying `StatsBase.Histogram` (edges + raw
   counts).
 - `histogram(oh, bins)` — integrates `density(oh)` between an arbitrary set
@@ -128,5 +128,5 @@ finalize!(oh)
 mean(oh), variance(oh), skewness(oh)
 exactHistogram(oh)
 d = density(oh)
-densityQuality(oh; threshold=0.1)
+densityQuality(oh)
 ```

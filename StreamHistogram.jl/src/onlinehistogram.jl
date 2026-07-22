@@ -258,19 +258,20 @@ function histogram(oh::StreamHist, bins::AbstractVector{<:Real})
 end
 
 """
-    densityQuality(oh; threshold=0.05)
+    densityQuality(oh)
 
-For each requested moment power, numerically integrates the ASH density
-against `(x - mean)^p` and compares it to the moment accumulator's value.
-Returns a `Dict{Int,NamedTuple}` of power => (exact=, fromdensity=, relerr=,
-ok=) where `ok = relerr <= threshold`.
+For each requested moment power (in the order of `oh.momentPowers`),
+numerically integrates the ASH density against `(x - mean)^p` and compares
+it to the moment accumulator's value. Returns a `Vector{Float64}` of the
+relative error `abs(fromdensity - exact) / (abs(exact) + eps())` between the
+two estimates, one entry per power.
 """
-function densityQuality(oh::StreamHist; threshold::Real=0.05)
+function densityQuality(oh::StreamHist)
     d = density(oh)
     rng = oh.ash.rng
     lo, hi = first(rng), last(rng)
     μ = mean(oh)
-    result = Dict{Int,NamedTuple}()
+    relerrs = Float64[]
     for p in oh.momentPowers
         exact = moment(oh, p)
         fromdensity = if p == 1
@@ -278,10 +279,9 @@ function densityQuality(oh::StreamHist; threshold::Real=0.05)
         else
             first(quadgk(x -> (x - μ)^p * d(x), lo, hi))
         end
-        relerr = abs(fromdensity - exact) / (abs(exact) + eps())
-        result[p] = (exact=exact, fromdensity=fromdensity, relerr=relerr, ok=relerr <= threshold)
+        push!(relerrs, abs(fromdensity - exact) / (abs(exact) + eps()))
     end
-    return result
+    return relerrs
 end
 
 function Base.show(io::IO, oh::StreamHist)
