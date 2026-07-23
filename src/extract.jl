@@ -64,22 +64,31 @@ end
 # ---------------------------------------------------------------------------
 
 """
-    writeAboutFile(outdir, Atlas1, atlas, fieldNames) -> String
+    writeAboutFile(outdir, Atlas1, atlas, fieldNames; burnIn = 0, maxMaps = 0) -> String
 
 Write an `about.md` into `outdir` describing the extraction: the source atlas name,
 the extraction date, and the atlas's header information -- everything `atlas info`
 shows except the bulky embedded generating script (see `atlasHeaderInfo`), including
 `fieldNames` (the data field names found in the first map, e.g.
-`log_spanning_trees`). Returns the path written.
+`log_spanning_trees`). When `burnIn`/`maxMaps` are nonzero (a `--burn-in`/`--max-maps`
+run), a line noting each is added -- `maxMaps` in particular marks the extraction as
+partial (see the output files' `-partial` suffix). Returns the path written.
 """
 function writeAboutFile(outdir::AbstractString, Atlas1::AbstractString, atlas,
-                        fieldNames::AbstractVector{<:AbstractString})
+                        fieldNames::AbstractVector{<:AbstractString};
+                        burnIn::Int = 0, maxMaps::Int = 0)
     path = joinpath(outdir, "about.md")
     open(path, "w") do io
         println(io, "# ", basename(String(Atlas1)), " — extracted map data")
         println(io)
         println(io, "- **Source atlas:** `", String(Atlas1), "`")
         println(io, "- **Extraction date:** ", string(Dates.now()))
+        burnIn > 0 && println(io, "- **Burn-in:** first ", burnIn,
+                              " map(s) skipped (`--burn-in ", burnIn, "`).")
+        maxMaps > 0 && println(io, "- **Partial extraction:** at most ", maxMaps,
+                              " map(s) extracted", burnIn > 0 ? " after burn-in" : "",
+                              " (`--max-maps ", maxMaps, "`); output files are ",
+                              "suffixed `-partial`.")
         println(io)
         println(io, "Atlas header below (the same information `atlas info` prints; the ",
                     "embedded generating script is omitted):")
@@ -134,7 +143,7 @@ end
 
 """
     run_extract(Atlas1; add, compress, force, config, graph, pop_col, node_col,
-                area_col, border_col, edge_perimeter_col, node_data, quiet)
+                area_col, border_col, edge_perimeter_col, node_data, max_maps, quiet)
 
 Extract the map data of atlas `Atlas1` to per-field CSV files in a directory named
 after `Atlas1` (its path minus the atlas extension). Every existing data field is
@@ -142,8 +151,11 @@ extracted; `add` (a writer-function name, or comma-separated / bracketed list) i
 additionally computed via the graph described by `config` and/or the column
 keyword arguments (see `resolveGraphSpec`) and extracted too. `compress` gzips the
 CSVs (`.csv.gz`); with `compress = false` they are plain `.csv`. A field whose
-output file already exists is skipped unless `force = true`. `quiet` suppresses the
-progress bar.
+output file already exists is skipped unless `force = true`. `max_maps` (0 =
+unlimited, the default) stops after extracting that many maps; when set, output
+filenames get a `-partial` suffix (before the extension) so a partial run never
+collides with a full one's output, and `about.md` notes the limit. `quiet`
+suppresses the progress bar.
 """
 function run_extract(Atlas1::AbstractString;
                      add::AbstractString = "", compress::Bool = true,
@@ -153,7 +165,9 @@ function run_extract(Atlas1::AbstractString;
                      border_col::AbstractString = "",
                      edge_perimeter_col::AbstractString = "",
                      node_data::AbstractString = "", vote_cols::AbstractString = "",
+                     max_maps::Int = 0,
                      quiet::Bool = false, cores::Int = Threads.nthreads())
+    max_maps < 0 && error("atlas extract-map-data: --max-maps must be ≥ 0, got $max_maps.")
     addNames = isempty(add) ? String[] : parseFunctionNames(add)
     votePairs = parseVotePairs(vote_cols)
     fns, addFields, addedSet, g = setupAddComputation(addNames, votePairs;
@@ -163,7 +177,9 @@ function run_extract(Atlas1::AbstractString;
 
     outdir = stripAtlasExt(String(Atlas1))
     isdir(outdir) || mkpath(outdir)
-    ext = compress ? ".csv.gz" : ".csv"
+    # A --max-maps run gets its own filenames so it never collides with (or is
+    # silently mistaken for) a full extraction's output in the same directory.
+    ext = (max_maps > 0 ? "-partial" : "") * (compress ? ".csv.gz" : ".csv")
 
     atlas = openAtlas(smartOpen(String(Atlas1), "r"))
     mpt, wt = atlas.mapParamType, atlas.weightType
@@ -179,7 +195,8 @@ function run_extract(Atlas1::AbstractString;
     # Always (re)write about.md, regardless of which CSV fields are actually
     # written below -- it should describe the atlas even on a re-run where every
     # target CSV already exists and is skipped.
-    writeAboutFile(outdir, String(Atlas1), atlas, sort(collect(keys(first.data))))
+    writeAboutFile(outdir, String(Atlas1), atlas, sort(collect(keys(first.data)));
+                  maxMaps = max_maps)
 
     shouldWrite(field) = force || !isfile(joinpath(outdir, field * ext))
 
@@ -236,9 +253,10 @@ function run_extract(Atlas1::AbstractString;
     progress = quiet ? nothing :
                ProgressUnknown(desc = "Extracting map data:", spinner = true)
     written = 1
+    remaining() = max_maps == 0 ? typemax(Int) : max_maps - written
     with_serial_blas() do
-        while !eof(atlas)
-            lines = readBatch(atlas.io)
+        while !eof(atlas) && remaining() > 0
+            lines = readBatch(atlas.io, min(BATCH, remaining()))
             n = length(lines)
             n == 0 && break
 

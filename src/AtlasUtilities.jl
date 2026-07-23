@@ -18,11 +18,11 @@ Installs a single `atlas` command with eight subcommands:
   * `atlas add <functions> <Atlas1> <Atlas2> [--config <param.toml>] [column flags]
     [--overwrite] [--quiet]` — evaluate one or more CycleWalk "pushable writer"
     functions on every map and add the results to the map data.
-  * `atlas extract-map-data <Atlas1> [--add <functions>] [--no-compression] [--force]
-    [column flags]` — write each map-data field to its own CSV file (one row per
-    map) in a directory named after the atlas.
-  * `atlas extract-map-data-histogram <Atlas1> [--burn-in <n>] [--no-sort]
-    [--add <functions>] [--no-compression] [--force] [column flags]
+  * `atlas extract-map-data <Atlas1> [--add <functions>] [--max-maps <n>]
+    [--no-compression] [--force] [column flags]` — write each map-data field to
+    its own CSV file (one row per map) in a directory named after the atlas.
+  * `atlas extract-map-data-histogram <Atlas1> [--burn-in <n>] [--max-maps <n>]
+    [--no-sort] [--add <functions>] [--no-compression] [--force] [column flags]
     [--integer true|false|auto] [--bin-range <lo,hi>] [--bin-num <n>]
     [--bins <e1,e2,...>] [--moment-powers <p1,p2,...>]` — like `extract-map-data`,
     but accumulate each map-data field into a StreamHistogram instead of writing
@@ -213,6 +213,9 @@ Write each map-data field of atlas Atlas1 to its own CSV (one row per map) in a 
   (`get_partisan_margins`, `get_partisan_seats`), as `votes1,votes2` pairs separated
   by `;` (e.g. `G20_PR_D,G20_PR_R;G16_PR_D,G16_PR_R` — quote it in your shell since
   it contains a `;`); each pair yields a field `writer_votes1_votes2`.
+- `--max-maps <n>`: stop after extracting this many maps (default 0, unlimited).
+  Output filenames get a `-partial` suffix so a partial run never collides with a
+  full one's output in the same directory, and `about.md` notes the limit.
 
 # Flags
 
@@ -227,12 +230,13 @@ Write each map-data field of atlas Atlas1 to its own CSV (one row per map) in a 
                                 area_col::String = "", border_col::String = "",
                                 edge_perimeter_col::String = "",
                                 node_data::String = "", vote_cols::String = "",
+                                max_maps::Int = 0,
                                 quiet::Bool = false)
     run_extract(atlas1; add = add, compress = !no_compression, force = force,
                 config = config, graph = graph, pop_col = pop_col,
                 node_col = node_col, area_col = area_col, border_col = border_col,
                 edge_perimeter_col = edge_perimeter_col, node_data = node_data,
-                vote_cols = vote_cols, quiet = quiet)
+                vote_cols = vote_cols, max_maps = max_maps, quiet = quiet)
 end
 
 """
@@ -245,6 +249,10 @@ Like `extract-map-data`, but instead of writing per-map CSV rows, accumulate eac
 # Options
 
 - `--burn-in <n>`: skip the first `n` maps (default 0).
+- `--max-maps <n>`: stop after accumulating this many maps past the burn-in
+  (default 0, unlimited). Output filenames get a `-histogram-partial` suffix so a
+  partial run never collides with a full one's output in the same directory, and
+  `about.md` notes the limit.
 - `--add <functions>`: also compute and accumulate these writer function(s).
 - `--config <param.toml>`: CycleWalk TOML supplying the graph (for `--add`).
 - `--graph <graph.json>`: dual-graph JSON (overrides the TOML path).
@@ -279,6 +287,7 @@ Like `extract-map-data`, but instead of writing per-map CSV rows, accumulate eac
 - `--quiet`: suppress the progress bar.
 """
 @cast function extract_map_data_histogram(atlas1::String; burn_in::Int = 0,
+                                          max_maps::Int = 0,
                                           no_sort::Bool = false, add::String = "",
                                           config::String = "", graph::String = "",
                                           pop_col::String = "", node_col::String = "",
@@ -303,10 +312,10 @@ Like `extract-map-data`, but instead of writing per-map CSV rows, accumulate eac
         config = config, graph = graph, pop_col = pop_col, node_col = node_col,
         area_col = area_col, border_col = border_col,
         edge_perimeter_col = edge_perimeter_col, node_data = node_data,
-        burn_in = burn_in, sortVals = !no_sort, compress = !no_compression,
-        force = force, integer = parsedInteger, bin_range = parsedBinRange,
-        bin_num = bin_num, bins = parsedBins, moment_powers = parsedPowers,
-        quiet = quiet)
+        burn_in = burn_in, max_maps = max_maps, sortVals = !no_sort,
+        compress = !no_compression, force = force, integer = parsedInteger,
+        bin_range = parsedBinRange, bin_num = bin_num, bins = parsedBins,
+        moment_powers = parsedPowers, quiet = quiet)
 end
 
 """
