@@ -12,6 +12,15 @@
 # held at once).
 const BATCH = 512
 
+"""Read up to `BATCH` lines from `io` (fewer if `eof(io)` is reached first)."""
+function readBatch(io)
+    lines = String[]
+    while length(lines) < BATCH && !eof(io)
+        push!(lines, readline(io))
+    end
+    return lines
+end
+
 """Split `1:n` into at most `k` contiguous ranges (one per task)."""
 function chunkranges(n::Int, k::Int)
     k = clamp(k, 1, max(n, 1))

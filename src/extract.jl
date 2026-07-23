@@ -92,6 +92,43 @@ function writeAboutFile(outdir::AbstractString, Atlas1::AbstractString, atlas,
 end
 
 # ---------------------------------------------------------------------------
+# Shared with extract-map-data-histogram
+# ---------------------------------------------------------------------------
+
+"""
+    setupAddComputation(addNames, votePairs; config, graph, pop_col, node_col,
+                        area_col, border_col, edge_perimeter_col, node_data)
+    -> (fns, addFields, addedSet, g)
+
+Resolve `--add`/`--vote-cols` into the writer-function list `fns` (as returned by
+`resolveFunctions`), the field names they add (`addFields`, partisan names
+expanded), the set of those names (`addedSet`), and the CycleWalk graph `g` built
+from `config`/the column keyword arguments (`nothing` if `addNames` is empty, since
+no graph is needed when there is nothing to add). Shared by `atlas extract-map-data`
+and `atlas extract-map-data-histogram`.
+"""
+function setupAddComputation(addNames::Vector{String}, votePairs;
+                             config::AbstractString, graph::AbstractString,
+                             pop_col::AbstractString, node_col::AbstractString,
+                             area_col::AbstractString, border_col::AbstractString,
+                             edge_perimeter_col::AbstractString, node_data::AbstractString)
+    fns = resolveFunctions(addNames, votePairs)
+    addFields = [desc for (desc, _) in fns]
+    addedSet = Set(addFields)
+    g = nothing
+    if !isempty(addNames)
+        spec = resolveGraphSpec(; config = config, graph = graph, pop_col = pop_col,
+                                node_col = node_col, area_col = area_col,
+                                border_col = border_col,
+                                edge_perimeter_col = edge_perimeter_col,
+                                node_data = node_data)
+        union!(spec.node_data, Set(voteColumns(votePairs)))   # keep vote columns on the graph
+        g = buildGraph(spec)
+    end
+    return (fns, addFields, addedSet, g)
+end
+
+# ---------------------------------------------------------------------------
 # Driver
 # ---------------------------------------------------------------------------
 
@@ -119,21 +156,10 @@ function run_extract(Atlas1::AbstractString;
                      quiet::Bool = false, cores::Int = Threads.nthreads())
     addNames = isempty(add) ? String[] : parseFunctionNames(add)
     votePairs = parseVotePairs(vote_cols)
-    fns = resolveFunctions(addNames, votePairs)   # validate + expand partisan names
-    addFields = [desc for (desc, _) in fns]       # actual field names (partisan names expand)
-    addedSet = Set(addFields)
-
-    # The graph (and its columns) is only needed when computing `--add` functions.
-    g = nothing
-    if !isempty(addNames)
-        spec = resolveGraphSpec(; config = config, graph = graph, pop_col = pop_col,
-                                node_col = node_col, area_col = area_col,
-                                border_col = border_col,
-                                edge_perimeter_col = edge_perimeter_col,
-                                node_data = node_data)
-        union!(spec.node_data, Set(voteColumns(votePairs)))   # keep vote columns on the graph
-        g = buildGraph(spec)
-    end
+    fns, addFields, addedSet, g = setupAddComputation(addNames, votePairs;
+        config = config, graph = graph, pop_col = pop_col, node_col = node_col,
+        area_col = area_col, border_col = border_col,
+        edge_perimeter_col = edge_perimeter_col, node_data = node_data)
 
     outdir = stripAtlasExt(String(Atlas1))
     isdir(outdir) || mkpath(outdir)
@@ -204,10 +230,7 @@ function run_extract(Atlas1::AbstractString;
     written = 1
     with_serial_blas() do
         while !eof(atlas)
-            lines = String[]
-            while length(lines) < BATCH && !eof(atlas)
-                push!(lines, readline(atlas.io))
-            end
+            lines = readBatch(atlas.io)
             n = length(lines)
             n == 0 && break
 
