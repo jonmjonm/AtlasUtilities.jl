@@ -225,6 +225,14 @@ function run_extract(Atlas1::AbstractString;
     # --- stream the remaining maps in batches ---------------------------------
     # Read serially, then per map parse + compute (--add) + render each field's row
     # in parallel, then write the rows to their streams serially in map order.
+    #
+    # `activeFns` empty means no writer will actually be evaluated this run (either
+    # no `--add` was given, or every requested field was skipped as already
+    # existing), so `computeAdded` never touches `m.districting` -- parse a
+    # `MapData` instead of a full `Map` to skip reconstructing it, which otherwise
+    # dominates the parse cost (see AtlasIO's `MapData`).
+    parseMap = isempty(activeFns) ? (line -> parseMapData(line, mpt, wt)) :
+                                    (line -> JSON3.read(line, Map{mpt,wt}))
     progress = quiet ? nothing :
                ProgressUnknown(desc = "Extracting map data:", spinner = true)
     written = 1
@@ -237,7 +245,7 @@ function run_extract(Atlas1::AbstractString;
             # rows[i][k] is map i's row string for stream k.
             rows = Vector{Vector{String}}(undef, n)
             parallelDo!(n, cores) do i
-                m = JSON3.read(lines[i], Map{mpt,wt})
+                m = parseMap(lines[i])
                 added = computeAdded(m)
                 rr = Vector{String}(undef, length(streams))
                 for (k, (field, _, width)) in enumerate(streams)

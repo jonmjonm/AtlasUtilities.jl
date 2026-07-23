@@ -68,9 +68,11 @@ function mapDataHistograms(Atlas1::AbstractString;
     mpt, wt = atlas.mapParamType, atlas.weightType
 
     n_burned = 0
-    while n_burned < burn_in && !eof(atlas)
-        readline(atlas.io)
-        n_burned += 1
+    try
+        skipMap(atlas; numSkip = burn_in)
+        n_burned = burn_in
+    catch e
+        e isa EOFError || rethrow()
     end
     if eof(atlas)
         close(atlas)
@@ -117,6 +119,12 @@ function mapDataHistograms(Atlas1::AbstractString;
 
     feedRow!([extractVals(valueOf(first, f, firstAdded)) for f in fieldNames])
 
+    # `fns` empty means `computeAdded` never touches `m.districting` (it
+    # short-circuits to an empty dict), so parse a `MapData` instead of a full
+    # `Map` to skip reconstructing districting, which otherwise dominates the
+    # parse cost (see AtlasIO's `MapData`).
+    parseMap = isempty(fns) ? (line -> parseMapData(line, mpt, wt)) :
+                              (line -> JSON3.read(line, Map{mpt,wt}))
     progress = quiet ? nothing :
                ProgressUnknown(desc = "Building histograms:", spinner = true)
     processed = 1 + n_burned
@@ -130,7 +138,7 @@ function mapDataHistograms(Atlas1::AbstractString;
             # vector for field k.
             rows = Vector{Vector{Vector{Float64}}}(undef, n)
             parallelDo!(n, cores) do i
-                m = JSON3.read(lines[i], Map{mpt,wt})
+                m = parseMap(lines[i])
                 added = computeAdded(m)
                 rows[i] = [extractVals(valueOf(m, field, added)) for field in fieldNames]
             end
