@@ -64,22 +64,31 @@ end
 # ---------------------------------------------------------------------------
 
 """
-    writeAboutFile(outdir, Atlas1, atlas, fieldNames) -> String
+    writeAboutFile(outdir, Atlas1, atlas, fieldNames; burnIn = 0, maxMaps = 0) -> String
 
 Write an `about.md` into `outdir` describing the extraction: the source atlas name,
 the extraction date, and the atlas's header information -- everything `atlas info`
 shows except the bulky embedded generating script (see `atlasHeaderInfo`), including
 `fieldNames` (the data field names found in the first map, e.g.
-`log_spanning_trees`). Returns the path written.
+`log_spanning_trees`). When `burnIn`/`maxMaps` are nonzero (a `--burn-in`/`--max-maps`
+run), a line noting each is added -- `maxMaps` in particular marks the extraction as
+partial (see the output files' `-partial` suffix). Returns the path written.
 """
 function writeAboutFile(outdir::AbstractString, Atlas1::AbstractString, atlas,
-                        fieldNames::AbstractVector{<:AbstractString})
+                        fieldNames::AbstractVector{<:AbstractString};
+                        burnIn::Int = 0, maxMaps::Int = 0)
     path = joinpath(outdir, "about.md")
     open(path, "w") do io
         println(io, "# ", basename(String(Atlas1)), " — extracted map data")
         println(io)
         println(io, "- **Source atlas:** `", String(Atlas1), "`")
         println(io, "- **Extraction date:** ", string(Dates.now()))
+        burnIn > 0 && println(io, "- **Burn-in:** first ", burnIn,
+                              " map(s) skipped (`--burn-in ", burnIn, "`).")
+        maxMaps > 0 && println(io, "- **Partial extraction:** at most ", maxMaps,
+                              " map(s) extracted", burnIn > 0 ? " after burn-in" : "",
+                              " (`--max-maps ", maxMaps, "`); output files are ",
+                              "suffixed `-partial`.")
         println(io)
         println(io, "Atlas header below (the same information `atlas info` prints; the ",
                     "embedded generating script is omitted):")
@@ -92,38 +101,29 @@ function writeAboutFile(outdir::AbstractString, Atlas1::AbstractString, atlas,
 end
 
 # ---------------------------------------------------------------------------
-# Driver
+# Shared with extract-map-data-histogram
 # ---------------------------------------------------------------------------
 
 """
-    run_extract(Atlas1; add, compress, force, config, graph, pop_col, node_col,
-                area_col, border_col, edge_perimeter_col, node_data, quiet)
+    setupAddComputation(addNames, votePairs; config, graph, pop_col, node_col,
+                        area_col, border_col, edge_perimeter_col, node_data)
+    -> (fns, addFields, addedSet, g)
 
-Extract the map data of atlas `Atlas1` to per-field CSV files in a directory named
-after `Atlas1` (its path minus the atlas extension). Every existing data field is
-extracted; `add` (a writer-function name, or comma-separated / bracketed list) is
-additionally computed via the graph described by `config` and/or the column
-keyword arguments (see `resolveGraphSpec`) and extracted too. `compress` gzips the
-CSVs (`.csv.gz`); with `compress = false` they are plain `.csv`. A field whose
-output file already exists is skipped unless `force = true`. `quiet` suppresses the
-progress bar.
+Resolve `--add`/`--vote-cols` into the writer-function list `fns` (as returned by
+`resolveFunctions`), the field names they add (`addFields`, partisan names
+expanded), the set of those names (`addedSet`), and the CycleWalk graph `g` built
+from `config`/the column keyword arguments (`nothing` if `addNames` is empty, since
+no graph is needed when there is nothing to add). Shared by `atlas extract-map-data`
+and `atlas extract-map-data-histogram`.
 """
-function run_extract(Atlas1::AbstractString;
-                     add::AbstractString = "", compress::Bool = true,
-                     force::Bool = false, config::AbstractString = "",
-                     graph::AbstractString = "", pop_col::AbstractString = "",
-                     node_col::AbstractString = "", area_col::AbstractString = "",
-                     border_col::AbstractString = "",
-                     edge_perimeter_col::AbstractString = "",
-                     node_data::AbstractString = "", vote_cols::AbstractString = "",
-                     quiet::Bool = false, cores::Int = Threads.nthreads())
-    addNames = isempty(add) ? String[] : parseFunctionNames(add)
-    votePairs = parseVotePairs(vote_cols)
-    fns = resolveFunctions(addNames, votePairs)   # validate + expand partisan names
-    addFields = [desc for (desc, _) in fns]       # actual field names (partisan names expand)
+function setupAddComputation(addNames::Vector{String}, votePairs;
+                             config::AbstractString, graph::AbstractString,
+                             pop_col::AbstractString, node_col::AbstractString,
+                             area_col::AbstractString, border_col::AbstractString,
+                             edge_perimeter_col::AbstractString, node_data::AbstractString)
+    fns = resolveFunctions(addNames, votePairs)
+    addFields = [desc for (desc, _) in fns]
     addedSet = Set(addFields)
-
-    # The graph (and its columns) is only needed when computing `--add` functions.
     g = nothing
     if !isempty(addNames)
         spec = resolveGraphSpec(; config = config, graph = graph, pop_col = pop_col,
@@ -134,10 +134,52 @@ function run_extract(Atlas1::AbstractString;
         union!(spec.node_data, Set(voteColumns(votePairs)))   # keep vote columns on the graph
         g = buildGraph(spec)
     end
+    return (fns, addFields, addedSet, g)
+end
+
+# ---------------------------------------------------------------------------
+# Driver
+# ---------------------------------------------------------------------------
+
+"""
+    run_extract(Atlas1; add, compress, force, config, graph, pop_col, node_col,
+                area_col, border_col, edge_perimeter_col, node_data, max_maps, quiet)
+
+Extract the map data of atlas `Atlas1` to per-field CSV files in a directory named
+after `Atlas1` (its path minus the atlas extension). Every existing data field is
+extracted; `add` (a writer-function name, or comma-separated / bracketed list) is
+additionally computed via the graph described by `config` and/or the column
+keyword arguments (see `resolveGraphSpec`) and extracted too. `compress` gzips the
+CSVs (`.csv.gz`); with `compress = false` they are plain `.csv`. A field whose
+output file already exists is skipped unless `force = true`. `max_maps` (0 =
+unlimited, the default) stops after extracting that many maps; when set, output
+filenames get a `-partial` suffix (before the extension) so a partial run never
+collides with a full one's output, and `about.md` notes the limit. `quiet`
+suppresses the progress bar.
+"""
+function run_extract(Atlas1::AbstractString;
+                     add::AbstractString = "", compress::Bool = true,
+                     force::Bool = false, config::AbstractString = "",
+                     graph::AbstractString = "", pop_col::AbstractString = "",
+                     node_col::AbstractString = "", area_col::AbstractString = "",
+                     border_col::AbstractString = "",
+                     edge_perimeter_col::AbstractString = "",
+                     node_data::AbstractString = "", vote_cols::AbstractString = "",
+                     max_maps::Int = 0,
+                     quiet::Bool = false, cores::Int = Threads.nthreads())
+    max_maps < 0 && error("atlas extract-map-data: --max-maps must be ≥ 0, got $max_maps.")
+    addNames = isempty(add) ? String[] : parseFunctionNames(add)
+    votePairs = parseVotePairs(vote_cols)
+    fns, addFields, addedSet, g = setupAddComputation(addNames, votePairs;
+        config = config, graph = graph, pop_col = pop_col, node_col = node_col,
+        area_col = area_col, border_col = border_col,
+        edge_perimeter_col = edge_perimeter_col, node_data = node_data)
 
     outdir = stripAtlasExt(String(Atlas1))
     isdir(outdir) || mkpath(outdir)
-    ext = compress ? ".csv.gz" : ".csv"
+    # A --max-maps run gets its own filenames so it never collides with (or is
+    # silently mistaken for) a full extraction's output in the same directory.
+    ext = (max_maps > 0 ? "-partial" : "") * (compress ? ".csv.gz" : ".csv")
 
     atlas = openAtlas(smartOpen(String(Atlas1), "r"))
     mpt, wt = atlas.mapParamType, atlas.weightType
@@ -153,7 +195,8 @@ function run_extract(Atlas1::AbstractString;
     # Always (re)write about.md, regardless of which CSV fields are actually
     # written below -- it should describe the atlas even on a re-run where every
     # target CSV already exists and is skipped.
-    writeAboutFile(outdir, String(Atlas1), atlas, sort(collect(keys(first.data))))
+    writeAboutFile(outdir, String(Atlas1), atlas, sort(collect(keys(first.data)));
+                  maxMaps = max_maps)
 
     shouldWrite(field) = force || !isfile(joinpath(outdir, field * ext))
 
@@ -199,22 +242,28 @@ function run_extract(Atlas1::AbstractString;
     # --- stream the remaining maps in batches ---------------------------------
     # Read serially, then per map parse + compute (--add) + render each field's row
     # in parallel, then write the rows to their streams serially in map order.
+    #
+    # `activeFns` empty means no writer will actually be evaluated this run (either
+    # no `--add` was given, or every requested field was skipped as already
+    # existing), so `computeAdded` never touches `m.districting` -- parse a
+    # `MapData` instead of a full `Map` to skip reconstructing it, which otherwise
+    # dominates the parse cost (see AtlasIO's `MapData`).
+    parseMap = isempty(activeFns) ? (line -> parseMapData(line, mpt, wt)) :
+                                    (line -> JSON3.read(line, Map{mpt,wt}))
     progress = quiet ? nothing :
                ProgressUnknown(desc = "Extracting map data:", spinner = true)
     written = 1
+    remaining() = max_maps == 0 ? typemax(Int) : max_maps - written
     with_serial_blas() do
-        while !eof(atlas)
-            lines = String[]
-            while length(lines) < BATCH && !eof(atlas)
-                push!(lines, readline(atlas.io))
-            end
+        while !eof(atlas) && remaining() > 0
+            lines = readBatch(atlas.io, min(BATCH, remaining()))
             n = length(lines)
             n == 0 && break
 
             # rows[i][k] is map i's row string for stream k.
             rows = Vector{Vector{String}}(undef, n)
             parallelDo!(n, cores) do i
-                m = JSON3.read(lines[i], Map{mpt,wt})
+                m = parseMap(lines[i])
                 added = computeAdded(m)
                 rr = Vector{String}(undef, length(streams))
                 for (k, (field, _, width)) in enumerate(streams)
