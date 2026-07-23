@@ -147,6 +147,31 @@ end
         @test issorted(mins)
     end
 
+    # Every point fed to a StreamHist lands in exactly one of: a traditional-
+    # histogram bin, underflow, or overflow -- never dropped, never double
+    # counted. Check this directly against the written CSV (both blocks) for
+    # every field (scalar and vector) of a real run.
+    @testset "bin-sum-consistency: sum(exact_count) + underflow + overflow == nobs" begin
+        src = joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_slice.jsonl.gz")
+        dir = mktempdir()
+        atlaspath = joinpath(dir, "run.jsonl.gz"); cp(src, atlaspath)
+        run_extract_map_data_histogram(atlaspath; quiet = true)
+        outdir = joinpath(dir, "run")
+
+        for field in ["get_log_spanning_forests", "get_log_spanning_trees",
+                      "get_isoperimetric_scores"]
+            block1, block2 = histBlocks(readtext(joinpath(outdir, field * "-histogram.csv.gz")))
+            for row in block1[2:end]                       # one row per index
+                cells = split(row, ",")
+                idx, nobsRow, underflow, overflow =
+                    parse.(Int, cells[1:4])
+                binSum = sum(parse(Int, split(r, ",")[4])
+                              for r in block2[2:end] if parse(Int, split(r, ",")[1]) == idx)
+                @test binSum + underflow + overflow == nobsRow
+            end
+        end
+    end
+
     # `integer=:auto` only resolves via `add!`'s learn-completion path once
     # `learnLength` points arrive; a real atlas run is typically far short of the
     # default 10_000, so this exercises `finalize!`'s early-buffer-flush path
