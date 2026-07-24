@@ -6,12 +6,12 @@ https://github.com/jonmjonm/AtlasIO.jl/blob/main/atlas_format.md).
 
 Installs a single `atlas` command with eight subcommands:
 
-  * `atlas info <atlas> [--extract-script]` — print an atlas file's header, plus
+  * `atlas info <atlas> [--extract-script]` — print the atlas file header, plus
     the data field names found in its first map.
   * `atlas list-map-data <atlas>` — list the names of the data fields (e.g.
-    `log_spanning_trees`) contained in the atlas's first map, one per line.
-  * `atlas list-nodes <atlas> [--map k]` — list the node ids in the atlas's
-    k-th map (k=1 by default) as a JSON array of strings.
+    `log_spanning_trees`) contained in the first map of the atlas, one per line.
+  * `atlas list-nodes <atlas> [--map k]` — list the node ids in the
+    k-th map of the atlas (k=1 by default) as a JSON array of strings.
   * `atlas relabel <Atlas1> <Atlas2> [<graph.json>] [--first-map] [--quiet]
     [--weight-population <pop.json> --population-attr <attr>]` — relabel
     district numbers across an atlas so consecutive maps stay consistent.
@@ -28,7 +28,7 @@ Installs a single `atlas` command with eight subcommands:
     but accumulate each map-data field into a StreamHistogram instead of writing
     per-map CSV rows.
   * `atlas extract-assignments <Atlas1> [--no-compression] [--force] [--quiet]` —
-    write a single wide CSV of each map's per-node district assignment.
+    write a single wide CSV of the per-node district assignment for each map.
 
 Run `atlas --help` or `atlas <subcommand> --help` for details.
 """
@@ -117,10 +117,10 @@ Relabel district numbers across atlas Atlas1 so consecutive maps stay as similar
 - `--weight-population <pop.json>`: weight the alignment by population instead
   of raw node counts. `<pop.json>` is a node-link JSON (often the same file as
   `graph`) whose nodes carry a population attribute, named by
-  `--population-attr`, and are keyed by the atlas's `"levels in graph"` param.
+  `--population-attr`, and are keyed by the `"levels in graph"` param of the atlas.
   Requires `--population-attr`.
-- `--population-attr <name>`: the population attribute name on `<pop.json>`'s
-  nodes (e.g. `pop2020cen`). Required by `--weight-population`.
+- `--population-attr <name>`: the population attribute name on the nodes of
+  `<pop.json>` (e.g. `pop2020cen`). Required by `--weight-population`.
 
 # Flags
 
@@ -214,8 +214,8 @@ Write each map-data field of atlas Atlas1 to its own CSV (one row per map) in a 
   by `;` (e.g. `G20_PR_D,G20_PR_R;G16_PR_D,G16_PR_R` — quote it in your shell since
   it contains a `;`); each pair yields a field `writer_votes1_votes2`.
 - `--max-maps <n>`: stop after extracting this many maps (default 0, unlimited).
-  Output filenames get a `-partial` suffix so a partial run never collides with a
-  full one's output in the same directory, and `about.md` notes the limit.
+  Output filenames get a `-partial` suffix so a partial run never collides with
+  the output of a full run in the same directory, and `about.md` notes the limit.
 
 # Flags
 
@@ -240,7 +240,7 @@ Write each map-data field of atlas Atlas1 to its own CSV (one row per map) in a 
 end
 
 """
-Like `extract-map-data`, but instead of writing per-map CSV rows, accumulate each map-data field's values into a StreamHistogram: a single histogram for a scalar field, or one histogram per index for a vector field (with `--no-sort`, index `j` gets raw entry `j`; by default entry `j` of each map's vector is sorted ascending first, so histogram `j` holds the `j`-th order statistic across maps rather than raw index `j`). The first `--burn-in` maps are skipped entirely. Writes one CSV per field, named `<field>-histogram.csv` (or `.csv.gz`), plus `about.md`, to the same directory `extract-map-data` uses.
+Like `extract-map-data`, but instead of writing per-map CSV rows, accumulate the values of each map-data field into a StreamHistogram: a single histogram for a scalar field, or one histogram per index for a vector field (with `--no-sort`, index `j` gets raw entry `j`; by default entry `j` of each map vector is sorted ascending first, so histogram `j` holds the `j`-th order statistic across maps rather than raw index `j`). The first `--burn-in` maps are skipped entirely. Writes one CSV per field, named `<field>-histogram.csv` (or `.csv.gz`), plus `about.md`, to the same directory `extract-map-data` uses.
 
 # Args
 
@@ -251,8 +251,8 @@ Like `extract-map-data`, but instead of writing per-map CSV rows, accumulate eac
 - `--burn-in <n>`: skip the first `n` maps (default 0).
 - `--max-maps <n>`: stop after accumulating this many maps past the burn-in
   (default 0, unlimited). Output filenames get a `-histogram-partial` suffix so a
-  partial run never collides with a full one's output in the same directory, and
-  `about.md` notes the limit.
+  partial run never collides with the output of a full run in the same directory,
+  and `about.md` notes the limit.
 - `--add <functions>`: also compute and accumulate these writer function(s).
 - `--config <param.toml>`: CycleWalk TOML supplying the graph (for `--add`).
 - `--graph <graph.json>`: dual-graph JSON (overrides the TOML path).
@@ -264,7 +264,7 @@ Like `extract-map-data`, but instead of writing per-map CSV rows, accumulate eac
 - `--node-data <cols>`: extra node attributes to keep (comma-separated list).
 - `--vote-cols <pairs>`: vote columns for the partisan `--add` writers, as
   `votes1,votes2` pairs separated by `;` (see `atlas add --help`).
-- `--bin-range <range>`: fix every histogram's bin range up front instead of
+- `--bin-range <range>`: fix the bin range of every histogram up front instead of
   learning it from its own data, as `lo,hi` (e.g. `0,1`).
 - `--bin-num <n>`: number of histogram bins (default 50; ignored with `--integer`).
 - `--bins <edges>`: explicit bin edges, comma separated, overriding
@@ -279,8 +279,8 @@ Like `extract-map-data`, but instead of writing per-map CSV rows, accumulate eac
 
 # Flags
 
-- `--no-sort`: do not sort a vector field's entries before accumulating (so
-  histogram `j` gets raw entry `j` of each map's vector, not the `j`-th order
+- `--no-sort`: do not sort the entries of a vector field before accumulating (so
+  histogram `j` gets raw entry `j` of each map vector, not the `j`-th order
   statistic).
 - `--no-compression`: write plain `.csv` instead of gzip-compressed `.csv.gz`.
 - `--force`: overwrite an output file that already exists (otherwise it is skipped).
