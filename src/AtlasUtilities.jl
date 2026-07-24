@@ -151,7 +151,7 @@ Add CycleWalk pushable writer function(s) (e.g. `get_log_spanning_trees`) to eve
 
 # Options
 
-- `--config <param.toml>`: a CycleWalk TOML; its `[plans]` table supplies the
+- `--config <param.toml>`: a CycleWalk TOML; its plans table supplies the
   graph path (`map_directory`/`map_file`) and columns (`pop_col`, `geo_units`,
   `area_col`, `node_border_col`, `edge_perimeter_col`, `node_data`).
 - `--graph <graph.json>`: dual-graph JSON (overrides the TOML path).
