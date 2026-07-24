@@ -10,8 +10,13 @@
 #
 # `mapDataHistograms` is the library entry point (returns the
 # `Dict{String,Union{StreamHist,Vector{StreamHist}}}`); `run_extract_map_data_histogram`
-# is the CLI driver, which also writes each field's histogram(s) to a CSV
-# (`<field>-histogram.csv[.gz]`) in the same output directory `extract-map-data` uses.
+# is the CLI driver, which also writes each field's histogram(s) to a pair of files
+# (`<field>-histogram.csv[.gz]` + `<field>-histogram.json[.gz]`) in the same output
+# directory `extract-map-data` uses. The CSV holds only the exact per-bin edges and
+# counts (a plain numeric table for loading straight into a histogram plot in
+# Python/Julia); the JSON holds everything else -- per-index summary statistics,
+# moment errors, the ASH-density bin counts, and the bin edges again (so the JSON is
+# self-contained) -- as a human-readable dictionary keyed by index.
 
 # ---------------------------------------------------------------------------
 # Library entry point
@@ -24,7 +29,7 @@
                       cores = Threads.nthreads(), quiet = false, integer = false,
                       bin_range = nothing, bin_num = 50, bins = nothing,
                       moment_powers = [1, 2, 4, 8])
-    -> Dict{String,Union{StreamHist,Vector{StreamHist}}}
+    -> (Dict{String,Union{StreamHist,Vector{StreamHist}}}, Int)
 
 Read every map in atlas `Atlas1` after skipping the first `burn_in` maps,
 computing any `add` writer fields (exactly as `extract-map-data`/`add` do -- see
@@ -42,6 +47,9 @@ which case each `StreamHist` independently decides integer-ness from its own
 learn-phase sample (so a scalar field and a vector field's different indices can
 resolve differently); `:auto` requires `bin_range`/`bins` to be left unset (see
 `StreamHist`).
+
+Returns the histogram dict alongside the number of maps actually accumulated
+(past the burn-in, capped by `max_maps`).
 """
 function mapDataHistograms(Atlas1::AbstractString;
                            add::AbstractString = "", vote_cols::AbstractString = "",
@@ -181,60 +189,81 @@ function mapDataHistograms(Atlas1::AbstractString;
     end
 
     return Dict{String,Union{StreamHist,Vector{StreamHist}}}(
-        fieldNames[k] => hists[k] for k in eachindex(fieldNames))
+        fieldNames[k] => hists[k] for k in eachindex(fieldNames)), written
 end
 
 # ---------------------------------------------------------------------------
-# CSV rendering
+# CSV + JSON rendering
 # ---------------------------------------------------------------------------
 
-"""Summary-block header/row for one `StreamHist` at position `idx` within its
-field (`idx == 1` for a scalar field)."""
-function histSummaryHeader(momentPowers)
-    return "index,nobs,underflow,overflow,exact_min,exact_max,mean,variance,std," *
-           "skewness,kurtosis," * join(("relerr_moment_$p" for p in momentPowers), ",") * "\n"
-end
-
-function histSummaryRow(oh::StreamHist, idx::Int)
-    uf, of = outofrange(oh)
-    mn, mx = datarange(oh)
-    relerrs = oh.integer ? fill("", length(oh.momentPowers)) : string.(densityQuality(oh))
-    cells = String[string(idx), string(nobs(oh)), string(uf), string(of), string(mn),
-                   string(mx), string(mean(oh)), string(variance(oh)), string(std(oh)),
-                   string(skewness(oh)), string(kurtosis(oh))]
-    return join(vcat(cells, relerrs), ",") * "\n"
-end
-
-"""Bin-block rows for one `StreamHist` at position `idx`: its own (independently
-learned) edges, the exact histogram counts, and the ASH-density-derived counts
-integrated over those same edges (`ash_count` is left blank in `integer` mode,
-where the ASH is disabled)."""
-function writeHistBinRows(io::IO, oh::StreamHist, idx::Int)
+"""Bin edges, exact histogram counts, and ASH-density-derived counts (integrated
+over those same edges; `nothing` in `integer` mode, where the ASH is disabled) for
+one `StreamHist`."""
+function histBins(oh::StreamHist)
     eh = exactHistogram(oh)
     edges = collect(eh.edges[1])
     weights = eh.weights
     ashWeights = oh.integer ? nothing : histogram(oh, edges).weights
-    for b in eachindex(weights)
-        ashCell = ashWeights === nothing ? "" : string(ashWeights[b])
-        write(io, join((idx, edges[b], edges[b + 1], weights[b], ashCell), ",") * "\n")
-    end
+    return edges, weights, ashWeights
 end
 
-"""Write one field's histogram(s) (`entry`, a `StreamHist` or `Vector{StreamHist}`)
-to `path` as two blocks separated by a blank line: a per-index summary block, then
-a per-index bin block (see `histSummaryHeader`/`writeHistBinRows`)."""
+"""Write the exact per-bin edges/counts for one field's histogram(s) (`entry`, a
+`StreamHist` or `Vector{StreamHist}`) to `path` as a plain numeric CSV table:
+`index,edge_lo,edge_hi,exact_count` (`index` is the position within `entry`, `1` for
+a scalar field)."""
 function writeHistogramCSV(path::AbstractString, entry)
     ohs = entry isa StreamHist ? [entry] : entry
     io = smartOpen(path, "w")
-    write(io, histSummaryHeader(ohs[1].momentPowers))
+    write(io, "index,edge_lo,edge_hi,exact_count\n")
     for (idx, oh) in enumerate(ohs)
-        write(io, histSummaryRow(oh, idx))
+        edges, weights, _ = histBins(oh)
+        for b in eachindex(weights)
+            write(io, join((idx, edges[b], edges[b + 1], weights[b]), ",") * "\n")
+        end
     end
-    write(io, "\n")
-    write(io, "index,edge_lo,edge_hi,exact_count,ash_count\n")
-    for (idx, oh) in enumerate(ohs)
-        writeHistBinRows(io, oh, idx)
-    end
+    close(io)
+    return path
+end
+
+"""JSON has no NaN/Inf literal (JSON3 errors on them); a `StreamHist` can produce
+either -- e.g. skewness/kurtosis on a zero-variance (constant-valued) field --
+so map non-finite floats to `null` on the way out."""
+jsonFloat(x::AbstractFloat) = isfinite(x) ? x : nothing
+jsonFloat(x) = x
+
+"""Everything about one `StreamHist` other than its exact bin counts, as a plain
+`Dict` suitable for `JSON3.write`: summary statistics, moment errors, whether it
+learned integer-ness, and its bin edges + ASH-density-derived counts (`nothing` in
+`integer` mode)."""
+function histSummaryDict(oh::StreamHist)
+    uf, of = outofrange(oh)
+    mn, mx = datarange(oh)
+    edges, _, ashWeights = histBins(oh)
+    relerrs = oh.integer ? nothing : densityQuality(oh)
+    return Dict{String,Any}(
+        "nobs" => nobs(oh), "underflow" => uf, "overflow" => of,
+        "exact_min" => jsonFloat(mn), "exact_max" => jsonFloat(mx),
+        "mean" => jsonFloat(mean(oh)), "variance" => jsonFloat(variance(oh)),
+        "std" => jsonFloat(std(oh)),
+        "skewness" => jsonFloat(skewness(oh)), "kurtosis" => jsonFloat(kurtosis(oh)),
+        "integer" => oh.integer,
+        "relerr_moments" => relerrs === nothing ? nothing :
+            Dict(string(p) => jsonFloat(e) for (p, e) in zip(oh.momentPowers, relerrs)),
+        "edges" => jsonFloat.(edges), "ash_count" => ashWeights)
+end
+
+"""Write one field's histogram(s) (`entry`, a `StreamHist` or `Vector{StreamHist}`)
+to `path` as a human-readable JSON dictionary: `moment_powers` (shared across every
+index) and `histograms`, a dictionary keyed by index (as a string, `"1"` for a
+scalar field) of `histSummaryDict` entries."""
+function writeHistogramJSON(path::AbstractString, entry)
+    ohs = entry isa StreamHist ? [entry] : entry
+    doc = Dict{String,Any}(
+        "moment_powers" => ohs[1].momentPowers,
+        "histograms" => Dict(string(idx) => histSummaryDict(oh)
+                              for (idx, oh) in enumerate(ohs)))
+    io = smartOpen(path, "w")
+    JSON3.write(io, doc)
     close(io)
     return path
 end
@@ -251,13 +280,15 @@ end
                                    bin_num, bins, moment_powers, quiet, cores)
 
 Build `mapDataHistograms` for atlas `Atlas1` and write each field's histogram(s) to
-`<field>-histogram.csv[.gz]` in a directory named after `Atlas1` (the same
-directory `extract-map-data` uses), plus an `about.md` (as `extract-map-data`
-writes). `compress` gzips the CSVs; a field whose output file already exists is
-skipped unless `force = true`. `max_maps` (0 = unlimited, the default) stops after
-accumulating that many maps past the burn-in; when set, output filenames get a
-`-histogram-partial` suffix so a partial run never collides with a full one's
-output, and `about.md` notes the limit.
+a `<field>-histogram.csv[.gz]` + `<field>-histogram.json[.gz]` pair in a directory
+named after `Atlas1` (the same directory `extract-map-data` uses), plus an
+`about.md` (as `extract-map-data` writes). The CSV holds the exact per-bin edges
+and counts; the JSON holds everything else (see `writeHistogramCSV`/
+`writeHistogramJSON`). `compress` gzips both files; a field whose CSV or JSON
+output file already exists is skipped unless `force = true`. `max_maps` (0 =
+unlimited, the default) stops after accumulating that many maps past the burn-in;
+when set, output filenames get a `-histogram-partial` suffix so a partial run
+never collides with a full one's output, and `about.md` notes the limit.
 """
 function run_extract_map_data_histogram(Atlas1::AbstractString;
                                         add::AbstractString = "",
@@ -293,7 +324,7 @@ function run_extract_map_data_histogram(Atlas1::AbstractString;
                   burnIn = burn_in, maxMaps = max_maps)
     close(peek)
 
-    hists = mapDataHistograms(Atlas1; add = add, vote_cols = vote_cols, config = config,
+    hists, _ = mapDataHistograms(Atlas1; add = add, vote_cols = vote_cols, config = config,
         graph = graph, pop_col = pop_col, node_col = node_col, area_col = area_col,
         border_col = border_col, edge_perimeter_col = edge_perimeter_col,
         node_data = node_data, burn_in = burn_in, max_maps = max_maps, sortVals = sortVals,
@@ -302,17 +333,21 @@ function run_extract_map_data_histogram(Atlas1::AbstractString;
 
     # A --max-maps run gets its own filenames so it never collides with (or is
     # silently mistaken for) a full run's output in the same directory.
-    ext = (max_maps > 0 ? "-partial" : "") * (compress ? ".csv.gz" : ".csv")
+    partial = max_maps > 0 ? "-partial" : ""
+    csvExt = partial * (compress ? ".csv.gz" : ".csv")
+    jsonExt = partial * (compress ? ".json.gz" : ".json")
     written = String[]
     skipped = String[]
     for field in sort(collect(keys(hists)))
-        path = joinpath(outdir, field * "-histogram" * ext)
-        if !force && isfile(path)
-            push!(skipped, path)
+        csvPath = joinpath(outdir, field * "-histogram" * csvExt)
+        jsonPath = joinpath(outdir, field * "-histogram" * jsonExt)
+        if !force && (isfile(csvPath) || isfile(jsonPath))
+            append!(skipped, filter(isfile, [csvPath, jsonPath]))
             continue
         end
-        writeHistogramCSV(path, hists[field])
-        push!(written, path)
+        writeHistogramCSV(csvPath, hists[field])
+        writeHistogramJSON(jsonPath, hists[field])
+        append!(written, [csvPath, jsonPath])
     end
     isempty(skipped) || @info "extract-map-data-histogram: skipping existing file(s) " *
         "(use --force to overwrite): " * join(skipped, ", ")

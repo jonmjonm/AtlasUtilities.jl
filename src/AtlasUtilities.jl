@@ -4,7 +4,7 @@
 Command-line utilities for redistricting Atlas files (see the Atlas format at
 https://github.com/jonmjonm/AtlasIO.jl/blob/main/atlas_format.md).
 
-Installs a single `atlas` command with eight subcommands:
+Installs a single `atlas` command with nine subcommands:
 
   * `atlas info <atlas> [--extract-script]` — print the atlas file header, plus
     the data field names found in its first map.
@@ -27,6 +27,9 @@ Installs a single `atlas` command with eight subcommands:
     [--bins <e1,e2,...>] [--moment-powers <p1,p2,...>]` — like `extract-map-data`,
     but accumulate each map-data field into a StreamHistogram instead of writing
     per-map CSV rows.
+  * `atlas summarize-map-data <Atlas1> [--max-maps <n>] [--quiet]` — print, per
+    map-data field, its mean, standard deviation, and
+    [min, 25% quartile, median, 75% quartile, max].
   * `atlas extract-assignments <Atlas1> [--no-compression] [--force] [--quiet]` —
     write a single wide CSV of the per-node district assignment for each map.
 
@@ -54,6 +57,7 @@ include("relabel.jl")
 include("add.jl")
 include("extract.jl")
 include("extractHistogram.jl")
+include("summarize.jl")
 include("assignments.jl")
 
 export confusionMatrix, permutationFromConfusion, hammingDistance, relabelMap,
@@ -240,7 +244,7 @@ Write each map-data field of atlas Atlas1 to its own CSV (one row per map) in a 
 end
 
 """
-Like `extract-map-data`, but instead of writing per-map CSV rows, accumulate the values of each map-data field into a StreamHistogram: a single histogram for a scalar field, or one histogram per index for a vector field (with `--no-sort`, index `j` gets raw entry `j`; by default entry `j` of each map vector is sorted ascending first, so histogram `j` holds the `j`-th order statistic across maps rather than raw index `j`). The first `--burn-in` maps are skipped entirely. Writes one CSV per field, named `<field>-histogram.csv` (or `.csv.gz`), plus `about.md`, to the same directory `extract-map-data` uses.
+Like `extract-map-data`, but instead of writing per-map CSV rows, accumulate the values of each map-data field into a StreamHistogram: a single histogram for a scalar field, or one histogram per index for a vector field (with `--no-sort`, index `j` gets raw entry `j`; by default entry `j` of each map vector is sorted ascending first, so histogram `j` holds the `j`-th order statistic across maps rather than raw index `j`). The first `--burn-in` maps are skipped entirely. Writes a CSV + JSON pair per field, named `<field>-histogram.csv` and `<field>-histogram.json` (or `.csv.gz`/`.json.gz`), plus `about.md`, to the same directory `extract-map-data` uses. The CSV holds only the exact per-bin edges and counts (a plain numeric table for loading straight into a histogram plot); the JSON holds everything else -- per-index summary statistics, moment errors, the ASH-density bin counts, and the bin edges again -- as a human-readable dictionary keyed by index.
 
 # Args
 
@@ -316,6 +320,26 @@ Like `extract-map-data`, but instead of writing per-map CSV rows, accumulate the
         compress = !no_compression, force = force, integer = parsedInteger,
         bin_range = parsedBinRange, bin_num = bin_num, bins = parsedBins,
         moment_powers = parsedPowers, quiet = quiet)
+end
+
+"""
+Print, for every map-data field of atlas Atlas1, its mean, standard deviation, and [min, 25% quartile, median, 75% quartile, max], each computed from a StreamHistogram built over the field values (one histogram per index for a vector field, each map vector sorted ascending first, so histogram j holds the j-th order statistic across maps). Warns when too much of a field data set fell outside its histogram learned range (the tail quantile estimates lean on a single coarse interpolation across that whole bucket), or when a quartile estimate disagrees with the ASH density estimate for that field by more than a couple of percentage points (the within-bin-uniform interpolation may not fit the shape of that field).
+
+# Args
+
+- `atlas1`: input atlas (`.jsonl` / `.jsonl.gz` / `.jsonl.bz2`).
+
+# Options
+
+- `--max-maps <n>`: only consider the first `n` maps of the atlas (default 0,
+  unlimited).
+
+# Flags
+
+- `--quiet`: suppress the progress bar.
+"""
+@cast function summarize_map_data(atlas1::String; max_maps::Int = 0, quiet::Bool = false)
+    run_summarize_map_data(atlas1; max_maps = max_maps, quiet = quiet)
 end
 
 """

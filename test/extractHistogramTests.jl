@@ -1,28 +1,29 @@
-# Tests for the `atlas extract-map-data-histogram` subcommand: the CSV rendering
-# helpers and an end-to-end run checked against the atlas's own map data (and,
-# for --add, against `extract-map-data`'s own oracle-checked output).
+# Tests for the `atlas extract-map-data-histogram` subcommand: the CSV + JSON
+# rendering helpers and an end-to-end run checked against the atlas's own map data
+# (and, for --add, against `extract-map-data`'s own oracle-checked output).
 
 using Test
+using JSON3
 using AtlasIO
 using AtlasUtilities: run_extract_map_data_histogram, mapDataHistograms,
-                      writeHistogramCSV, histSummaryHeader, run_extract
+                      writeHistogramCSV, writeHistogramJSON, run_extract
 using StreamHistogram: StreamHist, add!, finalize!, nobs, datarange, mean
 
 readtext(p) = (io = smartOpen(p, "r"); s = read(io, String); close(io); s)
 
-"""Split a histogram CSV's text into (summaryRows, binRows), each a header row
-followed by its data rows (see `writeHistogramCSV`'s two-block format)."""
-function histBlocks(text)
-    lines = split(text, "\n")
-    blank = findfirst(isempty, lines)
-    block1 = lines[1:(blank - 1)]
-    block2 = filter(!isempty, lines[(blank + 1):end])
-    return block1, block2
+"""Split a histogram CSV's text into (header, dataRows)."""
+function csvRows(text)
+    lines = filter(!isempty, split(text, "\n"))
+    return lines[1], lines[2:end]
 end
+
+"""Read a histogram JSON's `histograms` dict, keyed by index (as written, string
+keys `"1"`, `"2"`, ...)."""
+readHistJSON(path) = JSON3.read(readtext(path))["histograms"]
 
 @testset "extract-map-data-histogram" begin
 
-    @testset "helpers: writeHistogramCSV round-trips a synthetic StreamHist" begin
+    @testset "helpers: writeHistogramCSV/JSON round-trip a synthetic StreamHist" begin
         mkHist() = StreamHist(; binRange = (0.0, 10.0), binNum = 5)
 
         @testset "scalar field (bare StreamHist)" begin
@@ -31,21 +32,24 @@ end
             finalize!(oh)
 
             dir = mktempdir()
-            path = joinpath(dir, "f-histogram.csv")
-            writeHistogramCSV(path, oh)
-            block1, block2 = histBlocks(readtext(path))
+            csvPath = joinpath(dir, "f-histogram.csv")
+            jsonPath = joinpath(dir, "f-histogram.json")
+            writeHistogramCSV(csvPath, oh)
+            writeHistogramJSON(jsonPath, oh)
 
-            @test block1[1] * "\n" == histSummaryHeader(oh.momentPowers)
-            @test length(block1) == 2                        # header + one index row
-            cells = split(block1[2], ",")
-            @test cells[1] == "1"                             # index
-            @test parse(Int, cells[2]) == 4                    # nobs
-            @test parse(Float64, cells[5]) == 1.0              # exact_min
-            @test parse(Float64, cells[6]) == 9.0              # exact_max
+            header, rows = csvRows(readtext(csvPath))
+            @test header == "index,edge_lo,edge_hi,exact_count"
+            @test length(rows) == 5                             # 5 bins
+            @test all(startswith(r, "1,") for r in rows)
 
-            @test block2[1] == "index,edge_lo,edge_hi,exact_count,ash_count"
-            @test length(block2) == 1 + 5                      # header + 5 bins
-            @test all(startswith(r, "1,") for r in block2[2:end])
+            hs = readHistJSON(jsonPath)
+            @test Set(keys(hs)) == Set([Symbol("1")])
+            h1 = hs[Symbol("1")]
+            @test h1["nobs"] == 4
+            @test h1["exact_min"] == 1.0
+            @test h1["exact_max"] == 9.0
+            @test length(h1["edges"]) == 6                       # 5 bins -> 6 edges
+            @test length(h1["ash_count"]) == 5
         end
 
         @testset "vector field (Vector{StreamHist})" begin
@@ -54,34 +58,35 @@ end
             finalize!(oh1); finalize!(oh2)
 
             dir = mktempdir()
-            path = joinpath(dir, "f-histogram.csv")
-            writeHistogramCSV(path, [oh1, oh2])
-            block1, block2 = histBlocks(readtext(path))
+            csvPath = joinpath(dir, "f-histogram.csv")
+            jsonPath = joinpath(dir, "f-histogram.json")
+            writeHistogramCSV(csvPath, [oh1, oh2])
+            writeHistogramJSON(jsonPath, [oh1, oh2])
 
-            @test length(block1) == 3                          # header + 2 index rows
-            @test split(block1[2], ",")[1] == "1"
-            @test split(block1[3], ",")[1] == "2"
-            @test parse(Int, split(block1[2], ",")[2]) == 2     # oh1 nobs
-            @test parse(Int, split(block1[3], ",")[2]) == 3     # oh2 nobs
+            _, rows = csvRows(readtext(csvPath))
+            @test length(rows) == 2 * 5                          # 5 bins per index
+            @test count(r -> startswith(r, "1,"), rows) == 5
+            @test count(r -> startswith(r, "2,"), rows) == 5
 
-            @test length(block2) == 1 + 2 * 5                   # header + 5 bins per index
-            @test count(r -> startswith(r, "1,"), block2[2:end]) == 5
-            @test count(r -> startswith(r, "2,"), block2[2:end]) == 5
+            hs = readHistJSON(jsonPath)
+            @test Set(keys(hs)) == Set([Symbol("1"), Symbol("2")])
+            @test hs[Symbol("1")]["nobs"] == 2
+            @test hs[Symbol("2")]["nobs"] == 3
         end
 
-        @testset "--integer omits ash_count and relerr columns" begin
+        @testset "--integer omits ash_count and relerr_moments" begin
             oh = StreamHist(; integer = true, binRange = (0.0, 10.0))
             add!(oh, [1.0, 2.0, 3.0])
             finalize!(oh)
 
             dir = mktempdir()
-            path = joinpath(dir, "f-histogram.csv")
-            writeHistogramCSV(path, oh)
-            block1, block2 = histBlocks(readtext(path))
+            jsonPath = joinpath(dir, "f-histogram.json")
+            writeHistogramJSON(jsonPath, oh)
 
-            nPowers = length(oh.momentPowers)
-            @test split(block1[2], ",")[(end - nPowers + 1):end] == fill("", nPowers)
-            @test all(r -> split(r, ",")[end] == "", block2[2:end])   # ash_count blank
+            h1 = readHistJSON(jsonPath)[Symbol("1")]
+            @test h1["integer"] == true
+            @test h1["relerr_moments"] === nothing
+            @test h1["ash_count"] === nothing
         end
     end
 
@@ -102,19 +107,21 @@ end
 
         run_extract_map_data_histogram(atlaspath; quiet = true)
         outdir = joinpath(dir, "run")
-        @test isfile(joinpath(outdir, field * "-histogram.csv.gz"))
-        block1, _ = histBlocks(readtext(joinpath(outdir, field * "-histogram.csv.gz")))
-        cells = split(block1[2], ",")
+        csvPath = joinpath(outdir, field * "-histogram.csv.gz")
+        jsonPath = joinpath(outdir, field * "-histogram.json.gz")
+        @test isfile(csvPath)
+        @test isfile(jsonPath)
+        h1 = readHistJSON(jsonPath)[Symbol("1")]
 
-        @test parse(Int, cells[2]) == length(vals)                        # nobs
-        @test parse(Float64, cells[5]) == minimum(vals)                   # exact_min
-        @test parse(Float64, cells[6]) == maximum(vals)                   # exact_max
-        @test isapprox(parse(Float64, cells[7]), sum(vals) / length(vals); rtol = 1e-9)  # mean
+        @test h1["nobs"] == length(vals)
+        @test h1["exact_min"] == minimum(vals)
+        @test h1["exact_max"] == maximum(vals)
+        @test isapprox(h1["mean"], sum(vals) / length(vals); rtol = 1e-9)
 
         # Default skip: re-running writes nothing (files already exist).
-        before = mtime(joinpath(outdir, field * "-histogram.csv.gz"))
+        before = mtime(csvPath)
         run_extract_map_data_histogram(atlaspath; quiet = true)
-        @test mtime(joinpath(outdir, field * "-histogram.csv.gz")) == before
+        @test mtime(csvPath) == before
     end
 
     # A vector field's per-index histograms: with sortVals (default) index j holds
@@ -128,8 +135,8 @@ end
         maps = Map[]; while !eof(a); push!(maps, nextMap(a)); end; close(a)
         w = length(maps[1].data[field])
 
-        hsorted = mapDataHistograms(src; sortVals = true, quiet = true)
-        hraw = mapDataHistograms(src; sortVals = false, quiet = true)
+        hsorted, _ = mapDataHistograms(src; sortVals = true, quiet = true)
+        hraw, _ = mapDataHistograms(src; sortVals = false, quiet = true)
 
         for j in 1:w
             sortedVals = [sort(Float64.(m.data[field]))[j] for m in maps]
@@ -149,8 +156,8 @@ end
 
     # Every point fed to a StreamHist lands in exactly one of: a traditional-
     # histogram bin, underflow, or overflow -- never dropped, never double
-    # counted. Check this directly against the written CSV (both blocks) for
-    # every field (scalar and vector) of a real run.
+    # counted. Check this directly against the written CSV (exact_count) and JSON
+    # (underflow/overflow/nobs) for every field (scalar and vector) of a real run.
     @testset "bin-sum-consistency: sum(exact_count) + underflow + overflow == nobs" begin
         src = joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_slice.jsonl.gz")
         dir = mktempdir()
@@ -160,14 +167,13 @@ end
 
         for field in ["get_log_spanning_forests", "get_log_spanning_trees",
                       "get_isoperimetric_scores"]
-            block1, block2 = histBlocks(readtext(joinpath(outdir, field * "-histogram.csv.gz")))
-            for row in block1[2:end]                       # one row per index
-                cells = split(row, ",")
-                idx, nobsRow, underflow, overflow =
-                    parse.(Int, cells[1:4])
+            _, rows = csvRows(readtext(joinpath(outdir, field * "-histogram.csv.gz")))
+            hs = readHistJSON(joinpath(outdir, field * "-histogram.json.gz"))
+            for (idxKey, h) in hs
+                idx = string(idxKey)
                 binSum = sum(parse(Int, split(r, ",")[4])
-                              for r in block2[2:end] if parse(Int, split(r, ",")[1]) == idx)
-                @test binSum + underflow + overflow == nobsRow
+                              for r in rows if split(r, ",")[1] == idx)
+                @test binSum + h["underflow"] + h["overflow"] == h["nobs"]
             end
         end
     end
@@ -179,15 +185,14 @@ end
     @testset "integer=:auto resolves per-histogram from a short run" begin
         src = joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_slice.jsonl.gz")
 
-        h = mapDataHistograms(src; integer = :auto, quiet = true)
+        h, _ = mapDataHistograms(src; integer = :auto, quiet = true)
         @test h["get_log_spanning_forests"].integer == false   # log-valued, resolved non-integer
 
         dir = mktempdir()
         atlaspath = joinpath(dir, "run.jsonl.gz"); cp(src, atlaspath)
         run_extract_map_data_histogram(atlaspath; integer = :auto, quiet = true)
-        block1, _ = histBlocks(readtext(joinpath(dir, "run", "get_log_spanning_forests-histogram.csv.gz")))
-        cells = split(block1[2], ",")
-        @test cells[end] != ""   # relerr column populated -> resolved to non-integer, ASH available
+        h1 = readHistJSON(joinpath(dir, "run", "get_log_spanning_forests-histogram.json.gz"))[Symbol("1")]
+        @test h1["relerr_moments"] !== nothing   # resolved to non-integer, ASH available
     end
 
     @testset "--burn-in skips the first n maps" begin
@@ -197,10 +202,12 @@ end
         a = openAtlas(smartOpen(src, "r"))
         total = 0; while !eof(a); nextMap(a); total += 1; end; close(a)
 
-        h0 = mapDataHistograms(src; quiet = true)
-        h2 = mapDataHistograms(src; burn_in = 2, quiet = true)
+        h0, n0 = mapDataHistograms(src; quiet = true)
+        h2, n2 = mapDataHistograms(src; burn_in = 2, quiet = true)
         @test nobs(h0[field]) == total
         @test nobs(h2[field]) == total - 2
+        @test n0 == total
+        @test n2 == total - 2
 
         @test_throws ErrorException mapDataHistograms(src; burn_in = total + 1, quiet = true)
     end
@@ -209,8 +216,9 @@ end
         src = joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_slice.jsonl.gz")
         field = "get_log_spanning_forests"
 
-        h = mapDataHistograms(src; burn_in = 2, max_maps = 5, quiet = true)
+        h, n = mapDataHistograms(src; burn_in = 2, max_maps = 5, quiet = true)
         @test nobs(h[field]) == 5
+        @test n == 5
         @test_throws ErrorException mapDataHistograms(src; max_maps = -1, quiet = true)
 
         dir = mktempdir()
@@ -219,10 +227,13 @@ end
         outdir = joinpath(dir, "run")
 
         partialCsv = joinpath(outdir, field * "-histogram-partial.csv.gz")
+        partialJson = joinpath(outdir, field * "-histogram-partial.json.gz")
         @test isfile(partialCsv)
+        @test isfile(partialJson)
         @test !isfile(joinpath(outdir, field * "-histogram.csv.gz"))  # no unsuffixed file written
-        block1, _ = histBlocks(readtext(partialCsv))
-        @test parse(Int, split(block1[2], ",")[2]) == 5               # nobs
+        @test !isfile(joinpath(outdir, field * "-histogram.json.gz"))
+        h1 = readHistJSON(partialJson)[Symbol("1")]
+        @test h1["nobs"] == 5
 
         about = read(joinpath(outdir, "about.md"), String)
         @test occursin("--burn-in 2", about)
@@ -234,8 +245,8 @@ end
         src = joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_slice.jsonl.gz")
         field = "get_log_spanning_forests"
 
-        hser = mapDataHistograms(src; cores = 1, quiet = true)
-        hpar = mapDataHistograms(src; cores = Threads.nthreads(), quiet = true)
+        hser, _ = mapDataHistograms(src; cores = 1, quiet = true)
+        hpar, _ = mapDataHistograms(src; cores = Threads.nthreads(), quiet = true)
 
         @test nobs(hser[field]) == nobs(hpar[field])
         @test datarange(hser[field]) == datarange(hpar[field])             # min/max: order-independent
@@ -260,18 +271,18 @@ end
 
         dirHist = mktempdir(); atlasHist = joinpath(dirHist, "run.jsonl.gz"); cp(src, atlasHist)
         run_extract_map_data_histogram(atlasHist; sortVals = false, addOpts...)
-        block1, _ = histBlocks(readtext(joinpath(dirHist, "run", field * "-histogram.csv.gz")))
+        hs = readHistJSON(joinpath(dirHist, "run", field * "-histogram.json.gz"))
 
         for j in 1:w
-            cells = split(block1[1 + j], ",")
+            h = hs[Symbol(string(j))]
             csvVals = colvals(j)
-            @test parse(Int, cells[2]) == length(csvVals)
-            @test isapprox(parse(Float64, cells[5]), minimum(csvVals); rtol = 1e-6)
-            @test isapprox(parse(Float64, cells[6]), maximum(csvVals); rtol = 1e-6)
+            @test h["nobs"] == length(csvVals)
+            @test isapprox(h["exact_min"], minimum(csvVals); rtol = 1e-6)
+            @test isapprox(h["exact_max"], maximum(csvVals); rtol = 1e-6)
         end
     end
 
-    @testset "--no-compression writes plain .csv" begin
+    @testset "--no-compression writes plain .csv/.json" begin
         src = joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_metadata.jsonl.gz")
         dir = mktempdir()
         atlaspath = joinpath(dir, "meta.jsonl.gz"); cp(src, atlaspath)
@@ -279,7 +290,9 @@ end
         files = readdir(joinpath(dir, "meta"))
         @test "about.md" in files
         @test !isempty(filter(f -> endswith(f, "-histogram.csv"), files))
-        @test all(f -> endswith(f, "-histogram.csv") || f == "about.md", files)
+        @test !isempty(filter(f -> endswith(f, "-histogram.json"), files))
+        @test all(f -> endswith(f, "-histogram.csv") || endswith(f, "-histogram.json") ||
+                       f == "about.md", files)
     end
 
     @testset "about.md content" begin
