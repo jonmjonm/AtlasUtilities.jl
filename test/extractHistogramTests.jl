@@ -205,6 +205,34 @@ end
         @test_throws ErrorException mapDataHistograms(src; burn_in = total + 1, quiet = true)
     end
 
+<<<<<<< HEAD
+=======
+    @testset "--max-maps stops early (composes with --burn-in) and tags output -partial" begin
+        src = joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_slice.jsonl.gz")
+        field = "get_log_spanning_forests"
+
+        h = mapDataHistograms(src; burn_in = 2, max_maps = 5, quiet = true)
+        @test nobs(h[field]) == 5
+        @test_throws ErrorException mapDataHistograms(src; max_maps = -1, quiet = true)
+
+        dir = mktempdir()
+        atlaspath = joinpath(dir, "run.jsonl.gz"); cp(src, atlaspath)
+        run_extract_map_data_histogram(atlaspath; burn_in = 2, max_maps = 5, quiet = true)
+        outdir = joinpath(dir, "run")
+
+        partialCsv = joinpath(outdir, field * "-histogram-partial.csv.gz")
+        @test isfile(partialCsv)
+        @test !isfile(joinpath(outdir, field * "-histogram.csv.gz"))  # no unsuffixed file written
+        block1, _ = histBlocks(readtext(partialCsv))
+        @test parse(Int, split(block1[2], ",")[2]) == 5               # nobs
+
+        about = read(joinpath(outdir, "about.md"), String)
+        @test occursin("--burn-in 2", about)
+        @test occursin("--max-maps 5", about)
+        @test occursin("Partial extraction", about)
+    end
+
+>>>>>>> e34b6c4a06a8daff341a75d53858faa4b49d1283
     @testset "cores=1 (serial) matches multithreaded, up to machine precision" begin
         src = joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_slice.jsonl.gz")
         field = "get_log_spanning_forests"

@@ -20,9 +20,16 @@
 """
     mapDataHistograms(Atlas1; add, vote_cols, config, graph, pop_col, node_col,
                       area_col, border_col, edge_perimeter_col, node_data,
+<<<<<<< HEAD
                       burn_in = 0, sortVals = true, cores = Threads.nthreads(),
                       quiet = false, integer = false, bin_range = nothing,
                       bin_num = 50, bins = nothing, moment_powers = [1, 2, 4, 8])
+=======
+                      burn_in = 0, max_maps = 0, sortVals = true,
+                      cores = Threads.nthreads(), quiet = false, integer = false,
+                      bin_range = nothing, bin_num = 50, bins = nothing,
+                      moment_powers = [1, 2, 4, 8])
+>>>>>>> e34b6c4a06a8daff341a75d53858faa4b49d1283
     -> Dict{String,Union{StreamHist,Vector{StreamHist}}}
 
 Read every map in atlas `Atlas1` after skipping the first `burn_in` maps,
@@ -31,6 +38,11 @@ computing any `add` writer fields (exactly as `extract-map-data`/`add` do -- see
 (scalar field) or a `Vector{StreamHist}` (vector field, one histogram per index).
 `sortVals` sorts a vector field's values ascending before feeding (a no-op for
 scalars), so histogram `j` holds the `j`-th order statistic across maps.
+<<<<<<< HEAD
+=======
+`max_maps` (0 = unlimited, the default) stops after accumulating that many maps
+past the burn-in.
+>>>>>>> e34b6c4a06a8daff341a75d53858faa4b49d1283
 
 `integer`, `bin_range`, `bin_num`, `bins`, and `moment_powers` are forwarded to
 every `StreamHist` constructed (see `StreamHist`); a bin range is otherwise learned
@@ -47,13 +59,21 @@ function mapDataHistograms(Atlas1::AbstractString;
                            area_col::AbstractString = "", border_col::AbstractString = "",
                            edge_perimeter_col::AbstractString = "",
                            node_data::AbstractString = "",
+<<<<<<< HEAD
                            burn_in::Int = 0, sortVals::Bool = true,
+=======
+                           burn_in::Int = 0, max_maps::Int = 0, sortVals::Bool = true,
+>>>>>>> e34b6c4a06a8daff341a75d53858faa4b49d1283
                            cores::Int = Threads.nthreads(), quiet::Bool = false,
                            integer::Union{Bool,Symbol} = false,
                            bin_range::Union{Nothing,Tuple{<:Real,<:Real}} = nothing,
                            bin_num::Int = 50,
                            bins::Union{Nothing,AbstractVector{<:Real}} = nothing,
                            moment_powers::AbstractVector{<:Integer} = [1, 2, 4, 8])
+<<<<<<< HEAD
+=======
+    max_maps < 0 && error("atlas extract-map-data-histogram: --max-maps must be ≥ 0, got $max_maps.")
+>>>>>>> e34b6c4a06a8daff341a75d53858faa4b49d1283
     addNames = isempty(add) ? String[] : parseFunctionNames(add)
     votePairs = parseVotePairs(vote_cols)
     fns, addFields, addedSet, g = setupAddComputation(addNames, votePairs;
@@ -68,9 +88,17 @@ function mapDataHistograms(Atlas1::AbstractString;
     mpt, wt = atlas.mapParamType, atlas.weightType
 
     n_burned = 0
+<<<<<<< HEAD
     while n_burned < burn_in && !eof(atlas)
         readline(atlas.io)
         n_burned += 1
+=======
+    try
+        skipMap(atlas; numSkip = burn_in)
+        n_burned = burn_in
+    catch e
+        e isa EOFError || rethrow()
+>>>>>>> e34b6c4a06a8daff341a75d53858faa4b49d1283
     end
     if eof(atlas)
         close(atlas)
@@ -117,12 +145,29 @@ function mapDataHistograms(Atlas1::AbstractString;
 
     feedRow!([extractVals(valueOf(first, f, firstAdded)) for f in fieldNames])
 
+<<<<<<< HEAD
     progress = quiet ? nothing :
                ProgressUnknown(desc = "Building histograms:", spinner = true)
     processed = 1 + n_burned
     with_serial_blas() do
         while !eof(atlas)
             lines = readBatch(atlas.io)
+=======
+    # `fns` empty means `computeAdded` never touches `m.districting` (it
+    # short-circuits to an empty dict), so parse a `MapData` instead of a full
+    # `Map` to skip reconstructing districting, which otherwise dominates the
+    # parse cost (see AtlasIO's `MapData`).
+    parseMap = isempty(fns) ? (line -> parseMapData(line, mpt, wt)) :
+                              (line -> JSON3.read(line, Map{mpt,wt}))
+    progress = quiet ? nothing :
+               ProgressUnknown(desc = "Building histograms:", spinner = true)
+    written = 1                    # maps accumulated past burn-in (for --max-maps)
+    processed = 1 + n_burned       # total maps read from the start (for the progress bar)
+    remaining() = max_maps == 0 ? typemax(Int) : max_maps - written
+    with_serial_blas() do
+        while !eof(atlas) && remaining() > 0
+            lines = readBatch(atlas.io, min(BATCH, remaining()))
+>>>>>>> e34b6c4a06a8daff341a75d53858faa4b49d1283
             n = length(lines)
             n == 0 && break
 
@@ -130,7 +175,11 @@ function mapDataHistograms(Atlas1::AbstractString;
             # vector for field k.
             rows = Vector{Vector{Vector{Float64}}}(undef, n)
             parallelDo!(n, cores) do i
+<<<<<<< HEAD
                 m = JSON3.read(lines[i], Map{mpt,wt})
+=======
+                m = parseMap(lines[i])
+>>>>>>> e34b6c4a06a8daff341a75d53858faa4b49d1283
                 added = computeAdded(m)
                 rows[i] = [extractVals(valueOf(m, field, added)) for field in fieldNames]
             end
@@ -152,6 +201,10 @@ function mapDataHistograms(Atlas1::AbstractString;
                 end
             end
 
+<<<<<<< HEAD
+=======
+            written += n
+>>>>>>> e34b6c4a06a8daff341a75d53858faa4b49d1283
             processed += n
             progress === nothing ||
                 next!(progress; showvalues = [("maps processed", processed)])
@@ -231,15 +284,28 @@ end
 """
     run_extract_map_data_histogram(Atlas1; add, vote_cols, config, graph, pop_col,
                                    node_col, area_col, border_col,
+<<<<<<< HEAD
                                    edge_perimeter_col, node_data, burn_in, sortVals,
                                    compress, force, integer, bin_range, bin_num,
                                    bins, moment_powers, quiet, cores)
+=======
+                                   edge_perimeter_col, node_data, burn_in, max_maps,
+                                   sortVals, compress, force, integer, bin_range,
+                                   bin_num, bins, moment_powers, quiet, cores)
+>>>>>>> e34b6c4a06a8daff341a75d53858faa4b49d1283
 
 Build `mapDataHistograms` for atlas `Atlas1` and write each field's histogram(s) to
 `<field>-histogram.csv[.gz]` in a directory named after `Atlas1` (the same
 directory `extract-map-data` uses), plus an `about.md` (as `extract-map-data`
 writes). `compress` gzips the CSVs; a field whose output file already exists is
+<<<<<<< HEAD
 skipped unless `force = true`.
+=======
+skipped unless `force = true`. `max_maps` (0 = unlimited, the default) stops after
+accumulating that many maps past the burn-in; when set, output filenames get a
+`-histogram-partial` suffix so a partial run never collides with a full one's
+output, and `about.md` notes the limit.
+>>>>>>> e34b6c4a06a8daff341a75d53858faa4b49d1283
 """
 function run_extract_map_data_histogram(Atlas1::AbstractString;
                                         add::AbstractString = "",
@@ -252,7 +318,12 @@ function run_extract_map_data_histogram(Atlas1::AbstractString;
                                         border_col::AbstractString = "",
                                         edge_perimeter_col::AbstractString = "",
                                         node_data::AbstractString = "",
+<<<<<<< HEAD
                                         burn_in::Int = 0, sortVals::Bool = true,
+=======
+                                        burn_in::Int = 0, max_maps::Int = 0,
+                                        sortVals::Bool = true,
+>>>>>>> e34b6c4a06a8daff341a75d53858faa4b49d1283
                                         compress::Bool = true, force::Bool = false,
                                         integer::Union{Bool,Symbol} = false,
                                         bin_range::Union{Nothing,Tuple{<:Real,<:Real}} = nothing,
@@ -270,17 +341,32 @@ function run_extract_map_data_histogram(Atlas1::AbstractString;
         return nothing
     end
     firstMap = nextMap(peek)
+<<<<<<< HEAD
     writeAboutFile(outdir, String(Atlas1), peek, sort(collect(keys(firstMap.data))))
+=======
+    writeAboutFile(outdir, String(Atlas1), peek, sort(collect(keys(firstMap.data)));
+                  burnIn = burn_in, maxMaps = max_maps)
+>>>>>>> e34b6c4a06a8daff341a75d53858faa4b49d1283
     close(peek)
 
     hists = mapDataHistograms(Atlas1; add = add, vote_cols = vote_cols, config = config,
         graph = graph, pop_col = pop_col, node_col = node_col, area_col = area_col,
         border_col = border_col, edge_perimeter_col = edge_perimeter_col,
+<<<<<<< HEAD
         node_data = node_data, burn_in = burn_in, sortVals = sortVals, cores = cores,
         quiet = quiet, integer = integer, bin_range = bin_range, bin_num = bin_num,
         bins = bins, moment_powers = moment_powers)
 
     ext = compress ? ".csv.gz" : ".csv"
+=======
+        node_data = node_data, burn_in = burn_in, max_maps = max_maps, sortVals = sortVals,
+        cores = cores, quiet = quiet, integer = integer, bin_range = bin_range,
+        bin_num = bin_num, bins = bins, moment_powers = moment_powers)
+
+    # A --max-maps run gets its own filenames so it never collides with (or is
+    # silently mistaken for) a full run's output in the same directory.
+    ext = (max_maps > 0 ? "-partial" : "") * (compress ? ".csv.gz" : ".csv")
+>>>>>>> e34b6c4a06a8daff341a75d53858faa4b49d1283
     written = String[]
     skipped = String[]
     for field in sort(collect(keys(hists)))
