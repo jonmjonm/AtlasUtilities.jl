@@ -205,8 +205,6 @@ end
         @test_throws ErrorException mapDataHistograms(src; burn_in = total + 1, quiet = true)
     end
 
-<<<<<<< HEAD
-=======
     @testset "--max-maps stops early (composes with --burn-in) and tags output -partial" begin
         src = joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_slice.jsonl.gz")
         field = "get_log_spanning_forests"
@@ -232,7 +230,6 @@ end
         @test occursin("Partial extraction", about)
     end
 
->>>>>>> e34b6c4a06a8daff341a75d53858faa4b49d1283
     @testset "cores=1 (serial) matches multithreaded, up to machine precision" begin
         src = joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_slice.jsonl.gz")
         field = "get_log_spanning_forests"

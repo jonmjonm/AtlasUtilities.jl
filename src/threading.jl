@@ -12,19 +12,12 @@
 # held at once).
 const BATCH = 512
 
-<<<<<<< HEAD
-"""Read up to `BATCH` lines from `io` (fewer if `eof(io)` is reached first)."""
-function readBatch(io)
-    lines = String[]
-    while length(lines) < BATCH && !eof(io)
-=======
 """Read up to `cap` lines from `io` (fewer if `eof(io)` is reached first). `cap`
 defaults to `BATCH`; pass a smaller value to stop short of a full batch (e.g. a
 `--max-maps` limit close to being reached)."""
 function readBatch(io, cap::Int = BATCH)
     lines = String[]
     while length(lines) < cap && !eof(io)
->>>>>>> e34b6c4a06a8daff341a75d53858faa4b49d1283
         push!(lines, readline(io))
     end
     return lines

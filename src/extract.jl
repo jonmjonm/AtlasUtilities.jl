@@ -102,7 +102,6 @@ end
 
 # ---------------------------------------------------------------------------
 # Shared with extract-map-data-histogram
-<<<<<<< HEAD
 # ---------------------------------------------------------------------------
 
 """
@@ -117,47 +116,6 @@ from `config`/the column keyword arguments (`nothing` if `addNames` is empty, si
 no graph is needed when there is nothing to add). Shared by `atlas extract-map-data`
 and `atlas extract-map-data-histogram`.
 """
-function setupAddComputation(addNames::Vector{String}, votePairs;
-                             config::AbstractString, graph::AbstractString,
-                             pop_col::AbstractString, node_col::AbstractString,
-                             area_col::AbstractString, border_col::AbstractString,
-                             edge_perimeter_col::AbstractString, node_data::AbstractString)
-    fns = resolveFunctions(addNames, votePairs)
-    addFields = [desc for (desc, _) in fns]
-    addedSet = Set(addFields)
-    g = nothing
-    if !isempty(addNames)
-        spec = resolveGraphSpec(; config = config, graph = graph, pop_col = pop_col,
-                                node_col = node_col, area_col = area_col,
-                                border_col = border_col,
-                                edge_perimeter_col = edge_perimeter_col,
-                                node_data = node_data)
-        union!(spec.node_data, Set(voteColumns(votePairs)))   # keep vote columns on the graph
-        g = buildGraph(spec)
-    end
-    return (fns, addFields, addedSet, g)
-end
-
-# ---------------------------------------------------------------------------
-# Driver
-=======
->>>>>>> e34b6c4a06a8daff341a75d53858faa4b49d1283
-# ---------------------------------------------------------------------------
-
-"""
-    setupAddComputation(addNames, votePairs; config, graph, pop_col, node_col,
-                        area_col, border_col, edge_perimeter_col, node_data)
-    -> (fns, addFields, addedSet, g)
-
-Resolve `--add`/`--vote-cols` into the writer-function list `fns` (as returned by
-`resolveFunctions`), the field names they add (`addFields`, partisan names
-expanded), the set of those names (`addedSet`), and the CycleWalk graph `g` built
-from `config`/the column keyword arguments (`nothing` if `addNames` is empty, since
-no graph is needed when there is nothing to add). Shared by `atlas extract-map-data`
-and `atlas extract-map-data-histogram`.
-"""
-<<<<<<< HEAD
-=======
 function setupAddComputation(addNames::Vector{String}, votePairs;
                              config::AbstractString, graph::AbstractString,
                              pop_col::AbstractString, node_col::AbstractString,
@@ -199,7 +157,6 @@ filenames get a `-partial` suffix (before the extension) so a partial run never
 collides with a full one's output, and `about.md` notes the limit. `quiet`
 suppresses the progress bar.
 """
->>>>>>> e34b6c4a06a8daff341a75d53858faa4b49d1283
 function run_extract(Atlas1::AbstractString;
                      add::AbstractString = "", compress::Bool = true,
                      force::Bool = false, config::AbstractString = "",
@@ -208,13 +165,9 @@ function run_extract(Atlas1::AbstractString;
                      border_col::AbstractString = "",
                      edge_perimeter_col::AbstractString = "",
                      node_data::AbstractString = "", vote_cols::AbstractString = "",
-<<<<<<< HEAD
-                     quiet::Bool = false, cores::Int = Threads.nthreads())
-=======
                      max_maps::Int = 0,
                      quiet::Bool = false, cores::Int = Threads.nthreads())
     max_maps < 0 && error("atlas extract-map-data: --max-maps must be ≥ 0, got $max_maps.")
->>>>>>> e34b6c4a06a8daff341a75d53858faa4b49d1283
     addNames = isempty(add) ? String[] : parseFunctionNames(add)
     votePairs = parseVotePairs(vote_cols)
     fns, addFields, addedSet, g = setupAddComputation(addNames, votePairs;
@@ -302,13 +255,8 @@ function run_extract(Atlas1::AbstractString;
     written = 1
     remaining() = max_maps == 0 ? typemax(Int) : max_maps - written
     with_serial_blas() do
-<<<<<<< HEAD
-        while !eof(atlas)
-            lines = readBatch(atlas.io)
-=======
         while !eof(atlas) && remaining() > 0
             lines = readBatch(atlas.io, min(BATCH, remaining()))
->>>>>>> e34b6c4a06a8daff341a75d53858faa4b49d1283
             n = length(lines)
             n == 0 && break
 
