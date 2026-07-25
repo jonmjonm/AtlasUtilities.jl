@@ -4,25 +4,36 @@
 Command-line utilities for redistricting Atlas files (see the Atlas format at
 https://github.com/jonmjonm/AtlasIO.jl/blob/main/atlas_format.md).
 
-Installs a single `atlas` command with seven subcommands:
+Installs a single `atlas` command with nine subcommands:
 
-  * `atlas info <atlas> [--extract-script]` — print an atlas file's header, plus
-    the data field names found in its first map.
+  * `atlas info <atlas> [--extract-script]` — print the atlas file header, plus
+    the data field names found in its first map; notes when an embedded run
+    script and/or TOML config are present, and `--extract-script` writes out
+    both (whichever exist).
   * `atlas list-map-data <atlas>` — list the names of the data fields (e.g.
-    `log_spanning_trees`) contained in the atlas's first map, one per line.
-  * `atlas list-nodes <atlas> [--map k]` — list the node ids in the atlas's
-    k-th map (k=1 by default) as a JSON array of strings.
+    `log_spanning_trees`) contained in the first map of the atlas, one per line.
+  * `atlas list-nodes <atlas> [--map k]` — list the node ids in the
+    k-th map of the atlas (k=1 by default) as a JSON array of strings.
   * `atlas relabel <Atlas1> <Atlas2> [<graph.json>] [--first-map] [--quiet]
     [--weight-population <pop.json> --population-attr <attr>]` — relabel
     district numbers across an atlas so consecutive maps stay consistent.
   * `atlas add <functions> <Atlas1> <Atlas2> [--config <param.toml>] [column flags]
     [--overwrite] [--quiet]` — evaluate one or more CycleWalk "pushable writer"
     functions on every map and add the results to the map data.
-  * `atlas extract-map-data <Atlas1> [--add <functions>] [--no-compression] [--force]
-    [column flags]` — write each map-data field to its own CSV file (one row per
-    map) in a directory named after the atlas.
+  * `atlas extract-map-data <Atlas1> [--add <functions>] [--max-maps <n>]
+    [--no-compression] [--force] [column flags]` — write each map-data field to
+    its own CSV file (one row per map) in a directory named after the atlas.
+  * `atlas extract-map-data-histogram <Atlas1> [--burn-in <n>] [--max-maps <n>]
+    [--no-sort] [--add <functions>] [--no-compression] [--force] [column flags]
+    [--integer true|false|auto] [--bin-range <lo,hi>] [--bin-num <n>]
+    [--bins <e1,e2,...>] [--moment-powers <p1,p2,...>]` — like `extract-map-data`,
+    but accumulate each map-data field into a StreamHistogram instead of writing
+    per-map CSV rows.
+  * `atlas summarize-map-data <Atlas1> [--max-maps <n>] [--quiet]` — print, per
+    map-data field, its mean, standard deviation, and
+    [min, 25% quartile, median, 75% quartile, max].
   * `atlas extract-assignments <Atlas1> [--no-compression] [--force] [--quiet]` —
-    write a single wide CSV of each map's per-node district assignment.
+    write a single wide CSV of the per-node district assignment for each map.
 
 Run `atlas --help` or `atlas <subcommand> --help` for details.
 """
@@ -35,6 +46,7 @@ using Hungarian
 using JSON3
 using LinearAlgebra: BLAS
 using ProgressMeter
+using StreamHistogram
 using TOML
 using Comonicon
 
@@ -46,13 +58,16 @@ include("nodes.jl")
 include("relabel.jl")
 include("add.jl")
 include("extract.jl")
+include("extractHistogram.jl")
+include("summarize.jl")
 include("assignments.jl")
 
 export confusionMatrix, permutationFromConfusion, hammingDistance, relabelMap,
-       findRelabeling, Hierarchy, loadHierarchy, loadPopulation, atlasInfo
+       findRelabeling, Hierarchy, loadHierarchy, loadPopulation, atlasInfo, listMapData,
+       mapDataHistograms
 
 """
-Print the header of an Atlas file (metadata and atlas parameters); the bulky embedded generating `script` is never printed (use `--extract-script` to write it out).
+Print the header of an Atlas file (metadata and atlas parameters); the bulky embedded generating `script` and TOML config are never printed, though their presence is noted (use `--extract-script` to write them out).
 
 # Args
 
@@ -61,7 +76,9 @@ Print the header of an Atlas file (metadata and atlas parameters); the bulky emb
 # Flags
 
 - `--extract-script`: write the header `script` entry to a file named by the
-  header `script_name` entry (falling back to `extracted_script.jl`).
+  header `script_name` entry (falling back to `extracted_script.jl`), and, if
+  present, the header `toml_config` entry to a file named by the header
+  `toml_config_file` entry (falling back to `extracted_config.toml`).
 """
 @cast function info(atlas::String; extract_script::Bool = false)
     run_info(atlas; extract_script = extract_script)
@@ -108,10 +125,10 @@ Relabel district numbers across atlas Atlas1 so consecutive maps stay as similar
 - `--weight-population <pop.json>`: weight the alignment by population instead
   of raw node counts. `<pop.json>` is a node-link JSON (often the same file as
   `graph`) whose nodes carry a population attribute, named by
-  `--population-attr`, and are keyed by the atlas's `"levels in graph"` param.
+  `--population-attr`, and are keyed by the `"levels in graph"` param of the atlas.
   Requires `--population-attr`.
-- `--population-attr <name>`: the population attribute name on `<pop.json>`'s
-  nodes (e.g. `pop2020cen`). Required by `--weight-population`.
+- `--population-attr <name>`: the population attribute name on the nodes of
+  `<pop.json>` (e.g. `pop2020cen`). Required by `--weight-population`.
 
 # Flags
 
@@ -138,7 +155,7 @@ Add CycleWalk pushable writer function(s) (e.g. `get_log_spanning_trees`) to eve
 
 # Options
 
-- `--config <param.toml>`: a CycleWalk TOML; its `[plans]` table supplies the
+- `--config <param.toml>`: a CycleWalk TOML; its plans table supplies the
   graph path (`map_directory`/`map_file`) and columns (`pop_col`, `geo_units`,
   `area_col`, `node_border_col`, `edge_perimeter_col`, `node_data`).
 - `--graph <graph.json>`: dual-graph JSON (overrides the TOML path).
@@ -204,6 +221,9 @@ Write each map-data field of atlas Atlas1 to its own CSV (one row per map) in a 
   (`get_partisan_margins`, `get_partisan_seats`), as `votes1,votes2` pairs separated
   by `;` (e.g. `G20_PR_D,G20_PR_R;G16_PR_D,G16_PR_R` — quote it in your shell since
   it contains a `;`); each pair yields a field `writer_votes1_votes2`.
+- `--max-maps <n>`: stop after extracting this many maps (default 0, unlimited).
+  Output filenames get a `-partial` suffix so a partial run never collides with
+  the output of a full run in the same directory, and `about.md` notes the limit.
 
 # Flags
 
@@ -218,12 +238,112 @@ Write each map-data field of atlas Atlas1 to its own CSV (one row per map) in a 
                                 area_col::String = "", border_col::String = "",
                                 edge_perimeter_col::String = "",
                                 node_data::String = "", vote_cols::String = "",
+                                max_maps::Int = 0,
                                 quiet::Bool = false)
     run_extract(atlas1; add = add, compress = !no_compression, force = force,
                 config = config, graph = graph, pop_col = pop_col,
                 node_col = node_col, area_col = area_col, border_col = border_col,
                 edge_perimeter_col = edge_perimeter_col, node_data = node_data,
-                vote_cols = vote_cols, quiet = quiet)
+                vote_cols = vote_cols, max_maps = max_maps, quiet = quiet)
+end
+
+"""
+Like `extract-map-data`, but instead of writing per-map CSV rows, accumulate the values of each map-data field into a StreamHistogram: a single histogram for a scalar field, or one histogram per index for a vector field (with `--no-sort`, index `j` gets raw entry `j`; by default entry `j` of each map vector is sorted ascending first, so histogram `j` holds the `j`-th order statistic across maps rather than raw index `j`). The first `--burn-in` maps are skipped entirely. Writes a CSV + JSON pair per field, named `<field>-histogram.csv` and `<field>-histogram.json` (or `.csv.gz`/`.json.gz`), plus `about.md`, to the same directory `extract-map-data` uses. The CSV holds only the exact per-bin edges and counts (a plain numeric table for loading straight into a histogram plot); the JSON holds everything else -- per-index summary statistics, moment errors, the ASH-density bin counts, and the bin edges again -- as a human-readable dictionary keyed by index.
+
+# Args
+
+- `atlas1`: input atlas (`.jsonl` / `.jsonl.gz` / `.jsonl.bz2`).
+
+# Options
+
+- `--burn-in <n>`: skip the first `n` maps (default 0).
+- `--max-maps <n>`: stop after accumulating this many maps past the burn-in
+  (default 0, unlimited). Output filenames get a `-histogram-partial` suffix so a
+  partial run never collides with the output of a full run in the same directory,
+  and `about.md` notes the limit.
+- `--add <functions>`: also compute and accumulate these writer function(s).
+- `--config <param.toml>`: CycleWalk TOML supplying the graph (for `--add`).
+- `--graph <graph.json>`: dual-graph JSON (overrides the TOML path).
+- `--pop-col <col>`: population column.
+- `--node-col <col>`: node id column (the districting key column).
+- `--area-col <col>`: node area column.
+- `--border-col <col>`: node border-length column.
+- `--edge-perimeter-col <col>`: shared-edge perimeter column.
+- `--node-data <cols>`: extra node attributes to keep (comma-separated list).
+- `--vote-cols <pairs>`: vote columns for the partisan `--add` writers, as
+  `votes1,votes2` pairs separated by `;` (see `atlas add --help`).
+- `--bin-range <range>`: fix the bin range of every histogram up front instead of
+  learning it from its own data, as `lo,hi` (e.g. `0,1`).
+- `--bin-num <n>`: number of histogram bins (default 50; ignored with `--integer`).
+- `--bins <edges>`: explicit bin edges, comma separated, overriding
+  `--bin-range`/`--bin-num`.
+- `--moment-powers <powers>`: moment orders to accumulate and report, comma
+  separated (default `1,2,4,8`).
+- `--integer <mode>`: `true`, `false` (default), or `auto`. `true` means the data
+  is integer valued: bins are one per integer and the ASH-derived counts are
+  omitted from the output. `auto` decides `true`/`false` independently for each
+  histogram (each index of a vector field included) from its own learn-phase
+  sample; it requires `--bin-range`/`--bins` to be left unset.
+
+# Flags
+
+- `--no-sort`: do not sort the entries of a vector field before accumulating (so
+  histogram `j` gets raw entry `j` of each map vector, not the `j`-th order
+  statistic).
+- `--no-compression`: write plain `.csv` instead of gzip-compressed `.csv.gz`.
+- `--force`: overwrite an output file that already exists (otherwise it is skipped).
+- `--quiet`: suppress the progress bar.
+"""
+@cast function extract_map_data_histogram(atlas1::String; burn_in::Int = 0,
+                                          max_maps::Int = 0,
+                                          no_sort::Bool = false, add::String = "",
+                                          config::String = "", graph::String = "",
+                                          pop_col::String = "", node_col::String = "",
+                                          area_col::String = "", border_col::String = "",
+                                          edge_perimeter_col::String = "",
+                                          node_data::String = "", vote_cols::String = "",
+                                          bin_range::String = "", bin_num::Int = 50,
+                                          bins::String = "",
+                                          moment_powers::String = "1,2,4,8",
+                                          integer::String = "false",
+                                          no_compression::Bool = false, force::Bool = false,
+                                          quiet::Bool = false)
+    parsedBinRange = isempty(bin_range) ? nothing : Tuple(parse.(Float64, split(bin_range, ",")))
+    parsedBins = isempty(bins) ? nothing : parse.(Float64, split(bins, ","))
+    parsedPowers = parse.(Int, split(moment_powers, ","))
+    parsedInteger = integer == "auto" ? :auto :
+                    integer == "true" ? true :
+                    integer == "false" ? false :
+                    error("atlas extract-map-data-histogram: --integer must be " *
+                          "true, false, or auto, got \"$integer\".")
+    run_extract_map_data_histogram(atlas1; add = add, vote_cols = vote_cols,
+        config = config, graph = graph, pop_col = pop_col, node_col = node_col,
+        area_col = area_col, border_col = border_col,
+        edge_perimeter_col = edge_perimeter_col, node_data = node_data,
+        burn_in = burn_in, max_maps = max_maps, sortVals = !no_sort,
+        compress = !no_compression, force = force, integer = parsedInteger,
+        bin_range = parsedBinRange, bin_num = bin_num, bins = parsedBins,
+        moment_powers = parsedPowers, quiet = quiet)
+end
+
+"""
+Print, for every map-data field of atlas Atlas1, its mean, standard deviation, and [min, 25% quartile, median, 75% quartile, max], each computed from a StreamHistogram built over the field values (one histogram per index for a vector field, each map vector sorted ascending first, so histogram j holds the j-th order statistic across maps). Warns when too much of a field data set fell outside its histogram learned range (the tail quantile estimates lean on a single coarse interpolation across that whole bucket), or when a quartile estimate disagrees with the ASH density estimate for that field by more than a couple of percentage points (the within-bin-uniform interpolation may not fit the shape of that field).
+
+# Args
+
+- `atlas1`: input atlas (`.jsonl` / `.jsonl.gz` / `.jsonl.bz2`).
+
+# Options
+
+- `--max-maps <n>`: only consider the first `n` maps of the atlas (default 0,
+  unlimited).
+
+# Flags
+
+- `--quiet`: suppress the progress bar.
+"""
+@cast function summarize_map_data(atlas1::String; max_maps::Int = 0, quiet::Bool = false)
+    run_summarize_map_data(atlas1; max_maps = max_maps, quiet = quiet)
 end
 
 """

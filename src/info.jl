@@ -11,6 +11,13 @@
 const SCRIPT_KEY = "script"
 # The header entry naming that script (used as the --extract-script output file).
 const SCRIPT_NAME_KEY = "script_name"
+# The header entry holding the run's TOML config file's raw contents (see
+# CycleWalk's `Writer(...; config_file)`). Omitted from the printed output and,
+# like the script, written out by --extract-script when present.
+const CONFIG_KEY = "toml_config"
+# The header entry naming that TOML config file (used as the --extract-script
+# output file), when the atlas-producing script recorded one.
+const CONFIG_NAME_KEY = "toml_config_file"
 
 """
     formatValue(v; indent) -> String
@@ -133,22 +140,28 @@ end
     atlasHeaderInfo(atlas, fieldNames = String[]) -> String
 
 The atlas's header rendered as text: the "Atlas Header" block (description, date,
-map/weight types), the "Atlas Parameters" block, and a "Map Data Fields" block
-listing `fieldNames` (the field names found in the first map, e.g.
-`log_spanning_trees`; see [`firstMapFieldNames`](@ref)), with the bulky embedded
-generating `script` entry omitted. This is exactly what `atlas info` prints (minus
-the script) and is reused verbatim in the `about.md` that `atlas extract-map-data`
-writes alongside the CSVs.
+map/weight types, and -- when present -- a note that a run script and/or TOML
+config are embedded and extractable), the "Atlas Parameters" block, and a
+"Map Data Fields" block listing `fieldNames` (the field names found in the first
+map, e.g. `log_spanning_trees`; see [`firstMapFieldNames`](@ref)), with the bulky
+embedded generating `script`/`toml_config` entries omitted. This is exactly what
+`atlas info` prints (minus the script/config bodies) and is reused verbatim in the
+`about.md` that `atlas extract-map-data` writes alongside the CSVs.
 """
 function atlasHeaderInfo(atlas, fieldNames::AbstractVector{<:AbstractString} = String[])
-    hdr = blockString("Atlas Header", Pair[
+    param = atlas.atlasParam
+    hdrPairs = Pair[
         "description"    => atlas.description,
         "date"           => atlas.date,
         "map param type" => string(atlas.mapParamType),
         "weight type"    => string(atlas.weightType),
-    ])
-    param = atlas.atlasParam
-    keysToShow = filter(!isequal(SCRIPT_KEY), collect(keys(param)))
+    ]
+    haskey(param, SCRIPT_KEY) &&
+        push!(hdrPairs, "run script" => "embedded (extract with --extract-script)")
+    haskey(param, CONFIG_KEY) &&
+        push!(hdrPairs, "toml config" => "embedded (extract with --extract-script)")
+    hdr = blockString("Atlas Header", hdrPairs)
+    keysToShow = filter(k -> k != SCRIPT_KEY && k != CONFIG_KEY, collect(keys(param)))
     params = blockString("Atlas Parameters", Pair[k => param[k] for k in keysToShow])
     fields = nameListBlock("Map Data Fields", fieldNames)
     return hdr * params * fields
@@ -160,7 +173,10 @@ end
 Print the header of the atlas at `atlasPath`, plus the names of the data fields
 found in its first map. With `extract_script = true`, also write the header's
 "script" entry to a file named by its "script_name" entry (falling back to
-"extracted_script.jl"); warns if there is no script entry.
+"extracted_script.jl"), and -- when present -- the header's "toml_config" entry
+to a file named by its "toml_config_file" entry (falling back to
+"extracted_config.toml"); warns if there is no script entry (the TOML config is
+optional and only extracted, silently, when present).
 """
 function run_info(atlasPath::AbstractString; extract_script::Bool = false)
     io = smartOpen(String(atlasPath), "r")
@@ -170,8 +186,8 @@ function run_info(atlasPath::AbstractString; extract_script::Bool = false)
     param = info["parameters"]
     fieldNames = info["map_data"]
 
-    # Header metadata (line 2) + atlas parameters (line 3), minus the script source,
-    # plus the first map's data field names.
+    # Header metadata (line 2) + atlas parameters (line 3), minus the script/config
+    # sources, plus the first map's data field names.
     print(atlasHeaderInfo(atlas, fieldNames))
 
     if extract_script
@@ -186,10 +202,33 @@ function run_info(atlasPath::AbstractString; extract_script::Bool = false)
             println(msg)          # stdout, so it shows in the normal output too
             println(stderr, msg)  # stderr, for pipelines that only watch that stream
         end
+
+        if haskey(param, CONFIG_KEY)
+            outName = get(param, CONFIG_NAME_KEY, "extracted_config.toml")
+            open(outName, "w") do f
+                write(f, param[CONFIG_KEY])
+            end
+            println("Wrote toml_config entry to: ", outName)
+        end
     end
 
     close(atlas)
     return nothing
+end
+
+"""
+    listMapData(atlasPath) -> Union{Vector{String},Nothing}
+
+The sorted names of the data fields (e.g. `log_spanning_trees`) contained in
+the first map of the atlas at `atlasPath`, or `nothing` if the atlas has no
+maps (as opposed to a map whose data is empty, which returns `String[]`).
+"""
+function listMapData(atlasPath::AbstractString)
+    io = smartOpen(String(atlasPath), "r")
+    atlas = openAtlas(io)
+    fieldNames = firstMapFieldNames(atlas)
+    close(atlas)
+    return fieldNames
 end
 
 """
@@ -199,10 +238,7 @@ Print the names of the data fields (e.g. `log_spanning_trees`) contained in the
 first map of the atlas at `atlasPath`, one per line, sorted.
 """
 function run_list_map_data(atlasPath::AbstractString)
-    io = smartOpen(String(atlasPath), "r")
-    atlas = openAtlas(io)
-    fieldNames = firstMapFieldNames(atlas)
-    close(atlas)
+    fieldNames = listMapData(atlasPath)
     if fieldNames === nothing
         println("atlas list-map-data: $atlasPath has no maps; nothing to list.")
     elseif isempty(fieldNames)

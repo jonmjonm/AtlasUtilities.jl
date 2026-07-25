@@ -177,6 +177,55 @@ end
         @test findfirst("alpha", out).start < findfirst("log_spanning_trees", out).start
     end
 
+    @testset "run_info: notes embedded run script and/or toml config, extracts both" begin
+        dir = mktempdir()
+        path = joinpath(dir, "a.jsonl")
+        scriptOut = joinpath(dir, "extracted.jl")
+        configOut = joinpath(dir, "extracted.toml")
+        scriptBody = "println(1)\n"
+        configBody = "[plans]\nnum_dists = 3\n"
+        writeAtlas(path, Dict{String,Any}(
+            "districts"         => 3,
+            "script_name"       => scriptOut,
+            "script"            => scriptBody,
+            "toml_config_file"  => configOut,
+            "toml_config"       => configBody,
+        ))
+
+        out = capture_stdout() do
+            run_info(path)
+        end
+        @test occursin("run script", out)
+        @test occursin("toml config", out)
+        @test !occursin(scriptBody, out)
+        @test !occursin(configBody, out)
+        @test !isfile(scriptOut)   # info alone does not extract
+        @test !isfile(configOut)
+
+        out2 = capture_stdout() do
+            run_info(path; extract_script = true)
+        end
+        @test isfile(scriptOut)
+        @test read(scriptOut, String) == scriptBody
+        @test isfile(configOut)
+        @test read(configOut, String) == configBody
+        @test occursin("Wrote script entry to: $scriptOut", out2)
+        @test occursin("Wrote toml_config entry to: $configOut", out2)
+    end
+
+    @testset "run_info: no toml config entry does not mention or extract one" begin
+        dir = mktempdir()
+        path = joinpath(dir, "a.jsonl")
+        writeAtlas(path, Dict{String,Any}("districts" => 2))
+
+        out = capture_stdout() do
+            run_info(path; extract_script = true)
+        end
+        @test !occursin("toml config", out)
+        @test !occursin("toml_config", out)
+        @test !any(f -> endswith(f, ".toml"), readdir(dir))
+    end
+
     @testset "run_info: no maps prints (none) for Map Data Fields" begin
         dir = mktempdir()
         path = joinpath(dir, "a.jsonl")

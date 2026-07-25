@@ -117,6 +117,39 @@ rowsof(s) = filter(!isempty, split(s, "\n"))
         close(a)
     end
 
+    @testset "--max-maps stops early and tags output -partial" begin
+        src = joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_slice.jsonl.gz")
+        field = "get_log_spanning_forests"
+        dir = mktempdir()
+        atlaspath = joinpath(dir, "run.jsonl.gz"); cp(src, atlaspath)
+        run_extract(atlaspath; max_maps = 5, quiet = true)
+        outdir = joinpath(dir, "run")
+
+        partialCsv = joinpath(outdir, field * "-partial.csv.gz")
+        @test isfile(partialCsv)
+        @test !isfile(joinpath(outdir, field * ".csv.gz"))     # no unsuffixed file written
+        rows = rowsof(readtext(partialCsv))
+        @test length(rows) == 5 + 1                            # header + 5 maps
+
+        about = read(joinpath(outdir, "about.md"), String)
+        @test occursin("--max-maps 5", about)
+        @test occursin("Partial extraction", about)
+
+        # A full run afterward doesn't collide with (or get shadowed by) the
+        # partial run's files, since they're named differently.
+        run_extract(atlaspath; force = true, quiet = true)
+        @test isfile(joinpath(outdir, field * ".csv.gz"))
+        fullRows = rowsof(readtext(joinpath(outdir, field * ".csv.gz")))
+        @test length(fullRows) > length(rows)
+    end
+
+    @testset "--max-maps rejects a negative value" begin
+        src = joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_slice.jsonl.gz")
+        dir = mktempdir()
+        atlaspath = joinpath(dir, "run.jsonl.gz"); cp(src, atlaspath)
+        @test_throws ErrorException run_extract(atlaspath; max_maps = -1, quiet = true)
+    end
+
     @testset "--no-compression writes plain .csv" begin
         src = joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_metadata.jsonl.gz")
         dir = mktempdir()

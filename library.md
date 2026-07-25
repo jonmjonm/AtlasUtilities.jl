@@ -45,6 +45,7 @@ end
 | [`Hierarchy`](#hierarchy-loadhierarchy-and-loadpopulation), [`loadHierarchy`](#hierarchy-loadhierarchy-and-loadpopulation) | Represent/load a dual-graph hierarchy for multiscale atlases. |
 | [`loadPopulation`](#hierarchy-loadhierarchy-and-loadpopulation) | Load per-node population from a dual-graph JSON, for population-weighted alignment. |
 | [`atlasInfo`](#atlasinfo) | Structured atlas metadata (header, parameters, map data field names) — the data behind `atlas info`. |
+| [`listMapData`](#listmapdata) | List the data field names in an atlas's first map. |
 
 `findRelabeling`, `confusionMatrix`, and `hammingDistance` each have two
 methods: a 3-argument form for maps that share one fixed node-key set, and a
@@ -176,6 +177,19 @@ info = atlasInfo("atlas.jsonl.gz")
 info["header"]["description"]
 info["parameters"]["districts"]
 info["map_data"]                  # e.g. ["log_spanning_trees", ...]
+### `listMapData`
+
+```julia
+listMapData(atlasPath::AbstractString) -> Union{Vector{String}, Nothing}
+```
+
+Returns the sorted data field names (e.g. `log_spanning_trees`) found in the
+first map of the atlas at `atlasPath`, or `nothing` if the atlas has no maps
+(as opposed to a map whose data is empty, which returns `String[]`). This is
+the function `atlas list-map-data` uses to print its output.
+
+```julia
+fieldNames = listMapData("atlas.jsonl.gz")
 ```
 
 ## Worked example
