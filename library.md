@@ -46,6 +46,10 @@ end
 | [`loadPopulation`](#hierarchy-loadhierarchy-and-loadpopulation) | Load per-node population from a dual-graph JSON, for population-weighted alignment. |
 | [`atlasInfo`](#atlasinfo) | Structured atlas metadata (header, parameters, map data field names) — the data behind `atlas info`. |
 | [`listMapData`](#listmapdata) | List the data field names in an atlas's first map. |
+| [`render_map`](#render_map-run_render-and-run_view) | Build (but don't save or display) a `Makie.Figure` drawing a map's districting from a shapefile. |
+| [`run_render`](#render_map-run_render-and-run_view) | `render_map` plus saving to a file (`atlas render`'s driver). |
+| [`run_view`](#render_map-run_render-and-run_view) | `render_map` plus an interactive GLMakie window (`atlas view`'s driver). |
+| [`districtColors`](#render_map-run_render-and-run_view) | The categorical color palette `render_map` uses, one color per district. |
 
 `findRelabeling`, `confusionMatrix`, and `hammingDistance` each have two
 methods: a 3-argument form for maps that share one fixed node-key set, and a
@@ -192,6 +196,44 @@ the function `atlas list-map-data` uses to print its output.
 fieldNames = listMapData("atlas.jsonl.gz")
 ```
 
+### `render_map`, `run_render`, and `run_view`
+
+```julia
+render_map(atlasPath::AbstractString, shapefile::AbstractString;
+           shapefile_key::AbstractString, map::Integer = 1,
+           strip_suffix::AbstractString = "", county_column::AbstractString = "",
+           skip_missing::Bool = false, quiet::Bool = false) -> Makie.Figure
+```
+
+Builds a `Makie.Figure` drawing the `map`-th map of the atlas at `atlasPath` as
+a choropleth colored by district, using `shapefile` (a `.shp` path, or a `.zip`
+bundling one) for precinct geometry matched to node ids via `shapefile_key`
+(see `atlas render --help` for the matching rules, `--strip-suffix`, and
+`--county-column`). Nothing is saved or displayed — that's the caller's job,
+via whichever Makie backend is active:
+
+```julia
+using AtlasUtilities, CairoMakie   # or GLMakie for an interactive window
+
+fig = render_map("atlas.jsonl.gz", "shapefile.zip"; shapefile_key = "NAME")
+save("map.png", fig)               # CairoMakie: write to a file
+# or: display(fig)                 # GLMakie: open an interactive window
+```
+
+`run_render` and `run_view` are the drivers behind `atlas render`/`atlas view`
+respectively — each calls `render_map` and activates the matching backend for
+you (CairoMakie + save, GLMakie + interactive `display`/`wait`):
+
+```julia
+run_render("atlas.jsonl.gz", "shapefile.zip"; shapefile_key = "NAME",
+           out = "map.png")
+run_view("atlas.jsonl.gz", "shapefile.zip"; shapefile_key = "NAME")   # blocks until closed
+```
+
+`districtColors(ndists::Integer) -> Vector` returns the mutually-distinguishable
+color palette `render_map` colors districts with, one entry per district
+number `1:ndists`, if you want the same palette for your own plot.
+
 ## Worked example
 
 ```julia
@@ -224,7 +266,10 @@ AtlasUtilities.run_relabel(atlas1_path, atlas2_path, graph_path;
                             popJsonPath = pop_path, popAttr = "pop2020cen")
 ```
 
-`run_relabel` (and the other subcommand drivers, `run_info`/`run_add`/etc.)
+`run_relabel` (and most other subcommand drivers, `run_info`/`run_add`/etc.)
 are not exported — they're written for the CLI's file-in/file-out shape —
 so call them qualified as `AtlasUtilities.run_relabel(...)` if you want that
-behavior without going through `atlas` itself.
+behavior without going through `atlas` itself. `run_render` and `run_view`
+(see [above](#render_map-run_render-and-run_view)) are the exception: rendering
+has no smaller reusable piece worth exposing separately from the whole
+atlas-to-image pipeline, so both are exported directly.

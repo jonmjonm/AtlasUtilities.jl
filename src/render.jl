@@ -129,35 +129,47 @@ function districtColors(ndists::Integer)
                                          dropseed = true)
 end
 
+"""Open the file at `path` in the OS's default viewer for its type (`open` on
+macOS, `xdg-open` on Linux)."""
+function openInViewer(path::AbstractString)
+    if Sys.isapple()
+        run(`open $path`)
+    elseif Sys.islinux()
+        run(`xdg-open $path`)
+    else
+        @warn "atlas render: don't know how to open a viewer on this OS; " *
+              "the image was saved to $path"
+    end
+    return nothing
+end
+
 const RENDER_FORMATS = ("png", "svg", "pdf")
 
 """
-    run_render(atlas, shapefile; shapefile_key, map = 1, format = "png",
-               out = "", strip_suffix = "", county_column = "",
-               skip_missing = false, quiet = false)
+    render_map(atlas, shapefile; shapefile_key, map = 1, strip_suffix = "",
+               county_column = "", skip_missing = false, quiet = false)
+        -> Makie.Figure
 
-Draw the `map`-th map of `atlas` (1-based) as a choropleth colored by district,
-using `shapefile` for precinct geometry matched to node ids via
-`--shapefile-key`, and save it to `out` (default `<atlas basename>-map<k>.<format>`
-next to the atlas). `--strip-suffix` (a regex) is removed from the end of each
-node id before matching. `--county-column` names the shapefile's county column,
-so a node id matching no precinct token at all but matching a county name
-instead (case-insensitively) falls back to every precinct in that county. By
-default a node id with no matching shapefile record is an error; `--skip-missing`
-instead leaves it undrawn and prints a summary.
+Build (but do not save or display) a `Makie.Figure` drawing the `map`-th map of
+`atlas` (1-based) as a choropleth colored by district, using `shapefile` for
+precinct geometry matched to node ids via `--shapefile-key`. `--strip-suffix`
+(a regex) is removed from the end of each node id before matching.
+`--county-column` names the shapefile's county column, so a node id matching no
+precinct token at all but matching a county name instead (case-insensitively)
+falls back to every precinct in that county. By default a node id with no
+matching shapefile record is an error; `--skip-missing` instead leaves it
+undrawn and prints a summary. The current Makie backend (`CairoMakie` for file
+output, `GLMakie` for an interactive window) determines what happens next --
+[`run_render`](@ref) saves it, `atlas view` displays it interactively.
 """
-function run_render(atlasPath::AbstractString, shapefile::AbstractString;
+function render_map(atlasPath::AbstractString, shapefile::AbstractString;
                     shapefile_key::AbstractString = "", map::Integer = 1,
-                    format::AbstractString = "png", out::AbstractString = "",
                     strip_suffix::AbstractString = "", county_column::AbstractString = "",
                     skip_missing::Bool = false, quiet::Bool = false)
     map >= 1 || error("atlas render: --map must be >= 1 (got $map).")
     isempty(shapefile_key) &&
         error("atlas render: --shapefile-key is required (the shapefile attribute " *
               "column matching the atlas's node ids).")
-    format in RENDER_FORMATS ||
-        error("atlas render: --format must be one of $(join(RENDER_FORMATS, ", ")), " *
-              "got \"$format\".")
     suffixRe = isempty(strip_suffix) ? nothing : Regex(strip_suffix * raw"$")
 
     shpPath, tmpdir = resolveShapefilePath(shapefile)
@@ -232,20 +244,67 @@ function run_render(atlasPath::AbstractString, shapefile::AbstractString;
         colors = districtColors(maximum(allDists))
         pointColors = [colors[d] for d in allDists]
 
-        fig = CairoMakie.Figure()
-        ax = CairoMakie.Axis(fig[1, 1]; aspect = CairoMakie.DataAspect())
-        CairoMakie.poly!(ax, allGeoms; color = pointColors,
-                         strokewidth = 0.3, strokecolor = (:black, 0.4))
-        CairoMakie.hidedecorations!(ax)
-        CairoMakie.hidespines!(ax)
-
-        outpath = isempty(out) ? stripAtlasExt(String(atlasPath)) * "-map$(map).$(format)" :
-                                  String(out)
-        CairoMakie.save(outpath, fig)
-        quiet || println("Wrote map $map (", length(unique(allDists)),
-                          " districts) to ", outpath)
-        return nothing
+        fig = Makie.Figure()
+        ax = Makie.Axis(fig[1, 1]; aspect = Makie.DataAspect())
+        Makie.poly!(ax, allGeoms; color = pointColors,
+                   strokewidth = 0.3, strokecolor = (:black, 0.4))
+        Makie.hidedecorations!(ax)
+        Makie.hidespines!(ax)
+        return fig
     finally
         tmpdir === nothing || rm(tmpdir; recursive = true, force = true)
     end
+end
+
+"""
+    run_render(atlas, shapefile; shapefile_key, map = 1, format = "png",
+               out = "", strip_suffix = "", county_column = "",
+               skip_missing = false, show = false, quiet = false)
+
+Build the map via [`render_map`](@ref) and save it to `out` (default
+`<atlas basename>-map<k>.<format>` next to the atlas), using CairoMakie.
+`--show` opens the saved file in the OS's default viewer after writing it (for
+an interactive window instead, see `atlas view`).
+"""
+function run_render(atlasPath::AbstractString, shapefile::AbstractString;
+                    shapefile_key::AbstractString = "", map::Integer = 1,
+                    format::AbstractString = "png", out::AbstractString = "",
+                    strip_suffix::AbstractString = "", county_column::AbstractString = "",
+                    skip_missing::Bool = false, show::Bool = false, quiet::Bool = false)
+    format in RENDER_FORMATS ||
+        error("atlas render: --format must be one of $(join(RENDER_FORMATS, ", ")), " *
+              "got \"$format\".")
+
+    CairoMakie.activate!()
+    fig = render_map(atlasPath, shapefile; shapefile_key = shapefile_key, map = map,
+                     strip_suffix = strip_suffix, county_column = county_column,
+                     skip_missing = skip_missing, quiet = quiet)
+
+    outpath = isempty(out) ? stripAtlasExt(String(atlasPath)) * "-map$(map).$(format)" :
+                              String(out)
+    CairoMakie.save(outpath, fig)
+    quiet || println("Wrote map $map to ", outpath)
+    show && openInViewer(outpath)
+    return nothing
+end
+
+"""
+    run_view(atlas, shapefile; shapefile_key, map = 1, strip_suffix = "",
+             county_column = "", skip_missing = false, quiet = false)
+
+Build the map via [`render_map`](@ref) and open it in an interactive GLMakie
+window (pan/zoom/hover), blocking until the window is closed.
+"""
+function run_view(atlasPath::AbstractString, shapefile::AbstractString;
+                  shapefile_key::AbstractString = "", map::Integer = 1,
+                  strip_suffix::AbstractString = "", county_column::AbstractString = "",
+                  skip_missing::Bool = false, quiet::Bool = false)
+    GLMakie.activate!()
+    fig = render_map(atlasPath, shapefile; shapefile_key = shapefile_key, map = map,
+                     strip_suffix = strip_suffix, county_column = county_column,
+                     skip_missing = skip_missing, quiet = quiet)
+    screen = display(fig)
+    quiet || println("atlas view: close the window to exit.")
+    wait(screen)
+    return nothing
 end

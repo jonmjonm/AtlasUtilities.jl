@@ -4,7 +4,7 @@
 Command-line utilities for redistricting Atlas files (see the Atlas format at
 https://github.com/jonmjonm/AtlasIO.jl/blob/main/atlas_format.md).
 
-Installs a single `atlas` command with ten subcommands:
+Installs a single `atlas` command with eleven subcommands:
 
   * `atlas info <atlas> [--extract-script]` — print the atlas file header, plus
     the data field names found in its first map; notes when an embedded run
@@ -36,9 +36,13 @@ Installs a single `atlas` command with ten subcommands:
     write a single wide CSV of the per-node district assignment for each map.
   * `atlas render <Atlas1> <shapefile> --shapefile-key <col> [--map k]
     [--format png|svg|pdf] [--out <path>] [--strip-suffix <regex>]
-    [--county-column <col>] [--skip-missing] [--quiet]` — draw a map's
-    districting as a filled-precinct choropleth using a shapefile for
-    geometry, and save it to an image file.
+    [--county-column <col>] [--skip-missing] [--show] [--quiet]` — draw a
+    map's districting as a filled-precinct choropleth using a shapefile for
+    geometry, save it to an image file, and optionally open it.
+  * `atlas view <Atlas1> <shapefile> --shapefile-key <col> [--map k]
+    [--strip-suffix <regex>] [--county-column <col>] [--skip-missing]
+    [--quiet]` — like `atlas render`, but opens an interactive window
+    (pan/zoom/hover) instead of saving to a file, blocking until closed.
 
 Run `atlas --help` or `atlas <subcommand> --help` for details.
 """
@@ -49,9 +53,11 @@ using CairoMakie
 using Colors
 using CycleWalk
 using Dates
+using GLMakie
 using Hungarian
 using JSON3
 using LinearAlgebra: BLAS
+using Makie
 using ProgressMeter
 using Shapefile
 using StreamHistogram
@@ -73,7 +79,7 @@ include("render.jl")
 
 export confusionMatrix, permutationFromConfusion, hammingDistance, relabelMap,
        findRelabeling, Hierarchy, loadHierarchy, loadPopulation, atlasInfo, listMapData,
-       mapDataHistograms
+       mapDataHistograms, render_map, run_render, run_view, districtColors
 
 """
 Print the header of an Atlas file (metadata and atlas parameters); the bulky embedded generating `script` and TOML config are never printed, though their presence is noted (use `--extract-script` to write them out).
@@ -410,16 +416,50 @@ Draw the districting of map `map` (1-based, default 1) of atlas Atlas1 as a fill
 
 - `--skip-missing`: render even if some node ids have no (or only a partial)
   matching shapefile record, leaving those areas blank, instead of erroring.
+- `--show`: open the saved image in the OS's default viewer (`open` on macOS,
+  `xdg-open` on Linux) after writing it.
 - `--quiet`: suppress the confirmation message.
 """
 @cast function render(atlas1::String, shapefile::String;
                       shapefile_key::String = "", map::Int = 1,
                       format::String = "png", out::String = "",
                       strip_suffix::String = "", county_column::String = "",
-                      skip_missing::Bool = false, quiet::Bool = false)
+                      skip_missing::Bool = false, show::Bool = false,
+                      quiet::Bool = false)
     run_render(atlas1, shapefile; shapefile_key = shapefile_key, map = map,
               format = format, out = out, strip_suffix = strip_suffix,
-              county_column = county_column, skip_missing = skip_missing, quiet = quiet)
+              county_column = county_column, skip_missing = skip_missing,
+              show = show, quiet = quiet)
+end
+
+"""
+Draw the districting of map `map` (1-based, default 1) of atlas Atlas1 as a filled-precinct choropleth, colored by district, in an interactive window (pan/zoom/hover) instead of saving it to a file. Blocks until the window is closed. Geometry, matching, and all flags (`--strip-suffix`, `--county-column`, `--skip-missing`) work exactly as in `atlas render`; see its help for details.
+
+# Args
+
+- `atlas1`: input atlas (`.jsonl` / `.jsonl.gz` / `.jsonl.bz2`).
+- `shapefile`: path to a `.shp` file, or a `.zip` bundling one (e.g. `Data/shapefile_CT.zip`).
+
+# Options
+
+- `--shapefile-key <col>`: required; see `atlas render --help`.
+- `--strip-suffix <regex>`: see `atlas render --help`.
+- `--county-column <col>`: see `atlas render --help`.
+- `--map <k>`: 1-based index of the map to draw (default: 1).
+
+# Flags
+
+- `--skip-missing`: render even if some node ids have no (or only a partial)
+  matching shapefile record, leaving those areas blank, instead of erroring.
+- `--quiet`: suppress the confirmation message.
+"""
+@cast function view(atlas1::String, shapefile::String;
+                    shapefile_key::String = "", map::Int = 1,
+                    strip_suffix::String = "", county_column::String = "",
+                    skip_missing::Bool = false, quiet::Bool = false)
+    run_view(atlas1, shapefile; shapefile_key = shapefile_key, map = map,
+            strip_suffix = strip_suffix, county_column = county_column,
+            skip_missing = skip_missing, quiet = quiet)
 end
 
 # Designate this module as the CLI entry point; its `@cast` functions above

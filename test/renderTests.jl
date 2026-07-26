@@ -3,7 +3,9 @@
 # since a shapefile is not practical to synthesize inline.
 
 using Test
-using AtlasUtilities: run_render, resolveShapefilePath, loadShapefileGeometries, districtColors
+using Makie: Figure
+using AtlasUtilities: render_map, run_render, resolveShapefilePath, loadShapefileGeometries,
+                      districtColors
 
 const CT_ATLAS = joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_slice.jsonl.gz")
 const CT_SHAPEFILE = joinpath(@__DIR__, "..", "Data", "shapefile_CT.zip")
@@ -125,6 +127,17 @@ const CT_SHAPEFILE = joinpath(@__DIR__, "..", "Data", "shapefile_CT.zip")
         # Without --county-column the same atlas has no matching record at all.
         @test_throws ErrorException run_render(atlasPath, CT_SHAPEFILE;
                                                shapefile_key = "NAME", quiet = true)
+    end
+
+    @testset "render_map: builds a Figure without saving or displaying anything" begin
+        fig = render_map(CT_ATLAS, CT_SHAPEFILE; shapefile_key = "NAME", quiet = true)
+        @test fig isa Figure
+    end
+
+    @testset "render_map: errors when no node id matches any shapefile record" begin
+        # run_render forwards straight to render_map, so this also covers the
+        # shared error path exercised by the "run_render: errors ..." tests below.
+        @test_throws ErrorException render_map(CT_ATLAS, CT_SHAPEFILE; shapefile_key = "COUNTY")
     end
 
     @testset "run_render: writes an image for the CT example atlas" begin
