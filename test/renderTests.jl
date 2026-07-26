@@ -42,9 +42,9 @@ const CT_SHAPEFILE = joinpath(@__DIR__, "..", "Data", "shapefile_CT.zip")
     @testset "loadShapefileGeometries: single-column key matches CT NAME values" begin
         shp, tmpdir = resolveShapefilePath(CT_SHAPEFILE)
         try
-            geoms = loadShapefileGeometries(shp, "NAME")
-            @test length(geoms) == 695
-            @test haskey(geoms, "Bethel 001-00_FAIRFIELD COUNTY")
+            tokenIndex, geometries, _ = loadShapefileGeometries(shp, "NAME")
+            @test length(geometries) == 695
+            @test haskey(tokenIndex, "Bethel 001-00_FAIRFIELD COUNTY")
         finally
             tmpdir === nothing || rm(tmpdir; recursive = true, force = true)
         end
@@ -62,11 +62,69 @@ const CT_SHAPEFILE = joinpath(@__DIR__, "..", "Data", "shapefile_CT.zip")
     @testset "loadShapefileGeometries: comma-separated composite key joins with ':'" begin
         shp, tmpdir = resolveShapefilePath(CT_SHAPEFILE)
         try
-            geoms = loadShapefileGeometries(shp, "COUNTY,NAME")
-            @test haskey(geoms, "FAIRFIELD COUNTY:Bethel 001-00_FAIRFIELD COUNTY")
+            tokenIndex, _, _ = loadShapefileGeometries(shp, "COUNTY,NAME")
+            @test haskey(tokenIndex, "FAIRFIELD COUNTY:Bethel 001-00_FAIRFIELD COUNTY")
         finally
             tmpdir === nothing || rm(tmpdir; recursive = true, force = true)
         end
+    end
+
+    @testset "loadShapefileGeometries: a comma-merged row's atomic parts each index to it" begin
+        shp, tmpdir = resolveShapefilePath(CT_SHAPEFILE)
+        try
+            tokenIndex, _, _ = loadShapefileGeometries(shp, "NAME")
+            # "Bethel 002-00_FAIRFIELD COUNTY,Bethel 005-00_FAIRFIELD COUNTY" is one
+            # merged shapefile row; both atomic halves should resolve to the same row.
+            @test tokenIndex["Bethel 002-00_FAIRFIELD COUNTY"] ==
+                  tokenIndex["Bethel 005-00_FAIRFIELD COUNTY"]
+        finally
+            tmpdir === nothing || rm(tmpdir; recursive = true, force = true)
+        end
+    end
+
+    @testset "loadShapefileGeometries: --county-column builds a per-county row index" begin
+        shp, tmpdir = resolveShapefilePath(CT_SHAPEFILE)
+        try
+            _, geometries, countyIndex = loadShapefileGeometries(shp, "NAME";
+                                                                 county_column = "COUNTY")
+            @test haskey(countyIndex, "FAIRFIELD COUNTY")
+            @test length(countyIndex["FAIRFIELD COUNTY"]) > 1
+            @test all(i -> 1 <= i <= length(geometries), countyIndex["FAIRFIELD COUNTY"])
+        finally
+            tmpdir === nothing || rm(tmpdir; recursive = true, force = true)
+        end
+    end
+
+    @testset "loadShapefileGeometries: errors on an unknown --county-column" begin
+        shp, tmpdir = resolveShapefilePath(CT_SHAPEFILE)
+        try
+            @test_throws ErrorException loadShapefileGeometries(shp, "NAME";
+                                                                county_column = "NOT_A_COLUMN")
+        finally
+            tmpdir === nothing || rm(tmpdir; recursive = true, force = true)
+        end
+    end
+
+    @testset "run_render: --county-column falls back a whole-county node id" begin
+        # A node id that is exactly a county name (no precinct token) matches
+        # nothing via --shapefile-key alone, but resolves via --county-column.
+        dir = mktempdir()
+        atlasPath = joinpath(dir, "countyfallback.jsonl")
+        io = smartOpen(atlasPath, "w")
+        newAtlas(io, AtlasHeader("desc", "2026-01-02T03:04:05", Dict{String,Any}, Dict{String,Any}),
+                 Dict{String,Any}("districts" => 1))
+        addMap(io, Map("m1", Districting(("FAIRFIELD COUNTY",) => 1), 1, Dict{String,Any}()))
+        close(io)
+
+        out = joinpath(dir, "county.png")
+        run_render(atlasPath, CT_SHAPEFILE; shapefile_key = "NAME",
+                  county_column = "COUNTY", out = out, quiet = true)
+        @test isfile(out)
+        @test filesize(out) > 0
+
+        # Without --county-column the same atlas has no matching record at all.
+        @test_throws ErrorException run_render(atlasPath, CT_SHAPEFILE;
+                                               shapefile_key = "NAME", quiet = true)
     end
 
     @testset "run_render: writes an image for the CT example atlas" begin
@@ -114,6 +172,49 @@ const CT_SHAPEFILE = joinpath(@__DIR__, "..", "Data", "shapefile_CT.zip")
     @testset "run_render: errors when node ids don't match any shapefile record" begin
         @test_throws ErrorException run_render(CT_ATLAS, CT_SHAPEFILE;
                                                shapefile_key = "COUNTY", quiet = true)
+    end
+
+    @testset "run_render: errors even with --skip-missing when nothing matches at all" begin
+        @test_throws ErrorException run_render(CT_ATLAS, CT_SHAPEFILE;
+                                               shapefile_key = "COUNTY",
+                                               skip_missing = true, quiet = true)
+    end
+
+    @testset "run_render: --skip-missing renders anyway when only some nodes mismatch" begin
+        # Take a real map's districting and add one node id with no shapefile match.
+        dir = mktempdir()
+        atlasPath = joinpath(dir, "partial.jsonl")
+        io = smartOpen(atlasPath, "w")
+        newAtlas(io, AtlasHeader("desc", "2026-01-02T03:04:05", Dict{String,Any}, Dict{String,Any}),
+                 Dict{String,Any}("districts" => 5))
+        src = openAtlas(smartOpen(CT_ATLAS, "r"))
+        m = nextMap(src)
+        close(src)
+        dist = Districting(m.districting)
+        dist[("NOT_A_REAL_PRECINCT",)] = 1
+        addMap(io, Map("m1", dist, 1, Dict{String,Any}()))
+        close(io)
+
+        out = joinpath(dir, "ct_partial.png")
+        run_render(atlasPath, CT_SHAPEFILE; shapefile_key = "NAME", out = out,
+                  skip_missing = true, quiet = true)
+        @test isfile(out)
+        @test filesize(out) > 0
+
+        @test_throws ErrorException run_render(atlasPath, CT_SHAPEFILE;
+                                               shapefile_key = "NAME", quiet = true)
+    end
+
+    @testset "run_render: --strip-suffix strips a trailing pattern before matching" begin
+        dir = mktempdir()
+        out = joinpath(dir, "ct_suffix.png")
+        # No node id in the CT fixture actually has this suffix, so stripping it
+        # is a no-op here; this just checks the flag is accepted and matching
+        # still succeeds (i.e. the regex doesn't corrupt ids that don't match it).
+        run_render(CT_ATLAS, CT_SHAPEFILE; shapefile_key = "NAME", out = out,
+                  strip_suffix = raw"__SD\d+__HD\d+", quiet = true)
+        @test isfile(out)
+        @test filesize(out) > 0
     end
 
 end

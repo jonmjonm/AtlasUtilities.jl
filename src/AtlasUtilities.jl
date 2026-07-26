@@ -35,9 +35,10 @@ Installs a single `atlas` command with ten subcommands:
   * `atlas extract-assignments <Atlas1> [--no-compression] [--force] [--quiet]` —
     write a single wide CSV of the per-node district assignment for each map.
   * `atlas render <Atlas1> <shapefile> --shapefile-key <col> [--map k]
-    [--format png|svg|pdf] [--out <path>] [--quiet]` — draw a map's districting
-    as a filled-precinct choropleth using a shapefile for geometry, and save it
-    to an image file.
+    [--format png|svg|pdf] [--out <path>] [--strip-suffix <regex>]
+    [--county-column <col>] [--skip-missing] [--quiet]` — draw a map's
+    districting as a filled-precinct choropleth using a shapefile for
+    geometry, and save it to an image file.
 
 Run `atlas --help` or `atlas <subcommand> --help` for details.
 """
@@ -374,7 +375,7 @@ Write atlas Atlas1 per-map district assignments to a single wide CSV, named from
 end
 
 """
-Draw the districting of map `map` (1-based, default 1) of atlas Atlas1 as a filled-precinct choropleth, colored by district, and save it to an image file. Geometry comes from `shapefile` (a `.shp` file, or a `.zip` bundling `.shp`/`.shx`/`.dbf`), matched to the atlas's node ids via the shapefile attribute column named by `--shapefile-key`. Errors if any node id has no matching shapefile record.
+Draw the districting of map `map` (1-based, default 1) of atlas Atlas1 as a filled-precinct choropleth, colored by district, and save it to an image file. Geometry comes from `shapefile` (a `.shp` file, or a `.zip` bundling `.shp`/`.shx`/`.dbf`), matched to the atlas's node ids via the shapefile attribute column named by `--shapefile-key`. By default errors if any node id has no matching shapefile record; `--skip-missing` renders anyway, leaving those areas blank.
 
 # Args
 
@@ -390,6 +391,16 @@ Draw the districting of map `map` (1-based, default 1) of atlas Atlas1 as a fill
   they are joined with `:`, matching how the atlas's own node id is rendered as a
   string. Use `atlas list-nodes` on the atlas first to see the exact id format
   expected.
+- `--strip-suffix <regex>`: strip a trailing regex match from each node id before
+  matching it against the shapefile (e.g. some CycleWalk graphs built for
+  legislative-district consistency suffix node ids with `__SD<n>__HD<n>` tags
+  that have no shapefile counterpart; pass `"__SD\\d+__HD\\d+"` to strip them).
+- `--county-column <col>`: the shapefile's county-name column. Some graphs only
+  keep precinct-level detail for counties split by a district line, collapsing
+  an entire unsplit county into one node (e.g. NC's `("GASTON",)`); a node id
+  matching no precinct token at all is then tried case-insensitively against
+  this column, and on a match falls back to every precinct in that county
+  (all drawn in the node's district color).
 - `--map <k>`: 1-based index of the map to draw (default: 1).
 - `--format <png|svg|pdf>`: output image format when `--out` is not given
   (default `png`).
@@ -397,14 +408,18 @@ Draw the districting of map `map` (1-based, default 1) of atlas Atlas1 as a fill
 
 # Flags
 
+- `--skip-missing`: render even if some node ids have no (or only a partial)
+  matching shapefile record, leaving those areas blank, instead of erroring.
 - `--quiet`: suppress the confirmation message.
 """
 @cast function render(atlas1::String, shapefile::String;
                       shapefile_key::String = "", map::Int = 1,
                       format::String = "png", out::String = "",
-                      quiet::Bool = false)
+                      strip_suffix::String = "", county_column::String = "",
+                      skip_missing::Bool = false, quiet::Bool = false)
     run_render(atlas1, shapefile; shapefile_key = shapefile_key, map = map,
-              format = format, out = out, quiet = quiet)
+              format = format, out = out, strip_suffix = strip_suffix,
+              county_column = county_column, skip_missing = skip_missing, quiet = quiet)
 end
 
 # Designate this module as the CLI entry point; its `@cast` functions above
