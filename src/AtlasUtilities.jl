@@ -4,7 +4,7 @@
 Command-line utilities for redistricting Atlas files (see the Atlas format at
 https://github.com/jonmjonm/AtlasIO.jl/blob/main/atlas_format.md).
 
-Installs a single `atlas` command with nine subcommands:
+Installs a single `atlas` command with ten subcommands:
 
   * `atlas info <atlas> [--extract-script]` — print the atlas file header, plus
     the data field names found in its first map; notes when an embedded run
@@ -34,18 +34,25 @@ Installs a single `atlas` command with nine subcommands:
     [min, 25% quartile, median, 75% quartile, max].
   * `atlas extract-assignments <Atlas1> [--no-compression] [--force] [--quiet]` —
     write a single wide CSV of the per-node district assignment for each map.
+  * `atlas render <Atlas1> <shapefile> --shapefile-key <col> [--map k]
+    [--format png|svg|pdf] [--out <path>] [--quiet]` — draw a map's districting
+    as a filled-precinct choropleth using a shapefile for geometry, and save it
+    to an image file.
 
 Run `atlas --help` or `atlas <subcommand> --help` for details.
 """
 module AtlasUtilities
 
 using AtlasIO
+using CairoMakie
+using Colors
 using CycleWalk
 using Dates
 using Hungarian
 using JSON3
 using LinearAlgebra: BLAS
 using ProgressMeter
+using Shapefile
 using StreamHistogram
 using TOML
 using Comonicon
@@ -61,6 +68,7 @@ include("extract.jl")
 include("extractHistogram.jl")
 include("summarize.jl")
 include("assignments.jl")
+include("render.jl")
 
 export confusionMatrix, permutationFromConfusion, hammingDistance, relabelMap,
        findRelabeling, Hierarchy, loadHierarchy, loadPopulation, atlasInfo, listMapData,
@@ -363,6 +371,40 @@ Write atlas Atlas1 per-map district assignments to a single wide CSV, named from
                                    no_compression::Bool = false, force::Bool = false,
                                    quiet::Bool = false)
     run_extract_assignments(atlas1; compress = !no_compression, force = force, quiet = quiet)
+end
+
+"""
+Draw the districting of map `map` (1-based, default 1) of atlas Atlas1 as a filled-precinct choropleth, colored by district, and save it to an image file. Geometry comes from `shapefile` (a `.shp` file, or a `.zip` bundling `.shp`/`.shx`/`.dbf`), matched to the atlas's node ids via the shapefile attribute column named by `--shapefile-key`. Errors if any node id has no matching shapefile record.
+
+# Args
+
+- `atlas1`: input atlas (`.jsonl` / `.jsonl.gz` / `.jsonl.bz2`).
+- `shapefile`: path to a `.shp` file, or a `.zip` bundling one (e.g. `Data/shapefile_CT.zip`).
+
+# Options
+
+- `--shapefile-key <col>`: required; the shapefile attribute column whose values
+  match the atlas's node ids (e.g. `NAME` for the CT/OH example data). For atlases
+  whose node id has more than one component (e.g. NC's `(county, prec_id)`), pass
+  a comma-separated list of columns in the same order (e.g. `county,prec_id`);
+  they are joined with `:`, matching how the atlas's own node id is rendered as a
+  string. Use `atlas list-nodes` on the atlas first to see the exact id format
+  expected.
+- `--map <k>`: 1-based index of the map to draw (default: 1).
+- `--format <png|svg|pdf>`: output image format when `--out` is not given
+  (default `png`).
+- `--out <path>`: output file path (default `<Atlas1 basename>-map<k>.<format>`).
+
+# Flags
+
+- `--quiet`: suppress the confirmation message.
+"""
+@cast function render(atlas1::String, shapefile::String;
+                      shapefile_key::String = "", map::Int = 1,
+                      format::String = "png", out::String = "",
+                      quiet::Bool = false)
+    run_render(atlas1, shapefile; shapefile_key = shapefile_key, map = map,
+              format = format, out = out, quiet = quiet)
 end
 
 # Designate this module as the CLI entry point; its `@cast` functions above
