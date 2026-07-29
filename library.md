@@ -46,9 +46,9 @@ end
 | [`loadPopulation`](#hierarchy-loadhierarchy-and-loadpopulation) | Load per-node population from a dual-graph JSON, for population-weighted alignment. |
 | [`atlasInfo`](#atlasinfo) | Structured atlas metadata (header, parameters, map data field names) — the data behind `atlas info`. |
 | [`listMapData`](#listmapdata) | List the data field names in an atlas's first map. |
-| [`render_map`](#render_map-run_render-and-run_view) | Build (but don't save or display) a `Makie.Figure` drawing a map's districting from a shapefile. |
+| [`render_map`](#render_map-run_render-and-run_view) | Build (but don't save or display) a `Makie.Figure` drawing a map's districting from a shapefile or point-position JSON graph. |
 | [`run_render`](#render_map-run_render-and-run_view) | `render_map` plus saving to a file (`atlas render`'s driver). |
-| [`run_view`](#render_map-run_render-and-run_view) | `render_map` plus an interactive GLMakie window (`atlas view`'s driver). |
+| [`run_view`](#render_map-run_render-and-run_view) | Every map of the atlas, colored consistently, in an interactive GLMakie window that steps through them (`atlas view`'s driver). |
 | [`districtColors`](#render_map-run_render-and-run_view) | The categorical color palette `render_map` uses, one color per district. |
 
 `findRelabeling`, `confusionMatrix`, and `hammingDistance` each have two
@@ -199,40 +199,47 @@ fieldNames = listMapData("atlas.jsonl.gz")
 ### `render_map`, `run_render`, and `run_view`
 
 ```julia
-render_map(atlasPath::AbstractString, shapefile::AbstractString;
-           shapefile_key::AbstractString, map::Integer = 1,
+render_map(atlasPath::AbstractString, geo::AbstractString;
+           key::AbstractString, map::Integer = 1,
            strip_suffix::AbstractString = "", county_column::AbstractString = "",
+           county_lines::Bool = false, precinct_lines::Bool = true,
            skip_missing::Bool = false, quiet::Bool = false) -> Makie.Figure
 ```
 
 Builds a `Makie.Figure` drawing the `map`-th map of the atlas at `atlasPath` as
-a choropleth colored by district, using `shapefile` (a `.shp` path, or a `.zip`
-bundling one) for precinct geometry matched to node ids via `shapefile_key`
-(see `atlas render --help` for the matching rules, `--strip-suffix`, and
-`--county-column`). Nothing is saved or displayed — that's the caller's job,
-via whichever Makie backend is active:
+a choropleth colored by district, using `geo` for precinct geometry matched to
+node ids via `key` -- either a shapefile (a `.shp` path, or a `.zip` bundling
+one) or a point-position node-link `.json` graph (e.g.
+`Data/hex_graph_10_by_10.json`), whose nodes' Voronoi cells (built from the
+graph's own adjacency) are used instead (see `atlas render --help` for the
+matching rules, `--strip-suffix`, `--county-column`, and `--county-lines`).
+Nothing is saved or displayed — that's the caller's job, via whichever Makie
+backend is active:
 
 ```julia
 using AtlasUtilities, CairoMakie   # or GLMakie for an interactive window
 
-fig = render_map("atlas.jsonl.gz", "shapefile.zip"; shapefile_key = "NAME")
+fig = render_map("atlas.jsonl.gz", "shapefile.zip"; key = "NAME")
 save("map.png", fig)               # CairoMakie: write to a file
 # or: display(fig)                 # GLMakie: open an interactive window
 ```
 
 `run_render` and `run_view` are the drivers behind `atlas render`/`atlas view`
-respectively — each calls `render_map` and activates the matching backend for
-you (CairoMakie + save, GLMakie + interactive `display`/`wait`):
+respectively. `run_render` calls `render_map` for a single map and activates
+CairoMakie to save it; `run_view` loads *every* map of the atlas, assigns
+district colors once across all of them (so a district number is the same
+color everywhere), and opens a GLMakie window that steps through them (arrow
+keys, autoplay, county/precinct-line toggles — see `atlas view --help`),
+blocking until it's closed:
 
 ```julia
-run_render("atlas.jsonl.gz", "shapefile.zip"; shapefile_key = "NAME",
-           out = "map.png")
-run_view("atlas.jsonl.gz", "shapefile.zip"; shapefile_key = "NAME")   # blocks until closed
+run_render("atlas.jsonl.gz", "shapefile.zip"; key = "NAME", out = "map.png")
+run_view("atlas.jsonl.gz", "hex_graph.json"; key = "node_name")   # blocks until closed
 ```
 
 `districtColors(ndists::Integer) -> Vector` returns the mutually-distinguishable
-color palette `render_map` colors districts with, one entry per district
-number `1:ndists`, if you want the same palette for your own plot.
+color palette `render_map`/`run_view` color districts with, one entry per
+district number `1:ndists`, if you want the same palette for your own plot.
 
 ## Worked example
 

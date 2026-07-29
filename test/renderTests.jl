@@ -4,11 +4,31 @@
 
 using Test
 using Makie: Figure
+using Shapefile
 using AtlasUtilities: render_map, run_render, resolveShapefilePath, loadShapefileGeometries,
-                      districtColors
+                      districtColors, matchMapToRows, loadGeoSource, isPointGraphPath,
+                      dissolvedCountyBoundarySegments
 
 const CT_ATLAS = joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_slice.jsonl.gz")
 const CT_SHAPEFILE = joinpath(@__DIR__, "..", "Data", "shapefile_CT.zip")
+const GRID_GRAPH = joinpath(@__DIR__, "..", "Data", "grid_graph_10_by_10.json")
+const HEX_GRAPH = joinpath(@__DIR__, "..", "Data", "hex_graph_10_by_10.json")
+
+"""Build a small atlas over the grid/hex example graphs' `(r,c)` node names, one map,
+district 1 for `c < split` and district 2 otherwise -- matches the graphs' own
+county A/B split at `c == 5`, so it also exercises `--county-column`/`--county-lines`."""
+function gridAtlas(path::AbstractString; split::Integer = 5)
+    io = smartOpen(path, "w")
+    newAtlas(io, AtlasHeader("grid", "2026-01-02T03:04:05", Dict{String,Any}, Dict{String,Any}),
+             Dict{String,Any}("districts" => 2))
+    dpairs = Pair{Tuple{String}, Int}[]
+    for r in 0:9, c in 0:9
+        push!(dpairs, (("($r,$c)",)) => (c < split ? 1 : 2))
+    end
+    addMap(io, Map("m1", Districting(dpairs...), 1, Dict{String,Any}()))
+    close(io)
+    return path
+end
 
 @testset "render" begin
 
@@ -119,31 +139,31 @@ const CT_SHAPEFILE = joinpath(@__DIR__, "..", "Data", "shapefile_CT.zip")
         close(io)
 
         out = joinpath(dir, "county.png")
-        run_render(atlasPath, CT_SHAPEFILE; shapefile_key = "NAME",
+        run_render(atlasPath, CT_SHAPEFILE; key = "NAME",
                   county_column = "COUNTY", out = out, quiet = true)
         @test isfile(out)
         @test filesize(out) > 0
 
         # Without --county-column the same atlas has no matching record at all.
         @test_throws ErrorException run_render(atlasPath, CT_SHAPEFILE;
-                                               shapefile_key = "NAME", quiet = true)
+                                               key = "NAME", quiet = true)
     end
 
     @testset "render_map: builds a Figure without saving or displaying anything" begin
-        fig = render_map(CT_ATLAS, CT_SHAPEFILE; shapefile_key = "NAME", quiet = true)
+        fig = render_map(CT_ATLAS, CT_SHAPEFILE; key = "NAME", quiet = true)
         @test fig isa Figure
     end
 
     @testset "render_map: errors when no node id matches any shapefile record" begin
         # run_render forwards straight to render_map, so this also covers the
         # shared error path exercised by the "run_render: errors ..." tests below.
-        @test_throws ErrorException render_map(CT_ATLAS, CT_SHAPEFILE; shapefile_key = "COUNTY")
+        @test_throws ErrorException render_map(CT_ATLAS, CT_SHAPEFILE; key = "COUNTY")
     end
 
     @testset "run_render: writes an image for the CT example atlas" begin
         dir = mktempdir()
         out = joinpath(dir, "ct_map.png")
-        run_render(CT_ATLAS, CT_SHAPEFILE; shapefile_key = "NAME", out = out, quiet = true)
+        run_render(CT_ATLAS, CT_SHAPEFILE; key = "NAME", out = out, quiet = true)
         @test isfile(out)
         @test filesize(out) > 0
     end
@@ -153,7 +173,7 @@ const CT_SHAPEFILE = joinpath(@__DIR__, "..", "Data", "shapefile_CT.zip")
         atlasCopy = joinpath(dir, "myatlas.jsonl.gz")
         cp(CT_ATLAS, atlasCopy)
         cd(dir) do
-            run_render(atlasCopy, CT_SHAPEFILE; shapefile_key = "NAME", quiet = true)
+            run_render(atlasCopy, CT_SHAPEFILE; key = "NAME", quiet = true)
         end
         @test isfile(joinpath(dir, "myatlas-map1.png"))
     end
@@ -163,7 +183,7 @@ const CT_SHAPEFILE = joinpath(@__DIR__, "..", "Data", "shapefile_CT.zip")
         atlasCopy = joinpath(dir, "myatlas.jsonl.gz")
         cp(CT_ATLAS, atlasCopy)
         cd(dir) do
-            run_render(atlasCopy, CT_SHAPEFILE; shapefile_key = "NAME", format = "svg", quiet = true)
+            run_render(atlasCopy, CT_SHAPEFILE; key = "NAME", format = "svg", quiet = true)
         end
         @test isfile(joinpath(dir, "myatlas-map1.svg"))
     end
@@ -174,22 +194,22 @@ const CT_SHAPEFILE = joinpath(@__DIR__, "..", "Data", "shapefile_CT.zip")
 
     @testset "run_render: --map must be >= 1" begin
         @test_throws ErrorException run_render(CT_ATLAS, CT_SHAPEFILE;
-                                               shapefile_key = "NAME", map = 0, quiet = true)
+                                               key = "NAME", map = 0, quiet = true)
     end
 
     @testset "run_render: rejects an unknown --format" begin
         @test_throws ErrorException run_render(CT_ATLAS, CT_SHAPEFILE;
-                                               shapefile_key = "NAME", format = "gif", quiet = true)
+                                               key = "NAME", format = "gif", quiet = true)
     end
 
     @testset "run_render: errors when node ids don't match any shapefile record" begin
         @test_throws ErrorException run_render(CT_ATLAS, CT_SHAPEFILE;
-                                               shapefile_key = "COUNTY", quiet = true)
+                                               key = "COUNTY", quiet = true)
     end
 
     @testset "run_render: errors even with --skip-missing when nothing matches at all" begin
         @test_throws ErrorException run_render(CT_ATLAS, CT_SHAPEFILE;
-                                               shapefile_key = "COUNTY",
+                                               key = "COUNTY",
                                                skip_missing = true, quiet = true)
     end
 
@@ -209,13 +229,13 @@ const CT_SHAPEFILE = joinpath(@__DIR__, "..", "Data", "shapefile_CT.zip")
         close(io)
 
         out = joinpath(dir, "ct_partial.png")
-        run_render(atlasPath, CT_SHAPEFILE; shapefile_key = "NAME", out = out,
+        run_render(atlasPath, CT_SHAPEFILE; key = "NAME", out = out,
                   skip_missing = true, quiet = true)
         @test isfile(out)
         @test filesize(out) > 0
 
         @test_throws ErrorException run_render(atlasPath, CT_SHAPEFILE;
-                                               shapefile_key = "NAME", quiet = true)
+                                               key = "NAME", quiet = true)
     end
 
     @testset "run_render: --strip-suffix strips a trailing pattern before matching" begin
@@ -224,10 +244,113 @@ const CT_SHAPEFILE = joinpath(@__DIR__, "..", "Data", "shapefile_CT.zip")
         # No node id in the CT fixture actually has this suffix, so stripping it
         # is a no-op here; this just checks the flag is accepted and matching
         # still succeeds (i.e. the regex doesn't corrupt ids that don't match it).
-        run_render(CT_ATLAS, CT_SHAPEFILE; shapefile_key = "NAME", out = out,
+        run_render(CT_ATLAS, CT_SHAPEFILE; key = "NAME", out = out,
                   strip_suffix = raw"__SD\d+__HD\d+", quiet = true)
         @test isfile(out)
         @test filesize(out) > 0
+    end
+
+    @testset "run_render: --county-lines dissolves a shapefile county via LibGEOS" begin
+        dir = mktempdir()
+        out = joinpath(dir, "ct_countylines.png")
+        run_render(CT_ATLAS, CT_SHAPEFILE; key = "NAME", county_column = "COUNTY",
+                  county_lines = true, out = out, quiet = true)
+        @test isfile(out)
+        @test filesize(out) > 0
+    end
+
+    @testset "run_render: --county-lines requires --county-column" begin
+        @test_throws ErrorException run_render(CT_ATLAS, CT_SHAPEFILE; key = "NAME",
+                                               county_lines = true, quiet = true)
+    end
+
+    @testset "isPointGraphPath: dispatches on extension" begin
+        @test isPointGraphPath("Data/grid_graph_10_by_10.json")
+        @test !isPointGraphPath("Data/shapefile_CT.zip")
+        @test !isPointGraphPath("/some/dir/foo.shp")
+    end
+
+    @testset "matchMapToRows: split_commas=false matches a comma-containing id whole" begin
+        # A point-graph node name like "(3,7)" must not be comma-split -- it isn't a
+        # merged-precinct list, the comma is part of the coordinate notation.
+        tokenIndex = Dict("(3,7)" => 5)
+        rowDistrict, fullyMissing, partiallyMissing, _ =
+            matchMapToRows(Dict(("(3,7)",) => 2), tokenIndex, Dict{String,Vector{Int}}(), 10;
+                          split_commas = false)
+        @test rowDistrict[5] == 2
+        @test fullyMissing == 0 && partiallyMissing == 0
+
+        # With splitting on (the shapefile default), the same id is mangled into two
+        # bogus tokens and fails to match at all.
+        rowDistrict2, fullyMissing2, _, _ =
+            matchMapToRows(Dict(("(3,7)",) => 2), tokenIndex, Dict{String,Vector{Int}}(), 10;
+                          split_commas = true)
+        @test all(==(0), rowDistrict2)
+        @test fullyMissing2 == 1
+    end
+
+    @testset "loadGeoSource: dispatches a .json path to the point-graph loader" begin
+        src = loadGeoSource(GRID_GRAPH, "node_name")
+        @test length(src.geometries) == 100
+        @test haskey(src.tokenIndex, "(0,0)")
+        @test isempty(src.countyIndex)          # point-graphs have no county fallback concept
+        @test isempty(src.countyBoundary)       # county_lines not requested
+        @test src.tmpdir === nothing
+    end
+
+    @testset "loadGeoSource: --county-lines on a point-graph reads the graph's own adjacency" begin
+        src = loadGeoSource(GRID_GRAPH, "node_name"; county_column = "county", county_lines = true)
+        @test length(src.countyBoundary) == 10   # one crossing per row, straight A/B split at c==5
+    end
+
+    @testset "loadGeoSource: --county-lines needs --county-column" begin
+        @test_throws ErrorException loadGeoSource(GRID_GRAPH, "node_name"; county_lines = true)
+    end
+
+    @testset "render_map/run_render: point-graph (grid) geometry source" begin
+        dir = mktempdir()
+        atlasPath = gridAtlas(joinpath(dir, "grid.jsonl"))
+
+        fig = render_map(atlasPath, GRID_GRAPH; key = "node_name", quiet = true)
+        @test fig isa Figure
+
+        out = joinpath(dir, "grid.png")
+        run_render(atlasPath, GRID_GRAPH; key = "node_name", out = out, quiet = true)
+        @test isfile(out)
+        @test filesize(out) > 0
+    end
+
+    @testset "render_map: point-graph (hex) geometry source" begin
+        dir = mktempdir()
+        atlasPath = gridAtlas(joinpath(dir, "hex.jsonl"))
+        fig = render_map(atlasPath, HEX_GRAPH; key = "node_name", quiet = true)
+        @test fig isa Figure
+    end
+
+    @testset "render_map: point-graph --county-lines draws the adjacency-derived overlay" begin
+        dir = mktempdir()
+        atlasPath = gridAtlas(joinpath(dir, "grid.jsonl"))
+        fig = render_map(atlasPath, GRID_GRAPH; key = "node_name",
+                         county_column = "county", county_lines = true, quiet = true)
+        @test fig isa Figure
+    end
+
+    @testset "render_map: --no-precinct-lines (precinct_lines=false) still builds a Figure" begin
+        dir = mktempdir()
+        atlasPath = gridAtlas(joinpath(dir, "grid.jsonl"))
+        fig = render_map(atlasPath, GRID_GRAPH; key = "node_name",
+                         precinct_lines = false, quiet = true)
+        @test fig isa Figure
+    end
+
+    @testset "dissolvedCountyBoundarySegments: skips a county that fails to dissolve, with a warning" begin
+        # A single degenerate (zero-area) "polygon" can't build valid LibGEOS geometry;
+        # the county should be skipped (empty segments), not crash the whole render.
+        bad = Shapefile.Polygon(Shapefile.Rect(0, 0, 0, 0), Int32[0],
+                                [Shapefile.Point(0, 0), Shapefile.Point(0, 0)])
+        segs = @test_logs (:warn,) match_mode=:any dissolvedCountyBoundarySegments(
+            Any[bad], Dict("X" => [1]))
+        @test isempty(segs)
     end
 
 end
