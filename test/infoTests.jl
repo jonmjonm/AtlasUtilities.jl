@@ -3,7 +3,7 @@
 using Test
 using AtlasIO
 using AtlasUtilities: formatValue, printBlock, run_info, run_list_map_data,
-                      firstMapFieldNames, atlasInfo
+                      firstMapFieldNames, atlasInfo, extractName
 
 """Run `f()` capturing everything it writes to stdout, returned as a String."""
 function capture_stdout(f)
@@ -126,21 +126,149 @@ end
     @testset "run_info extract_script: writes script to script_name file" begin
         dir = mktempdir()
         path = joinpath(dir, "a.jsonl")
-        scriptOut = joinpath(dir, "extracted.jl")
         body = "# extracted script\nprintln(42)\n"
         writeAtlas(path, Dict{String,Any}(
             "districts"   => 3,
-            "script_name" => scriptOut,     # absolute path so it lands in the tempdir
+            "script_name" => "extracted.jl",
             "script"      => body,
         ))
 
-        out = capture_stdout() do
-            run_info(path; extract_script = true)
+        out = cd(dir) do
+            capture_stdout() do
+                run_info(path; extract_script = true)
+            end
         end
 
+        scriptOut = joinpath(dir, "extracted.jl")
         @test isfile(scriptOut)
         @test read(scriptOut, String) == body
-        @test occursin("Wrote script entry to: $scriptOut", out)
+        @test occursin("Wrote script entry to: extracted.jl", out)
+    end
+
+    @testset "extractName: keeps extraction inside the current directory" begin
+        # A recorded path -- absolute, or climbing out with ".." -- is reduced to its
+        # basename, so extraction can never write back over the original file.
+        @test extractName("/abs/where/param.toml", "fallback.toml") == "param.toml"
+        @test extractName("../src/parameterUtils.jl", "fallback.jl") ==
+              "parameterUtils.jl"
+        @test extractName("toml/param_ct.toml", "fallback.toml") == "param_ct.toml"
+        @test extractName("run.jl", "fallback.jl") == "run.jl"
+        # No usable basename falls back.
+        @test extractName("", "fallback.jl") == "fallback.jl"
+        @test extractName("/", "fallback.jl") == "fallback.jl"
+        @test extractName("..", "fallback.jl") == "fallback.jl"
+    end
+
+    @testset "run_info extract_script: never writes outside the current directory" begin
+        # CycleWalk records the TOML config under the path the run was invoked with,
+        # which is often the live config file itself; extraction must not write there.
+        dir = mktempdir()
+        elsewhereDir = mktempdir()
+        path = joinpath(dir, "a.jsonl")
+        original = joinpath(elsewhereDir, "param.toml")
+        write(original, "[plans]\nnum_dists = 9   # the live config\n")
+
+        writeAtlas(path, Dict{String,Any}(
+            "districts"        => 3,
+            "script_name"      => joinpath(elsewhereDir, "run.jl"),
+            "script"           => "println(1)\n",
+            "toml_config_file" => original,
+            "toml_config"      => "[plans]\nnum_dists = 3\n",
+        ))
+
+        cd(dir) do
+            capture_stdout() do
+                run_info(path; extract_script = true)
+            end
+        end
+
+        @test read(original, String) == "[plans]\nnum_dists = 9   # the live config\n"
+        @test !isfile(joinpath(elsewhereDir, "run.jl"))
+        @test read(joinpath(dir, "param.toml"), String) == "[plans]\nnum_dists = 3\n"
+        @test read(joinpath(dir, "run.jl"), String) == "println(1)\n"
+    end
+
+    @testset "run_info extract_script: existing file kept unless force" begin
+        dir = mktempdir()
+        path = joinpath(dir, "a.jsonl")
+        writeAtlas(path, Dict{String,Any}(
+            "districts"   => 3,
+            "script_name" => "run.jl",
+            "script"      => "println(1)\n",
+        ))
+        write(joinpath(dir, "run.jl"), "# mine, not the atlas's\n")
+
+        local out
+        err = cd(dir) do
+            capture_stderr() do
+                out = capture_stdout() do
+                    run_info(path; extract_script = true)
+                end
+            end
+        end
+        @test read(joinpath(dir, "run.jl"), String) == "# mine, not the atlas's\n"
+        @test occursin("already exists", out)
+        @test occursin("already exists", err)
+
+        cd(dir) do
+            capture_stdout() do
+                run_info(path; extract_script = true, force = true)
+            end
+        end
+        @test read(joinpath(dir, "run.jl"), String) == "println(1)\n"
+    end
+
+    @testset "run_info: omits the bulky script_includes, extracts each include" begin
+        # CycleWalk >= 0.2.2 embeds the source of every file the run script includes;
+        # printing them would bury the header under tens of kilobytes of Julia.
+        dir = mktempdir()
+        path = joinpath(dir, "a.jsonl")
+        incBody = "# an included file\nconst SECRET_MARKER = 1\n"
+        writeAtlas(path, Dict{String,Any}(
+            "districts"       => 3,
+            "script_name"     => "run.jl",
+            "script"          => "include(\"helpers.jl\")\n",
+            "script_includes" => Dict{String,Any}(
+                "helpers.jl"           => incBody,
+                "../src/deeper.jl"     => "# a deeper include\n",
+            ),
+            "script_includes_skipped" => Any["huge.jl"],   # short list: still printed
+        ))
+
+        out = cd(dir) do
+            capture_stdout() do
+                run_info(path)
+            end
+        end
+        @test occursin("script includes", out)            # presence noted
+        @test occursin("2 file(s) embedded", out)
+        @test !occursin("SECRET_MARKER", out)             # bodies never printed
+        @test !occursin("a deeper include", out)
+        @test occursin("script_includes_skipped", out)    # its short companions stay
+        @test occursin("huge.jl", out)
+        @test !isfile(joinpath(dir, "helpers.jl"))        # info alone does not extract
+
+        out2 = cd(dir) do
+            capture_stdout() do
+                run_info(path; extract_script = true)
+            end
+        end
+        @test read(joinpath(dir, "helpers.jl"), String) == incBody
+        # "../src/deeper.jl" lands in the current directory, under its basename.
+        @test read(joinpath(dir, "deeper.jl"), String) == "# a deeper include\n"
+        @test occursin("script_includes[helpers.jl]", out2)
+    end
+
+    @testset "run_info: no script_includes entry is not mentioned" begin
+        dir = mktempdir()
+        path = joinpath(dir, "a.jsonl")
+        writeAtlas(path, Dict{String,Any}("districts" => 2))
+
+        out = capture_stdout() do
+            run_info(path)
+        end
+        @test !occursin("script includes", out)
+        @test !occursin("script_includes", out)
     end
 
     @testset "run_info extract_script: no script entry warns, writes nothing" begin
@@ -186,9 +314,9 @@ end
         configBody = "[plans]\nnum_dists = 3\n"
         writeAtlas(path, Dict{String,Any}(
             "districts"         => 3,
-            "script_name"       => scriptOut,
+            "script_name"       => "extracted.jl",
             "script"            => scriptBody,
-            "toml_config_file"  => configOut,
+            "toml_config_file"  => "extracted.toml",
             "toml_config"       => configBody,
         ))
 
@@ -202,15 +330,17 @@ end
         @test !isfile(scriptOut)   # info alone does not extract
         @test !isfile(configOut)
 
-        out2 = capture_stdout() do
-            run_info(path; extract_script = true)
+        out2 = cd(dir) do
+            capture_stdout() do
+                run_info(path; extract_script = true)
+            end
         end
         @test isfile(scriptOut)
         @test read(scriptOut, String) == scriptBody
         @test isfile(configOut)
         @test read(configOut, String) == configBody
-        @test occursin("Wrote script entry to: $scriptOut", out2)
-        @test occursin("Wrote toml_config entry to: $configOut", out2)
+        @test occursin("Wrote script entry to: extracted.jl", out2)
+        @test occursin("Wrote toml_config entry to: extracted.toml", out2)
     end
 
     @testset "run_info: no toml config entry does not mention or extract one" begin

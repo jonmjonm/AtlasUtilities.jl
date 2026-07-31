@@ -13,7 +13,7 @@ mktempdir() do dir
              Dict{String,Any}(
                  "districts"   => 2,
                  "energies"    => Any["e1", "e2"],
-                 "script_name" => joinpath(dir, "script.jl"),
+                 "script_name" => "script.jl",
                  "script"      => "print(1)\n",
              ))
     for k in 1:3
@@ -23,12 +23,16 @@ mktempdir() do dir
     end
     close(io)
 
-    # Keep the build log clean; we only care about triggering compilation.
-    redirect_stdout(devnull) do
-        redirect_stderr(devnull) do
-            AtlasUtilities.run_info(a1)
-            AtlasUtilities.run_info(a1; extract_script = true)
-            AtlasUtilities.run_relabel(a1, a2; quiet = true)
+    # Keep the build log clean; we only care about triggering compilation. Run from
+    # the tempdir: --extract-script writes into the current directory, so a build
+    # done anywhere else would leave the extracted script behind there.
+    cd(dir) do
+        redirect_stdout(devnull) do
+            redirect_stderr(devnull) do
+                AtlasUtilities.run_info(a1)
+                AtlasUtilities.run_info(a1; extract_script = true)
+                AtlasUtilities.run_relabel(a1, a2; quiet = true)
+            end
         end
     end
 end

@@ -6,10 +6,11 @@ https://github.com/jonmjonm/AtlasIO.jl/blob/main/atlas_format.md).
 
 Installs a single `atlas` command with ten subcommands:
 
-  * `atlas info <atlas> [--extract-script]` — print the atlas file header, plus
-    the data field names found in its first map; notes when an embedded run
-    script and/or TOML config are present, and `--extract-script` writes out
-    both (whichever exist).
+  * `atlas info <atlas> [--extract-script] [--force]` — print the atlas file
+    header, plus the data field names found in its first map; notes when an
+    embedded run script, its includes, and/or a TOML config are present, and
+    `--extract-script` writes out each of them (whichever exist) into the
+    current directory.
   * `atlas list-map-data <atlas>` — list the names of the data fields (e.g.
     `log_spanning_trees`) contained in the first map of the atlas, one per line.
   * `atlas list-nodes <atlas> [--map k]` — list the node ids in the
@@ -80,7 +81,7 @@ export confusionMatrix, permutationFromConfusion, hammingDistance, relabelMap,
        mapDataHistograms, render_map, run_render, districtColors
 
 """
-Print the header of an Atlas file (metadata and atlas parameters); the bulky embedded generating `script` and TOML config are never printed, though their presence is noted (use `--extract-script` to write them out).
+Print the header of an Atlas file (metadata and atlas parameters); the bulky embedded generating `script`, its `script_includes`, and the TOML config are never printed, though their presence is noted (use `--extract-script` to write them out).
 
 # Args
 
@@ -91,10 +92,16 @@ Print the header of an Atlas file (metadata and atlas parameters); the bulky emb
 - `--extract-script`: write the header `script` entry to a file named by the
   header `script_name` entry (falling back to `extracted_script.jl`), and, if
   present, the header `toml_config` entry to a file named by the header
-  `toml_config_file` entry (falling back to `extracted_config.toml`).
+  `toml_config_file` entry (falling back to `extracted_config.toml`) and each
+  `script_includes` entry to a file of its own name. Every file is written in the
+  current directory, under the basename of the recorded name, so extraction can
+  never write back over the original.
+- `--force`: overwrite an existing file of that name (otherwise its entry is
+  skipped, with a message).
 """
-@cast function info(atlas::String; extract_script::Bool = false)
-    run_info(atlas; extract_script = extract_script)
+@cast function info(atlas::String; extract_script::Bool = false,
+                    force::Bool = false)
+    run_info(atlas; extract_script = extract_script, force = force)
 end
 
 """

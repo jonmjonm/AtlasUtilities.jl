@@ -8,7 +8,7 @@ The package installs a single `atlas` command with seven subcommands:
 
 | Command | What it does |
 |---------|--------------|
-| `atlas info <atlas> [--extract-script]` | Print an atlas file's header — the metadata line, the atlas-parameter line, and the data field names found in its first map. The bulky embedded `script` source is never printed; `--extract-script` writes it to its own file instead. |
+| `atlas info <atlas> [--extract-script] [--force]` | Print an atlas file's header — the metadata line, the atlas-parameter line, and the data field names found in its first map. The bulky embedded sources (`script`, `script_includes`, `toml_config`) are never printed; `--extract-script` writes each to its own file in the current directory instead. |
 | `atlas list-map-data <atlas>` | List the names of the data fields (e.g. `log_spanning_trees`) contained in the atlas's first map, one per line. |
 | `atlas list-nodes <atlas> [--map k]` | List the node ids in the atlas's k-th map (k=1 by default) as a JSON array of strings. |
 | `atlas relabel <Atlas1> <Atlas2> [<graph.json>] [--first-map] [--quiet] [--weight-population <pop.json> --population-attr <attr>]` | Relabel district numbers across every map in atlas `Atlas1` so consecutive maps stay as consistent as possible, writing the result to `Atlas2`. |
@@ -94,7 +94,16 @@ atlas info examples/cycleWalk_ct_metadata.jsonl.gz --extract-script
 ```
 
 The script is written to the filename recorded in the header's `script_name`
-entry (falling back to `extracted_script.jl`).
+entry (falling back to `extracted_script.jl`). A CycleWalk run also embeds the TOML
+config it was given (`toml_config`) and the source of every file its script
+`include`s (`script_includes`); `--extract-script` writes those out too, under the
+names the header records them by.
+
+Every file is written **into the current directory**, under the basename of the
+recorded name: a run records its config under the path it was invoked with, which is
+usually the live config file, and extraction must not write back over it. A name
+already taken in the current directory is left alone and its entry skipped — pass
+`--force` to overwrite.
 
 The same metadata is available as data (not just printed text) via the
 `atlasInfo` library function — see [library.md](library.md#atlasinfo).

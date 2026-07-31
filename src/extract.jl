@@ -68,7 +68,8 @@ end
 
 Write an `about.md` into `outdir` describing the extraction: the source atlas name,
 the extraction date, and the atlas's header information -- everything `atlas info`
-shows except the bulky embedded generating script (see `atlasHeaderInfo`), including
+shows except the bulky embedded sources -- the generating script, its includes, and
+the TOML config (see `atlasHeaderInfo`) -- including
 `fieldNames` (the data field names found in the first map, e.g.
 `log_spanning_trees`). When `burnIn`/`maxMaps` are nonzero (a `--burn-in`/`--max-maps`
 run), a line noting each is added -- `maxMaps` in particular marks the extraction as

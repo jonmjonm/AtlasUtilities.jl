@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.1.9]
+
+- `atlas info`: keep up with the header CycleWalk 0.2.2+ writes. `script_includes`
+  -- the full source of every file the run script `include`s -- joins `script` and
+  `toml_config` as a bulky entry that is noted but never printed (it was being
+  dumped into the printed header and into `extract-map-data`'s `about.md`, tens of
+  kilobytes of Julia), and `--extract-script` now writes each included source out
+  alongside the script and config.
+- `atlas info --extract-script` writes every extracted file into the current
+  directory, under the basename of the name the header records. CycleWalk records
+  the TOML config under the path the run was invoked with, so extraction was
+  writing back over the live config file. An existing file of that name is now kept
+  and its entry skipped; the new `--force` flag overwrites.
+
 ## [0.1.8]
 
 - `atlas render` now accepts a point-position node-link JSON graph (e.g.
