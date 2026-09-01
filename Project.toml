@@ -1,6 +1,6 @@
 name = "AtlasUtilities"
 uuid = "020ba7bf-05d8-4817-8da0-aeeb372d76a1"
-version = "0.1.9"
+version = "0.1.10"
 authors = ["Jonathan Mattingly <jonathan.mattingly@gmail.com>"]
 
 [deps]
@@ -22,17 +22,17 @@ TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
 
 [compat]
 AtlasIO = "0.1.5"
-CairoMakie = "0.15.13"
-Colors = "0.13.1"
+CairoMakie = "0.15"
+Colors = "0.13"
 Comonicon = "1"
 CycleWalk = "0.2"
 Hungarian = "0.7"
 JSON3 = "1.14"
-LibGEOS = "0.9.7"
-Makie = "0.24.13"
+LibGEOS = "0.9"
+Makie = "0.24"
 ProgressMeter = "1.11"
-Shapefile = "0.13.3"
-StreamHistogram = "0.1.0"
+Shapefile = "0.13"
+StreamHistogram = "0.1.1"
 julia = "1.10"
 
 [extras]
