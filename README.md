@@ -31,19 +31,18 @@ compiles a system image so the command starts fast.
 ### Install from GitHub
 
 Install directly from the GitHub repository with Julia's package manager — this
-clones the package, resolves its registered dependencies from the General
-registry, and runs the build step that installs the `atlas` command. One
-dependency, [`StreamHistogram`](https://github.com/jonmjonm/StreamHistogram.jl),
-isn't registered, so add it by URL first:
+clones the package, resolves its dependencies (most from the General registry;
+[`StreamHistogram`](https://github.com/jonmjonm/StreamHistogram.jl) is pinned by
+URL via `Project.toml`'s `[sources]` table), and runs the build step that
+installs the `atlas` command:
 
 ```julia
-julia -e 'using Pkg; Pkg.add(url="https://github.com/jonmjonm/StreamHistogram.jl"); Pkg.add(url="https://github.com/jonmjonm/AtlasUtilities.jl")'
+julia -e 'using Pkg; Pkg.add(url="https://github.com/jonmjonm/AtlasUtilities.jl")'
 ```
 
 Equivalently, from the Julia REPL package mode (press `]`):
 
 ```julia-repl
-pkg> add https://github.com/jonmjonm/StreamHistogram.jl
 pkg> add https://github.com/jonmjonm/AtlasUtilities.jl
 ```
 
@@ -64,8 +63,8 @@ atlas info some_atlas.jsonl.gz
 
 > The first install compiles a system image and takes a few minutes. Most
 > dependencies (including `AtlasIO` and `CycleWalk`) resolve from the Julia
-> General registry; `StreamHistogram` does not, so it must be added by URL
-> beforehand as shown above.
+> General registry; `StreamHistogram` does not, so it's pinned by URL in
+> `Project.toml`'s `[sources]` table instead.
 
 ### Installing from a local clone (development)
 
