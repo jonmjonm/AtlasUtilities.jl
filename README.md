@@ -9,6 +9,7 @@ The package installs a single `atlas` command with seven subcommands:
 | Command | What it does |
 |---------|--------------|
 | `atlas info <atlas> [--extract-script] [--force]` | Print an atlas file's header — the metadata line, the atlas-parameter line, and the data field names found in its first map. The bulky embedded sources (`script`, `script_includes`, `toml_config`) are never printed; `--extract-script` writes each to its own file in the current directory instead. |
+| `atlas convert <src> <dst> [--to 1\|2] [--quiet]` | Convert an atlas between Atlas format versions 1 and 2 (default `--to 2`), copying everything but the district assignment byte for byte. |
 | `atlas list-map-data <atlas>` | List the names of the data fields (e.g. `log_spanning_trees`) contained in the atlas's first map, one per line. |
 | `atlas list-nodes <atlas> [--map k]` | List the node ids in the atlas's k-th map (k=1 by default) as a JSON array of strings. |
 | `atlas relabel <Atlas1> <Atlas2> [<graph.json>] [--first-map] [--quiet] [--weight-population <pop.json> --population-attr <attr>]` | Relabel district numbers across every map in atlas `Atlas1` so consecutive maps stay as consistent as possible, writing the result to `Atlas2`. |
@@ -91,6 +92,23 @@ already taken in the current directory is left alone and its entry skipped — p
 
 The same metadata is available as data (not just printed text) via the
 `atlasInfo` library function — see [library.md](library.md#atlasinfo).
+
+### `atlas convert`
+
+```bash
+atlas convert examples/cycleWalk_ct_slice.jsonl.gz ct_v2.jsonl.gz --to 2
+atlas convert ct_v2.jsonl.gz ct_v1.jsonl --to 1
+```
+
+Converts an atlas between [Atlas format](https://github.com/jonmjonm/AtlasIO.jl/blob/main/atlas_format.md)
+versions 1 and 2. v2 stores each map's district assignment as a sorted tree; it is about a third the size of
+v1 and faster to read. Only the header's `formatVersion` and each map's assignment are rewritten; the banner,
+the atlas parameters and every map's name, weight and data are copied byte for byte, and converting back gives
+the same districting for every map. A districting v2 cannot hold (a region assigned both whole and split)
+stops the conversion with an error naming the line and map. Reading v2 needs AtlasIO 0.2.1 or later (Python:
+AtlasIO.py from v0.2.1, or the `atlasio` package, which has the same converter: `python -m atlasio convert`).
+
+`atlas relabel` and `atlas add` keep their input's format version: given a v2 atlas they write a v2 atlas.
 
 ### `atlas list-map-data`
 
