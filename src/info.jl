@@ -112,7 +112,7 @@ end
     atlasInfo(atlasPathOrAtlas) -> Dict{String,Any}
 
 Structured atlas metadata, for programmatic (library) use. Returns a dict with:
-- `"header"`: description, date, map param type, weight type
+- `"header"`: description, date, map param type, weight type, format version (`"1"` or `"2"`)
 - `"parameters"`: `atlas.atlasParam` verbatim (including the bulky `script` entry)
 - `"map_data"`: the sorted field names found in the atlas's first map
 
@@ -137,6 +137,7 @@ function atlasInfo(atlas)
             "date"           => atlas.date,
             "map param type" => string(atlas.mapParamType),
             "weight type"    => string(atlas.weightType),
+            "format version" => atlas.formatVersion,
         ),
         "parameters" => atlas.atlasParam,
         "map_data"   => fieldNames,
@@ -147,7 +148,7 @@ end
     atlasHeaderInfo(atlas, fieldNames = String[]) -> String
 
 The atlas's header rendered as text: the "Atlas Header" block (description, date,
-map/weight types, and -- when present -- a note that a run script and/or TOML
+map/weight types, format version, and -- when present -- a note that a run script and/or TOML
 config are embedded and extractable), the "Atlas Parameters" block, and a
 "Map Data Fields" block listing `fieldNames` (the field names found in the first
 map, e.g. `log_spanning_trees`; see [`firstMapFieldNames`](@ref)), with the bulky
@@ -162,6 +163,7 @@ function atlasHeaderInfo(atlas, fieldNames::AbstractVector{<:AbstractString} = S
         "date"           => atlas.date,
         "map param type" => string(atlas.mapParamType),
         "weight type"    => string(atlas.weightType),
+        "format version" => atlas.formatVersion,
     ]
     haskey(param, SCRIPT_KEY) &&
         push!(hdrPairs, "run script" => "embedded (extract with --extract-script)")

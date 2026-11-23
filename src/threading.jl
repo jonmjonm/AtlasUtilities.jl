@@ -39,11 +39,31 @@ function chunkranges(n::Int, k::Int)
 end
 
 """Run `f(i)` for `i in 1:n` across `cores` tasks (results must be written to
-preallocated, per-index storage by `f`)."""
+preallocated, per-index storage by `f`). If `f` throws, the error is rethrown as itself
+(not wrapped in Julia's `CompositeException`/`TaskFailedException`), so the user sees
+its message."""
 function parallelDo!(f, n::Int, cores::Int)
-    @sync for r in chunkranges(n, cores)
-        Threads.@spawn for i in r
-            f(i)
+    try
+        @sync for r in chunkranges(n, cores)
+            Threads.@spawn for i in r
+                f(i)
+            end
+        end
+    catch e
+        throw(firstTaskError(e))
+    end
+    return nothing
+end
+
+"The exception the first failed task raised (or `e` itself, if it is not a task failure)."
+function firstTaskError(e)
+    while true
+        if e isa CompositeException && !isempty(e.exceptions)
+            e = first(e.exceptions)
+        elseif e isa TaskFailedException
+            e = e.task.exception
+        else
+            return e
         end
     end
 end
