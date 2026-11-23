@@ -331,13 +331,11 @@ function provenanceHeaderBytes(Atlas1::AbstractString, names::Vector{String}, sp
     line3 = readline(src)   # atlasParam
     close(src)
 
-    atlasParam = JSON3.read(line3, Dict{String,Any})
-    entry = Dict{String,Any}(
-        "by"     => "atlas add",
-        "fields" => names,
-        "graph"  => spec.path,
-        "date"   => string(Dates.now()),
-    )
+    # Parse with JSON.jl's order-preserving JSON.Object so the existing params are
+    # written back unchanged: same key order, and exact numbers. (JSON3 into a Dict
+    # scrambled the key order, read 0.0 back as 0, and corrupted integers beyond 2^53.)
+    atlasParam = JSON.parse(line3)
+    entry = (by = "atlas add", fields = names, graph = spec.path, date = string(Dates.now()))
     prior = get(atlasParam, "added map data", nothing)
     log = prior === nothing ? Any[] : collect(Any, prior)
     push!(log, entry)
@@ -346,7 +344,7 @@ function provenanceHeaderBytes(Atlas1::AbstractString, names::Vector{String}, sp
     buf = IOBuffer()
     write(buf, line1, "\n")
     write(buf, line2, "\n")
-    JSON3.write(buf, atlasParam)
+    JSON.json(buf, atlasParam)
     write(buf, "\n")
     return take!(buf)
 end
@@ -603,7 +601,7 @@ function run_add(functions::AbstractString, Atlas1::AbstractString, Atlas2::Abst
             bytes = Vector{Vector{UInt8}}(undef, n)
             conflict = Vector{Union{Nothing,Tuple{String,String}}}(nothing, n)
             parallelDo!(n, cores) do i
-                m = JSON3.read(lines[i], Map{mpt,wt})
+                m = parseMap(lines[i], mpt, wt)
                 if !overwrite
                     for (desc, _) in fns
                         if haskey(m.data, desc)

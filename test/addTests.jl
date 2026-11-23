@@ -188,6 +188,25 @@ rgs(; kw...) = resolveGraphSpec(; config = "", graph = "", pop_col = "",
         atlas = openAtlas(smartOpen(A3, "r"))
         @test length(atlas.atlasParam["added map data"]) == 2
         close(atlas)
+
+        # The existing params are written back byte for byte: same key order, exact numbers.
+        # (Before 0.2.0, the JSON3 round trip turned 0.0 into 0, -0.0 into 0, corrupted
+        # integers beyond 2^53, and scrambled the key order.)
+        params = "{\"zeta\":1,\"gamma\":0.0,\"seed\":-7375463094308724563,\"negzero\":-0.0," *
+                 "\"nested\":{\"b\":1,\"a\":[1.0,2.5]},\"alpha\":\"x\"}"
+        A4 = joinpath(dir, "A4.jsonl")
+        write(A4, "\"banner\"\n" *
+                  "{\"description\":\"d\",\"date\":\"t\",\"atlasParamType\":\"Dict{String, Any}\"," *
+                  "\"mapParamType\":\"Dict{String, Any}\"}\n" * params * "\n")
+        A5 = joinpath(dir, "A5.jsonl")
+        writeHeaderWithProvenance(A4, A5, ["get_log_spanning_trees"], spec)
+        line3 = readlines(A5)[3]
+        @test startswith(line3, params[1:end-1] * ",\"added map data\":[{\"by\":\"atlas add\",")
+        atlas = openAtlas(smartOpen(A5, "r"))
+        @test atlas.atlasParam["gamma"] === 0.0
+        @test atlas.atlasParam["seed"] === -7375463094308724563
+        @test atlas.atlasParam["negzero"] === -0.0
+        close(atlas)
     end
 
     # Oracle tests: these fixtures are real CycleWalk output whose maps already
