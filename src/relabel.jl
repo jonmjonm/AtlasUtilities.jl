@@ -267,6 +267,7 @@ function run_relabel(Atlas1::AbstractString, Atlas2::AbstractString,
     atlas = openAtlas(inIO)
     mpt = atlas.mapParamType
     wt = atlas.weightType
+    fv = atlas.formatVersion    # Atlas2 copies Atlas1's header, so its maps must be in the same version
     d = Int(atlas.atlasParam["districts"])
 
     # Build the hierarchy only when a dual-graph JSON was supplied.
@@ -305,7 +306,7 @@ function run_relabel(Atlas1::AbstractString, Atlas2::AbstractString,
     # Map 1 is the anchor: written verbatim and used as the initial reference.
     ref = nextMap(atlas)
     let buf = IOBuffer()
-        addMap(buf, ref)
+        addMap(buf, ref; formatVersion = fv)
         writeMaps!(outIO, [take!(buf)])
     end
     written += 1
@@ -337,7 +338,7 @@ function run_relabel(Atlas1::AbstractString, Atlas2::AbstractString,
         bytes = Vector{Vector{UInt8}}(undef, n)                 # serialize (parallel)
         parallelDo!(n, cores) do i
             buf = IOBuffer()
-            addMap(buf, relabeled[i])
+            addMap(buf, relabeled[i]; formatVersion = fv)
             bytes[i] = take!(buf)
         end
 

@@ -67,6 +67,7 @@ using Comonicon
 # `writeMaps!`/`atlasHeaderBytes`) is provided by AtlasIO (>= 0.1.3) and used below.
 include("threading.jl")
 include("info.jl")
+include("convert.jl")
 include("nodes.jl")
 include("relabel.jl")
 include("add.jl")
@@ -103,6 +104,31 @@ Print the header of an Atlas file (metadata and atlas parameters); the bulky emb
 @cast function info(atlas::String; extract_script::Bool = false,
                     force::Bool = false)
     run_info(atlas; extract_script = extract_script, force = force)
+end
+
+"""
+Convert atlas `src` to Atlas format version `--to` (1 or 2), writing `dst`.
+
+Only the header's `formatVersion` and each map's district assignment are rewritten; the banner, the atlas
+parameters and every map's name, weight and data are copied byte for byte. Converting back gives the same
+districting for every map. A districting that format v2 cannot hold (a region both whole and split) stops
+the conversion with an error naming the line and map. See AtlasIO's `atlas_format.md` for the two versions.
+
+# Args
+
+- `src`: the atlas to convert (`.jsonl`, `.jsonl.gz`, or `.jsonl.bz2`).
+- `dst`: the converted atlas to write (`.jsonl`, `.jsonl.gz`, or `.jsonl.bz2`).
+
+# Options
+
+- `--to <version>`: the format version to write, 1 or 2 (default: 2).
+
+# Flags
+
+- `--quiet`: don't print the number of maps converted.
+"""
+@cast function convert(src::String, dst::String; to::Int = 2, quiet::Bool = false)
+    run_convert(src, dst; to = to, quiet = quiet)
 end
 
 """

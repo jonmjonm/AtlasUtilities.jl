@@ -581,6 +581,7 @@ function run_add(functions::AbstractString, Atlas1::AbstractString, Atlas2::Abst
     inIO = smartOpen(String(Atlas1), "r")
     atlas = openAtlas(inIO)
     mpt, wt = atlas.mapParamType, atlas.weightType
+    fv = atlas.formatVersion    # Atlas2's header comes from Atlas1's, so its maps must be in the same version
 
     progress = quiet ? nothing :
                ProgressUnknown(desc = "Adding map data:", spinner = true)
@@ -614,7 +615,7 @@ function run_add(functions::AbstractString, Atlas1::AbstractString, Atlas2::Abst
                     m.data[desc] = val
                 end
                 buf = IOBuffer()
-                addMap(buf, m)
+                addMap(buf, m; formatVersion = fv)
                 bytes[i] = take!(buf)
             end
 

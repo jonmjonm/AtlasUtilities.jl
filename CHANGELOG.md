@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.2.1]
+
+- New `atlas convert <src> <dst> [--to 1|2]`: convert an atlas between Atlas format versions 1 and 2 (AtlasIO's
+  `convertAtlas`). Only the header's `formatVersion` and each map's district assignment are rewritten; the
+  banner, the atlas parameters and every map's name, weight and data are copied byte for byte.
+- `atlas relabel` and `atlas add` keep their input's format version. They copy the input's header, so given a
+  format v2 atlas they now also write its maps as v2; before, they would have written v1 maps under a v2
+  header, a file no reader accepts.
+- Requires AtlasIO 0.2.2 (reads and writes format v2).
+
+## [0.2.0]
+
+- Uses AtlasIO 0.2 (JSON.jl instead of JSON3): map lines are parsed with `parseMap`. `atlas add` no longer
+  rewrites the atlas parameters line (fixed `provenanceHeaderBytes`).
+
 ## [0.1.9]
 
 - `atlas info`: keep up with the header CycleWalk 0.2.2+ writes. `script_includes`
