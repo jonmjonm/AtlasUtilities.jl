@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.0]
+
+- **`atlas render` is now a package extension.** Its plotting packages -- CairoMakie (with Makie and Colors),
+  Shapefile and LibGEOS, about 170 of the ~280 packages AtlasUtilities depended on -- are weak dependencies:
+  not installed or loaded unless you render. Loading AtlasUtilities drops from about 5 s to about 1.5 s, and
+  installing or updating precompiles far fewer packages.
+- New `atlas install-render`: installs those packages into the `atlas` command's environment, once. Until then
+  `atlas render` stops with a message saying so.
+- Breaking for Julia users of the render internals: they live in the `AtlasUtilitiesRenderExt` extension
+  (`Base.get_extension(AtlasUtilities, :AtlasUtilitiesRenderExt)`) after `using CairoMakie, Shapefile, LibGEOS`.
+  The exported `run_render`, `render_map` and `districtColors` still work, loading the extension on first use.
+
 ## [0.2.1]
 
 - New `atlas convert <src> <dst> [--to 1|2]`: convert an atlas between Atlas format versions 1 and 2 (AtlasIO's

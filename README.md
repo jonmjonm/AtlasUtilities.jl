@@ -10,6 +10,7 @@ The package installs a single `atlas` command with seven subcommands:
 |---------|--------------|
 | `atlas info <atlas> [--extract-script] [--force]` | Print an atlas file's header — the metadata line, the atlas-parameter line, and the data field names found in its first map. The bulky embedded sources (`script`, `script_includes`, `toml_config`) are never printed; `--extract-script` writes each to its own file in the current directory instead. |
 | `atlas convert <src> <dst> [--to 1\|2] [--quiet]` | Convert an atlas between Atlas format versions 1 and 2 (default `--to 2`), copying everything but the district assignment byte for byte. |
+| `atlas install-render` | Install the plotting packages `atlas render` needs (once; not installed by default). |
 | `atlas list-map-data <atlas>` | List the names of the data fields (e.g. `log_spanning_trees`) contained in the atlas's first map, one per line. |
 | `atlas list-nodes <atlas> [--map k]` | List the node ids in the atlas's k-th map (k=1 by default) as a JSON array of strings. |
 | `atlas relabel <Atlas1> <Atlas2> [<graph.json>] [--first-map] [--quiet] [--weight-population <pop.json> --population-attr <attr>]` | Relabel district numbers across every map in atlas `Atlas1` so consecutive maps stay as consistent as possible, writing the result to `Atlas2`. |
@@ -55,6 +56,17 @@ atlas info some_atlas.jsonl.gz
 ```
 
 > The first install compiles a system image and takes several minutes.
+
+`atlas render` needs plotting packages (CairoMakie, Shapefile, LibGEOS) that are **not** installed with
+AtlasUtilities, because together they are about 170 extra packages and most of the load time. Install them once,
+only if you want to draw maps:
+
+```bash
+atlas install-render
+```
+
+Until then `atlas render` stops with a message saying exactly that; every other subcommand works without them.
+From Julia, `using AtlasUtilities, CairoMakie, Shapefile, LibGEOS` makes `run_render` available.
 
 ## Usage
 
