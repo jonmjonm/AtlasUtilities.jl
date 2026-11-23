@@ -4,10 +4,23 @@
 
 using Test
 using Makie: Figure
-using Shapefile
-using AtlasUtilities: render_map, run_render, resolveShapefilePath, loadShapefileGeometries,
-                      districtColors, matchMapToRows, loadGeoSource, isPointGraphPath,
-                      dissolvedCountyBoundarySegments
+using CairoMakie, Shapefile, LibGEOS     # loading these loads AtlasUtilities' render extension
+using AtlasUtilities
+const RenderExt = Base.get_extension(AtlasUtilities, :AtlasUtilitiesRenderExt)
+using .RenderExt: resolveShapefilePath, loadShapefileGeometries, matchMapToRows, loadGeoSource,
+                  isPointGraphPath, dissolvedCountyBoundarySegments
+# render_map, run_render and districtColors: AtlasUtilities' exported wrappers, which call the extension.
+using AtlasUtilities: render_map, run_render, districtColors
+
+@testset "render extension" begin
+    @test RenderExt isa Module
+    @test isempty(AtlasUtilities.missingRenderPackages())
+    @test AtlasUtilities.renderExtension() === RenderExt
+    @test districtColors(3) == RenderExt.districtColors(3)
+    io = IOBuffer()
+    AtlasUtilities.run_install_render(; io = io)        # already installed: nothing to do
+    @test occursin("already installed", String(take!(io)))
+end
 
 const CT_ATLAS = joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_slice.jsonl.gz")
 const CT_SHAPEFILE = joinpath(@__DIR__, "..", "Data", "shapefile_CT.zip")

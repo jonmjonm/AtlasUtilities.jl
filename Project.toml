@@ -1,25 +1,31 @@
 name = "AtlasUtilities"
 uuid = "020ba7bf-05d8-4817-8da0-aeeb372d76a1"
-version = "0.2.1"
+version = "0.3.0"
 authors = ["Jonathan Mattingly <jonathan.mattingly@gmail.com>"]
 
 [deps]
 AtlasIO = "d44f5655-1c95-40b4-8e53-9bdb5084f5d6"
-CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
-Colors = "5ae59095-9a9b-59fe-a467-6f913c188581"
 Comonicon = "863f3e99-da2a-4334-8734-de3dacbe5542"
 CycleWalk = "ac9cec89-1413-42d8-a7d6-c246d938c565"
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
 Hungarian = "e91730f6-4275-51fb-a7a0-7064cfbd3b39"
 JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
 JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
-LibGEOS = "a90b1aa1-3769-5649-ba7e-abc5a9d163eb"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
-Makie = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"
+Pkg = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
 ProgressMeter = "92933f4c-e287-5a05-a399-4b506db050ca"
-Shapefile = "8e980c4a-a4fe-5da2-b3a7-4b4b0353a2f4"
 StreamHistogram = "0a470d28-1c1c-4ee3-bac4-41d402736bfc"
 TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
+
+[weakdeps]
+CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
+Colors = "5ae59095-9a9b-59fe-a467-6f913c188581"
+LibGEOS = "a90b1aa1-3769-5649-ba7e-abc5a9d163eb"
+Makie = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"
+Shapefile = "8e980c4a-a4fe-5da2-b3a7-4b4b0353a2f4"
+
+[extensions]
+AtlasUtilitiesRenderExt = ["CairoMakie", "Colors", "LibGEOS", "Makie", "Shapefile"]
 
 [sources]
 StreamHistogram = {url = "https://github.com/jonmjonm/StreamHistogram.jl"}
@@ -28,7 +34,7 @@ StreamHistogram = {url = "https://github.com/jonmjonm/StreamHistogram.jl"}
 AtlasIO = "0.2.2"
 CairoMakie = "0.15"
 Colors = "0.13"
-Comonicon = "1"
+Comonicon = "1.0.8"
 CycleWalk = "0.2"
 Hungarian = "0.7"
 JSON = "1.6"
@@ -44,4 +50,4 @@ julia = "1.10"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["Test"]
+test = ["Test", "CairoMakie", "Colors", "LibGEOS", "Makie", "Shapefile"]
