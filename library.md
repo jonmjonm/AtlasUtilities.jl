@@ -165,7 +165,7 @@ atlasInfo(atlas) -> Dict{String,Any}
 ```
 
 Returns the same metadata `atlas info` prints, as data rather than formatted
-text: `"header"` (description, date, map param type, weight type),
+text: `"header"` (description, date, map param type, weight type, format version),
 `"parameters"` (`atlas.atlasParam` verbatim, including the bulky `script`
 entry — unlike the CLI's printed output, nothing is filtered out here), and
 `"map_data"` (the sorted field names found in the atlas's first map, or an

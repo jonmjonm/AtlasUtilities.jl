@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.3.3]
+
+- `atlas info` (and the `about.md` written by `extract-map-data`) shows the atlas's **format version** (`"1"` or
+  `"2"`); `atlasInfo` returns it under `"header"` → `"format version"`.
+- An error inside a parallel batch (e.g. `extract-assignments` on a multiscale atlas) is now reported as the
+  error itself, not wrapped in Julia's `TaskFailedException` with a stack trace.
+- New `test/versionsTests.jl`: every subcommand gives the same output on a v1 atlas and on its v2 conversion
+  (`relabel` and `add` keep the input's version, with the same maps); and atlases with Float64 weights keep them
+  through `relabel`, `add` and `convert`.
+
 ## [0.3.2]
 
 - **Fix:** `atlas extract-map-data-histogram --moment-powers` with a highest power below 4 (e.g. `1,2`) failed
