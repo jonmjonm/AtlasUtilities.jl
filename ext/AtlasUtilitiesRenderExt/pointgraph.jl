@@ -39,13 +39,13 @@ the `nodes` array (i.e. `adjacency` cannot be matched positionally to `nodes`).
 """
 function parsePointGraph(jsonPath::AbstractString; key::AbstractString = "node_name",
                          county_column::AbstractString = "")
-    doc = JSON3.read(read(jsonPath, String))
-    haskey(doc, :nodes) && haskey(doc, :adjacency) ||
+    doc = readJSONFile(jsonPath)
+    haskey(doc, "nodes") && haskey(doc, "adjacency") ||
         error("atlas render/view: \"$jsonPath\" is not a node-link graph JSON " *
               "(expected top-level \"nodes\" and \"adjacency\" arrays).")
-    rawNodes = doc.nodes
-    keyAttrs = Symbol.(strip.(split(key, ',')))
-    countyAttr = isempty(county_column) ? nothing : Symbol(county_column)
+    rawNodes = doc["nodes"]
+    keyAttrs = String.(strip.(split(key, ',')))
+    countyAttr = isempty(county_column) ? nothing : String(county_column)
 
     idToRow = Dict{Int, Int}()
     nodes = Vector{PointGraphNode}(undef, length(rawNodes))
@@ -54,9 +54,9 @@ function parsePointGraph(jsonPath::AbstractString; key::AbstractString = "node_n
             haskey(n, a) ||
                 error("atlas render/view: node $i of \"$jsonPath\" has no attribute " *
                       "\"$a\" (--key); available attributes: " *
-                      join(sort(String.(keys(n))), ", "))
+                      join(sort(collect(keys(n))), ", "))
         end
-        haskey(n, :x_location) && haskey(n, :y_location) ||
+        haskey(n, "x_location") && haskey(n, "y_location") ||
             error("atlas render/view: node $i of \"$jsonPath\" has no " *
                   "\"x_location\"/\"y_location\" position.")
         countyVal = ""
@@ -64,26 +64,26 @@ function parsePointGraph(jsonPath::AbstractString; key::AbstractString = "node_n
             haskey(n, countyAttr) ||
                 error("atlas render/view: node $i of \"$jsonPath\" has no attribute " *
                       "\"$countyAttr\" (--county-column).")
-            countyVal = uppercase(strip(string(n[countyAttr])))
+            countyVal = uppercase(strip(jsonKeyString(n[countyAttr])))
         end
-        k = join((string(n[a]) for a in keyAttrs), ":")
-        nodes[i] = PointGraphNode(k, Point2f(Float64(n.x_location), Float64(n.y_location)),
+        k = join((jsonKeyString(n[a]) for a in keyAttrs), ":")
+        nodes[i] = PointGraphNode(k, Point2f(Float64(n["x_location"]), Float64(n["y_location"])),
                                   countyVal)
-        haskey(n, :id) || error("atlas render/view: node $i of \"$jsonPath\" has no \"id\".")
-        idToRow[Int(n.id)] = i
+        haskey(n, "id") || error("atlas render/view: node $i of \"$jsonPath\" has no \"id\".")
+        idToRow[Int(n["id"])] = i
     end
 
     neighbors = [Int[] for _ in nodes]
-    rawAdj = doc.adjacency
+    rawAdj = doc["adjacency"]
     length(rawAdj) == length(nodes) ||
         error("atlas render/view: \"$jsonPath\"'s \"adjacency\" has $(length(rawAdj)) " *
               "entries but \"nodes\" has $(length(nodes)).")
     for (i, edges) in enumerate(rawAdj)
         for e in edges
-            haskey(idToRow, Int(e.id)) ||
+            haskey(idToRow, Int(e["id"])) ||
                 error("atlas render/view: \"$jsonPath\" adjacency references node id " *
-                      "$(e.id), which is not any node's \"id\".")
-            push!(neighbors[i], idToRow[Int(e.id)])
+                      "$(e["id"]), which is not any node's \"id\".")
+            push!(neighbors[i], idToRow[Int(e["id"])])
         end
     end
     return nodes, neighbors

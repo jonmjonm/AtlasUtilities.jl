@@ -55,8 +55,7 @@ using AtlasIO
 using CycleWalk
 using Dates
 using Hungarian
-import JSON     # exact, order-preserving round trip of the atlas params line (add.jl)
-using JSON3
+import JSON     # all JSON reading and writing (graphs, node lists, histograms, the atlas params line)
 using LinearAlgebra: BLAS
 using ProgressMeter
 using StreamHistogram
@@ -65,6 +64,7 @@ using Comonicon
 
 # Byte-targeted parallel gzip atlas output (`AtlasOutput`/`openAtlasOutput`/
 # `writeMaps!`/`atlasHeaderBytes`) is provided by AtlasIO (>= 0.1.3) and used below.
+include("json.jl")
 include("threading.jl")
 include("info.jl")
 include("convert.jl")

@@ -11,7 +11,7 @@ module AtlasUtilitiesRenderExt
 # Only `import` AtlasUtilities: this module defines its own `run_render`, `render_map` and `districtColors`,
 # which AtlasUtilities' exported functions of the same names call.
 import AtlasUtilities
-using AtlasUtilities: nodeIdString, stripAtlasExt, JSON3
+using AtlasUtilities: nodeIdString, stripAtlasExt, readJSONFile, jsonKeyString
 using AtlasUtilities.AtlasIO: smartOpen, openAtlas, nextMap, skipMap
 using CairoMakie
 using Colors

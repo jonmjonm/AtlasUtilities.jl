@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.1]
+
+- **JSON3 is no longer a dependency** (it is deprecated in the General registry). AtlasUtilities now reads and
+  writes all JSON with JSON.jl, like AtlasIO, CycleWalk and MetropolizedForestRecom: dual graphs (`relabel`,
+  `render`), `list-nodes` output and the histogram summaries of `extract-map-data-histogram`.
+- No change in results. Graph attributes used as node keys keep their spelling: a whole-number float such as
+  `5.0` still matches the key `"5"`, as when JSON3 read it as an integer. `list-nodes` output is byte-identical.
+  Histogram JSON holds the same values; its keys are now written in sorted order instead of hash order, so the
+  same run always gives the same file.
+- New helpers `readJSONFile` and `jsonKeyString` (src/json.jl), also used by the render extension.
+
 ## [0.3.0]
 
 - **`atlas render` is now a package extension.** Its plotting packages -- CairoMakie (with Makie and Colors),

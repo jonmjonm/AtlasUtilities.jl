@@ -2,7 +2,7 @@
 
 using Test
 using AtlasIO
-using JSON3
+import JSON
 using AtlasUtilities: nodeIdString, run_list_nodes
 
 """Write an atlas at `path` with one map per entry of `districtings`
@@ -33,7 +33,7 @@ end
             run_list_nodes(path)
         end
 
-        @test JSON3.read(out, Vector{String}) == ["a", "b", "c"]
+        @test JSON.parse(out) == ["a", "b", "c"]
     end
 
     @testset "run_list_nodes: --map selects the k-th map (1-based)" begin
@@ -48,7 +48,7 @@ end
             run_list_nodes(path; map = 2)
         end
 
-        @test JSON3.read(out, Vector{String}) == ["x", "y", "z"]
+        @test JSON.parse(out) == ["x", "y", "z"]
     end
 
     @testset "run_list_nodes: multiscale node ids joined with ':'" begin
@@ -60,7 +60,7 @@ end
             run_list_nodes(path)
         end
 
-        @test JSON3.read(out, Vector{String}) == ["X:1", "X:2", "Y:1"]
+        @test JSON.parse(out) == ["X:1", "X:2", "Y:1"]
     end
 
     @testset "run_list_nodes: errors when map index exceeds the atlas's map count" begin

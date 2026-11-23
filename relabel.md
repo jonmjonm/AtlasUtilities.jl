@@ -199,7 +199,7 @@ test/runtests.jl`.
 
 ## Dependencies
 
-`AtlasIO.jl`, `Hungarian.jl`, `JSON3.jl`, and `ProgressMeter.jl`, all added via
+`AtlasIO.jl`, `Hungarian.jl`, `JSON.jl`, and `ProgressMeter.jl`, all added via
 the Julia package manager. Threading uses `Base.Threads` (no extra dependency).
 
 ## Assumptions

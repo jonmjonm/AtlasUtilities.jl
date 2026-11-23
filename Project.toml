@@ -1,6 +1,6 @@
 name = "AtlasUtilities"
 uuid = "020ba7bf-05d8-4817-8da0-aeeb372d76a1"
-version = "0.3.0"
+version = "0.3.1"
 authors = ["Jonathan Mattingly <jonathan.mattingly@gmail.com>"]
 
 [deps]
@@ -10,7 +10,6 @@ CycleWalk = "ac9cec89-1413-42d8-a7d6-c246d938c565"
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
 Hungarian = "e91730f6-4275-51fb-a7a0-7064cfbd3b39"
 JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
-JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 Pkg = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
 ProgressMeter = "92933f4c-e287-5a05-a399-4b506db050ca"
@@ -38,7 +37,6 @@ Comonicon = "1.0.8"
 CycleWalk = "0.2"
 Hungarian = "0.7"
 JSON = "1.6"
-JSON3 = "1.14"
 LibGEOS = "0.9"
 Makie = "0.24"
 ProgressMeter = "1.11"
