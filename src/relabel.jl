@@ -322,7 +322,7 @@ function run_relabel(Atlas1::AbstractString, Atlas2::AbstractString,
         n == 0 && break
 
         maps = Vector{Map{mpt,wt}}(undef, n)                     # parse (parallel)
-        parallelDo!(i -> (maps[i] = JSON3.read(lines[i], Map{mpt,wt})), n, cores)
+        parallelDo!(i -> (maps[i] = parseMap(lines[i], mpt, wt)), n, cores)
 
         relabeled = Vector{Map{mpt,wt}}(undef, n)                # relabel (serial chain)
         for i in 1:n

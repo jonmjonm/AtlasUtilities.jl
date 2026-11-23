@@ -135,8 +135,10 @@ function mapDataHistograms(Atlas1::AbstractString;
     # short-circuits to an empty dict), so parse a `MapData` instead of a full
     # `Map` to skip reconstructing districting, which otherwise dominates the
     # parse cost (see AtlasIO's `MapData`).
-    parseMap = isempty(fns) ? (line -> parseMapData(line, mpt, wt)) :
-                              (line -> JSON3.read(line, Map{mpt,wt}))
+    # (Named `parseLine`, not `parseMap`: AtlasIO exports a `parseMap` function, which
+    # a local variable of the same name would shadow inside the closure below.)
+    parseLine = isempty(fns) ? (line -> parseMapData(line, mpt, wt)) :
+                               (line -> parseMap(line, mpt, wt))
     progress = quiet ? nothing :
                ProgressUnknown(desc = "Building histograms:", spinner = true)
     written = 1                    # maps accumulated past burn-in (for --max-maps)
@@ -152,7 +154,7 @@ function mapDataHistograms(Atlas1::AbstractString;
             # vector for field k.
             rows = Vector{Vector{Vector{Float64}}}(undef, n)
             parallelDo!(n, cores) do i
-                m = parseMap(lines[i])
+                m = parseLine(lines[i])
                 added = computeAdded(m)
                 rows[i] = [extractVals(valueOf(m, field, added)) for field in fieldNames]
             end

@@ -78,7 +78,7 @@ function run_extract_assignments(Atlas1::AbstractString;
 
             rows = Vector{String}(undef, n)
             parallelDo!(n, cores) do i
-                m = JSON3.read(lines[i], Map{mpt,wt})
+                m = parseMap(lines[i], mpt, wt)
                 checkNodes(m)
                 rows[i] = rowFor(m)
             end
