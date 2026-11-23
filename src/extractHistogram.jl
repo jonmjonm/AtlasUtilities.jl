@@ -227,14 +227,14 @@ function writeHistogramCSV(path::AbstractString, entry)
     return path
 end
 
-"""JSON has no NaN/Inf literal (JSON3 errors on them); a `StreamHist` can produce
+"""JSON has no NaN/Inf literal (JSON.jl errors on them); a `StreamHist` can produce
 either -- e.g. skewness/kurtosis on a zero-variance (constant-valued) field --
 so map non-finite floats to `null` on the way out."""
 jsonFloat(x::AbstractFloat) = isfinite(x) ? x : nothing
 jsonFloat(x) = x
 
 """Everything about one `StreamHist` other than its exact bin counts, as a plain
-`Dict` suitable for `JSON3.write`: summary statistics, moment errors, whether it
+`Dict` suitable for `JSON.json`: summary statistics, moment errors, whether it
 learned integer-ness, and its bin edges + ASH-density-derived counts (`nothing` in
 `integer` mode)."""
 function histSummaryDict(oh::StreamHist)
@@ -265,7 +265,7 @@ function writeHistogramJSON(path::AbstractString, entry)
         "histograms" => Dict(string(idx) => histSummaryDict(oh)
                               for (idx, oh) in enumerate(ohs)))
     io = smartOpen(path, "w")
-    JSON3.write(io, doc)
+    JSON.json(io, doc)
     close(io)
     return path
 end

@@ -5,7 +5,7 @@
 
 using Test
 using AtlasIO
-using JSON3
+import JSON
 using CycleWalk: get_log_spanning_trees, get_isoperimetric_scores
 using AtlasUtilities: parseFunctionNames, resolveFunctions, resolveGraphSpec,
                      writeHeaderWithProvenance, GraphSpec, run_add, buildGraph,
@@ -366,9 +366,8 @@ rgs(; kw...) = resolveGraphSpec(; config = "", graph = "", pop_col = "",
                 node_col = "NAME", vote_cols = "$v1,$v2", overwrite = true, quiet = true)
 
         # graph vote data keyed by NAME
-        graph = JSON3.read(read(graphPath, String))
-        vote = Dict(string(n["NAME"]) => (Float64(n[Symbol(v1)]), Float64(n[Symbol(v2)]))
-                    for n in graph.nodes)
+        graph = JSON.parse(read(graphPath, String))
+        vote = Dict(string(n["NAME"]) => (Float64(n[v1]), Float64(n[v2])) for n in graph["nodes"])
 
         a = openAtlas(smartOpen(Atlas2, "r"))
         nmaps = 0

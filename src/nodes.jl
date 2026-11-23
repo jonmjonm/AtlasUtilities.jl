@@ -34,7 +34,7 @@ function run_list_nodes(atlasPath::AbstractString; map::Integer = 1)
     close(atlas)
 
     nodeStrings = sort!([nodeIdString(node) for node in keys(m.districting)])
-    JSON3.write(stdout, nodeStrings)
+    JSON.json(stdout, nodeStrings)
     println()
     return nothing
 end

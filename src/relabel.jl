@@ -45,14 +45,13 @@ end
 
 """Read a NetworkX node-link JSON file and return its `nodes` array."""
 function readNodeLinkJSON(jsonPath::AbstractString)
-    io = smartOpen(String(jsonPath), "r")
-    graph = JSON3.read(read(io, String))
-    close(io)
-    return graph.nodes
+    graph = readJSONFile(jsonPath)
+    haskey(graph, "nodes") || error("\"$jsonPath\" is not a node-link graph JSON (no top-level \"nodes\").")
+    return graph["nodes"]
 end
 
 """The finest-unit key tuple of a node-link JSON node, per the given level names."""
-keyOf(node, levs) = Tuple(string(node[Symbol(l)]) for l in levs)
+keyOf(node, levs) = Tuple(jsonKeyString(node[l]) for l in levs)
 
 """
     loadPopulation(jsonPath, levels, attr) -> Dict{Tuple{Vararg{String}}, Int}
@@ -64,9 +63,8 @@ that node's population, read from the JSON attribute named `attr`
 """
 function loadPopulation(jsonPath::AbstractString, levels, attr::AbstractString)
     levs = String.(levels)
-    a = Symbol(attr)
     return Dict{Tuple{Vararg{String}},Int}(
-        keyOf(node, levs) => Int(node[a]) for node in readNodeLinkJSON(jsonPath)
+        keyOf(node, levs) => Int(node[attr]) for node in readNodeLinkJSON(jsonPath)
     )
 end
 

@@ -3,7 +3,7 @@
 # (and, for --add, against `extract-map-data`'s own oracle-checked output).
 
 using Test
-using JSON3
+import JSON
 using AtlasIO
 using AtlasUtilities: run_extract_map_data_histogram, mapDataHistograms,
                       writeHistogramCSV, writeHistogramJSON, run_extract
@@ -19,7 +19,7 @@ end
 
 """Read a histogram JSON's `histograms` dict, keyed by index (as written, string
 keys `"1"`, `"2"`, ...)."""
-readHistJSON(path) = JSON3.read(readtext(path))["histograms"]
+readHistJSON(path) = JSON.parse(readtext(path); dicttype = Dict{String,Any})["histograms"]
 
 @testset "extract-map-data-histogram" begin
 
@@ -43,8 +43,8 @@ readHistJSON(path) = JSON3.read(readtext(path))["histograms"]
             @test all(startswith(r, "1,") for r in rows)
 
             hs = readHistJSON(jsonPath)
-            @test Set(keys(hs)) == Set([Symbol("1")])
-            h1 = hs[Symbol("1")]
+            @test Set(keys(hs)) == Set(["1"])
+            h1 = hs["1"]
             @test h1["nobs"] == 4
             @test h1["exact_min"] == 1.0
             @test h1["exact_max"] == 9.0
@@ -69,9 +69,9 @@ readHistJSON(path) = JSON3.read(readtext(path))["histograms"]
             @test count(r -> startswith(r, "2,"), rows) == 5
 
             hs = readHistJSON(jsonPath)
-            @test Set(keys(hs)) == Set([Symbol("1"), Symbol("2")])
-            @test hs[Symbol("1")]["nobs"] == 2
-            @test hs[Symbol("2")]["nobs"] == 3
+            @test Set(keys(hs)) == Set(["1", "2"])
+            @test hs["1"]["nobs"] == 2
+            @test hs["2"]["nobs"] == 3
         end
 
         @testset "--integer omits ash_count and relerr_moments" begin
@@ -83,7 +83,7 @@ readHistJSON(path) = JSON3.read(readtext(path))["histograms"]
             jsonPath = joinpath(dir, "f-histogram.json")
             writeHistogramJSON(jsonPath, oh)
 
-            h1 = readHistJSON(jsonPath)[Symbol("1")]
+            h1 = readHistJSON(jsonPath)["1"]
             @test h1["integer"] == true
             @test h1["relerr_moments"] === nothing
             @test h1["ash_count"] === nothing
@@ -111,7 +111,7 @@ readHistJSON(path) = JSON3.read(readtext(path))["histograms"]
         jsonPath = joinpath(outdir, field * "-histogram.json.gz")
         @test isfile(csvPath)
         @test isfile(jsonPath)
-        h1 = readHistJSON(jsonPath)[Symbol("1")]
+        h1 = readHistJSON(jsonPath)["1"]
 
         @test h1["nobs"] == length(vals)
         @test h1["exact_min"] == minimum(vals)
@@ -191,7 +191,7 @@ readHistJSON(path) = JSON3.read(readtext(path))["histograms"]
         dir = mktempdir()
         atlaspath = joinpath(dir, "run.jsonl.gz"); cp(src, atlaspath)
         run_extract_map_data_histogram(atlaspath; integer = :auto, quiet = true)
-        h1 = readHistJSON(joinpath(dir, "run", "get_log_spanning_forests-histogram.json.gz"))[Symbol("1")]
+        h1 = readHistJSON(joinpath(dir, "run", "get_log_spanning_forests-histogram.json.gz"))["1"]
         @test h1["relerr_moments"] !== nothing   # resolved to non-integer, ASH available
     end
 
@@ -232,7 +232,7 @@ readHistJSON(path) = JSON3.read(readtext(path))["histograms"]
         @test isfile(partialJson)
         @test !isfile(joinpath(outdir, field * "-histogram.csv.gz"))  # no unsuffixed file written
         @test !isfile(joinpath(outdir, field * "-histogram.json.gz"))
-        h1 = readHistJSON(partialJson)[Symbol("1")]
+        h1 = readHistJSON(partialJson)["1"]
         @test h1["nobs"] == 5
 
         about = read(joinpath(outdir, "about.md"), String)
@@ -274,7 +274,7 @@ readHistJSON(path) = JSON3.read(readtext(path))["histograms"]
         hs = readHistJSON(joinpath(dirHist, "run", field * "-histogram.json.gz"))
 
         for j in 1:w
-            h = hs[Symbol(string(j))]
+            h = hs[string(j)]
             csvVals = colvals(j)
             @test h["nobs"] == length(csvVals)
             @test isapprox(h["exact_min"], minimum(csvVals); rtol = 1e-6)
