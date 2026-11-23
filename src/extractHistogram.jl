@@ -236,8 +236,12 @@ jsonFloat(x) = x
 """Everything about one `StreamHist` other than its exact bin counts, as a plain
 `Dict` suitable for `JSON.json`: summary statistics, moment errors, whether it
 learned integer-ness, and its bin edges + ASH-density-derived counts (`nothing` in
-`integer` mode)."""
+`integer` mode). A statistic needs moments up to its order -- variance and std 2, skewness 3, kurtosis 4 --
+and a `StreamHist` tracks them only up to its highest moment power, so a lower `--moment-powers` gives
+`nothing` (null) for the ones it cannot compute."""
 function histSummaryDict(oh::StreamHist)
+    maxp = maximum(oh.momentPowers)
+    upto(order, stat) = maxp >= order ? jsonFloat(stat(oh)) : nothing
     uf, of = outofrange(oh)
     mn, mx = datarange(oh)
     edges, _, ashWeights = histBins(oh)
@@ -245,9 +249,8 @@ function histSummaryDict(oh::StreamHist)
     return Dict{String,Any}(
         "nobs" => nobs(oh), "underflow" => uf, "overflow" => of,
         "exact_min" => jsonFloat(mn), "exact_max" => jsonFloat(mx),
-        "mean" => jsonFloat(mean(oh)), "variance" => jsonFloat(variance(oh)),
-        "std" => jsonFloat(std(oh)),
-        "skewness" => jsonFloat(skewness(oh)), "kurtosis" => jsonFloat(kurtosis(oh)),
+        "mean" => jsonFloat(mean(oh)), "variance" => upto(2, variance), "std" => upto(2, std),
+        "skewness" => upto(3, skewness), "kurtosis" => upto(4, kurtosis),
         "integer" => oh.integer,
         "relerr_moments" => relerrs === nothing ? nothing :
             Dict(string(p) => jsonFloat(e) for (p, e) in zip(oh.momentPowers, relerrs)),

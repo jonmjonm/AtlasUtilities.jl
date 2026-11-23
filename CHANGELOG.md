@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.2]
+
+- **Fix:** `atlas extract-map-data-histogram --moment-powers` with a highest power below 4 (e.g. `1,2`) failed
+  with "moment order 3 not tracked": the summary always computed skewness and kurtosis. Each statistic is now
+  reported only when its moments are tracked (variance and std need 2, skewness 3, kurtosis 4) and is `null`
+  otherwise.
+- New `test/cliTests.jl`: every subcommand run through `command_main`, the installed command's entry point, so
+  option parsing and flag handling are tested (they were covered only for `convert`). It also tests
+  `relabel --weight-population` end to end with its two error messages, and `add` refusing to overwrite a field
+  without `--overwrite`.
+
 ## [0.3.1]
 
 - **JSON3 is no longer a dependency** (it is deprecated in the General registry). AtlasUtilities now reads and
