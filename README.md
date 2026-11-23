@@ -10,6 +10,7 @@ The package installs a single `atlas` command with seven subcommands:
 |---------|--------------|
 | `atlas info <atlas> [--extract-script] [--force]` | Print an atlas file's header — the metadata line, the atlas-parameter line, and the data field names found in its first map. The bulky embedded sources (`script`, `script_includes`, `toml_config`) are never printed; `--extract-script` writes each to its own file in the current directory instead. |
 | `atlas convert <src> <dst> [--to 1\|2] [--quiet]` | Convert an atlas between Atlas format versions 1 and 2 (default `--to 2`), copying everything but the district assignment byte for byte. |
+| `atlas install-render` | Install the plotting packages `atlas render` needs (once; not installed by default). |
 | `atlas list-map-data <atlas>` | List the names of the data fields (e.g. `log_spanning_trees`) contained in the atlas's first map, one per line. |
 | `atlas list-nodes <atlas> [--map k]` | List the node ids in the atlas's k-th map (k=1 by default) as a JSON array of strings. |
 | `atlas relabel <Atlas1> <Atlas2> [<graph.json>] [--first-map] [--quiet] [--weight-population <pop.json> --population-attr <attr>]` | Relabel district numbers across every map in atlas `Atlas1` so consecutive maps stay as consistent as possible, writing the result to `Atlas2`. |
@@ -25,9 +26,10 @@ Julia code — see [library.md](library.md).
 
 ## Installation
 
-`atlas` is built with [Comonicon](https://comonicon.org). Installing the package
-runs a build step that drops an `atlas` launcher into `~/.julia/bin/` and
-compiles a system image so the command starts fast.
+`atlas` is built with [Comonicon](https://comonicon.org). The build step
+(`deps/build.jl`) drops an `atlas` launcher into `~/.julia/bin/` and gives the
+command its own Julia environment (`~/.julia/scratchspaces/020ba7bf-…/env`), with
+your clone developed into it and precompiled.
 
 One dependency, [`StreamHistogram`](https://github.com/jonmjonm/StreamHistogram.jl),
 isn't registered in the Julia General registry — it's pinned by URL via
@@ -39,7 +41,7 @@ into some other environment won't work; install from a local clone instead:
 git clone https://github.com/jonmjonm/AtlasUtilities.jl
 cd AtlasUtilities.jl
 julia --project -e 'using Pkg; Pkg.instantiate()'
-julia --project deps/build.jl        # installs the `atlas` launcher + sysimg
+julia --project deps/build.jl        # installs the `atlas` launcher + its environment
 ```
 
 Then add `~/.julia/bin` to your `PATH` (one time):
@@ -54,7 +56,22 @@ Now the command is available:
 atlas info some_atlas.jsonl.gz
 ```
 
-> The first install compiles a system image and takes several minutes.
+> The first install precompiles about 110 packages (a few minutes on a fresh
+> depot; well under a minute when they are already cached). No system image is
+> built. After `git pull`, rerun `julia --project deps/build.jl`; it keeps the
+> plotting packages if you installed them. The launcher uses the Julia that ran
+> the build, or `julia` on your `PATH` if that version has since been removed.
+
+`atlas render` needs plotting packages (CairoMakie, Shapefile, LibGEOS) that are **not** installed with
+AtlasUtilities, because together they are about 170 extra packages and most of the load time. Install them once,
+only if you want to draw maps:
+
+```bash
+atlas install-render
+```
+
+Until then `atlas render` stops with a message saying exactly that; every other subcommand works without them.
+From Julia, `using AtlasUtilities, CairoMakie, Shapefile, LibGEOS` makes `run_render` available.
 
 ## Usage
 
@@ -184,7 +201,7 @@ input order). For `add` and `extract-map-data --add` the win is large — the
 per-map partition reconstruction and writer-function evaluation dominate — while
 for `relabel` and plain extraction it speeds up map parsing.
 
-Because the installed command runs on the Comonicon system image, control the
+The installed command starts Julia itself, so control the
 thread count with the `JULIA_NUM_THREADS` environment variable, e.g.:
 
 ```bash
@@ -424,8 +441,7 @@ and extraction (`test/infoTests.jl`).
 src/AtlasUtilities.jl   module + Comonicon @cast subcommands (the CLI surface)
 src/info.jl             `atlas info` implementation
 src/relabel.jl          `atlas relabel` implementation
-deps/build.jl           Comonicon install (launcher + sysimg)
-deps/precompile.jl      exercises both subcommands while the sysimg is built
+deps/build.jl           installs the `atlas` launcher, its environment and completions
 test/                   test suite
 examples/               sample atlases (+ make_demos.jl that generates them)
 relabel.md              relabel command / findRelabeling algorithm spec

@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.3.0]
+
+- **`atlas render` is now a package extension.** Its plotting packages -- CairoMakie (with Makie and Colors),
+  Shapefile and LibGEOS, about 170 of the ~280 packages AtlasUtilities depended on -- are weak dependencies:
+  not installed or loaded unless you render. Loading AtlasUtilities drops from about 5 s to about 1.5 s, and
+  installing or updating precompiles far fewer packages.
+- New `atlas install-render`: installs those packages into the `atlas` command's environment, once. Until then
+  `atlas render` stops with a message saying so.
+- Breaking for Julia users of the render internals: they live in the `AtlasUtilitiesRenderExt` extension
+  (`Base.get_extension(AtlasUtilities, :AtlasUtilitiesRenderExt)`) after `using CairoMakie, Shapefile, LibGEOS`.
+  The exported `run_render`, `render_map` and `districtColors` still work, loading the extension on first use.
+- **No system image.** `deps/build.jl` no longer compiles one (it was about 1.2 GB and took several minutes).
+  It now gives the `atlas` command its own environment, with the clone developed into it and precompiled; that is
+  what lets `atlas install-render` add packages. Installing takes under a minute when packages are cached, and
+  `atlas info` starts in about 3.5 s. The build removes an old system image. Rebuilding keeps the plotting
+  packages if they were installed.
+- The launcher no longer breaks when its Julia version is removed (e.g. by juliaup): it falls back to `julia`
+  on the `PATH`. It also ignores the user's global environment (`JULIA_LOAD_PATH="@:@stdlib"`).
+
 ## [0.2.1]
 
 - New `atlas convert <src> <dst> [--to 1|2]`: convert an atlas between Atlas format versions 1 and 2 (AtlasIO's

@@ -4,13 +4,15 @@
 Command-line utilities for redistricting Atlas files (see the Atlas format at
 https://github.com/jonmjonm/AtlasIO.jl/blob/main/atlas_format.md).
 
-Installs a single `atlas` command with ten subcommands:
+Installs a single `atlas` command with twelve subcommands:
 
   * `atlas info <atlas> [--extract-script] [--force]` — print the atlas file
     header, plus the data field names found in its first map; notes when an
     embedded run script, its includes, and/or a TOML config are present, and
     `--extract-script` writes out each of them (whichever exist) into the
     current directory.
+  * `atlas convert <src> <dst> [--to 1|2] [--quiet]` — convert an atlas between
+    Atlas format versions 1 and 2.
   * `atlas list-map-data <atlas>` — list the names of the data fields (e.g.
     `log_spanning_trees`) contained in the first map of the atlas, one per line.
   * `atlas list-nodes <atlas> [--map k]` — list the node ids in the
@@ -40,25 +42,23 @@ Installs a single `atlas` command with ten subcommands:
     [--county-lines] [--no-precinct-lines] [--skip-missing] [--show]
     [--quiet]` — draw a map's districting as a filled-precinct choropleth,
     using a shapefile or a point-position node-link JSON graph for geometry,
-    and save it to an image file (optionally opening it).
+    and save it to an image file (optionally opening it). Needs the plotting
+    packages, installed once with `atlas install-render`.
+  * `atlas install-render` — install the plotting packages `atlas render` uses
+    (CairoMakie, Shapefile, LibGEOS) into the `atlas` command's environment.
 
 Run `atlas --help` or `atlas <subcommand> --help` for details.
 """
 module AtlasUtilities
 
 using AtlasIO
-using CairoMakie
-using Colors
 using CycleWalk
 using Dates
 using Hungarian
 import JSON     # exact, order-preserving round trip of the atlas params line (add.jl)
 using JSON3
-using LibGEOS
 using LinearAlgebra: BLAS
-using Makie
 using ProgressMeter
-using Shapefile
 using StreamHistogram
 using TOML
 using Comonicon
@@ -75,7 +75,8 @@ include("extract.jl")
 include("extractHistogram.jl")
 include("summarize.jl")
 include("assignments.jl")
-include("pointgraph.jl")
+# `atlas render` lives in the AtlasUtilitiesRenderExt package extension (ext/), loaded only when its
+# plotting packages are; render.jl here holds the wrappers that load it on demand.
 include("render.jl")
 
 export confusionMatrix, permutationFromConfusion, hammingDistance, relabelMap,
@@ -129,6 +130,15 @@ the conversion with an error naming the line and map. See AtlasIO's `atlas_forma
 """
 @cast function convert(src::String, dst::String; to::Int = 2, quiet::Bool = false)
     run_convert(src, dst; to = to, quiet = quiet)
+end
+
+"""
+Install the plotting packages that `atlas render` needs (CairoMakie, Shapefile, LibGEOS) into the
+`atlas` command's Julia environment. Run it once; it downloads and precompiles them, which takes a few minutes.
+The other subcommands never need these packages.
+"""
+@cast function install_render()
+    run_install_render()
 end
 
 """
@@ -414,6 +424,9 @@ end
 
 """
 Draw the districting of map `map` (1-based, default 1) of atlas Atlas1 as a filled-precinct choropleth, colored by district, and save it to an image file. Geometry comes from `geo` -- a shapefile (a `.shp` file, or a `.zip` bundling `.shp`/`.shx`/`.dbf`), or a point-position node-link JSON graph (e.g. `Data/hex_graph_10_by_10.json`), whose nodes' Voronoi cells are used -- matched to the atlas's node ids via the attribute named by `--key`. By default errors if any node id has no matching geometry record; `--skip-missing` renders anyway, leaving those areas blank.
+
+Drawing needs the plotting packages CairoMakie, Shapefile and LibGEOS, which are not installed with
+AtlasUtilities; install them once with `atlas install-render`.
 
 # Args
 

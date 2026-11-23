@@ -6,8 +6,10 @@
 
 using Test
 using Makie
-using AtlasUtilities: loadPointGraphGeometries, parsePointGraph, voronoiCells,
-                      typicalSpacing, countyBoundarySegments
+using CairoMakie, Shapefile, LibGEOS     # loading these loads AtlasUtilities' render extension
+using AtlasUtilities
+const RenderExt = Base.get_extension(AtlasUtilities, :AtlasUtilitiesRenderExt)
+using .RenderExt: loadPointGraphGeometries, parsePointGraph, voronoiCells, typicalSpacing, countyBoundarySegments
 
 const GRID_GRAPH = joinpath(@__DIR__, "..", "Data", "grid_graph_10_by_10.json")
 const HEX_GRAPH = joinpath(@__DIR__, "..", "Data", "hex_graph_10_by_10.json")
