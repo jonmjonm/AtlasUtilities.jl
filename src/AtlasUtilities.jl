@@ -335,7 +335,8 @@ Like `extract-map-data`, but instead of writing per-map CSV rows, accumulate the
 - `--bins <edges>`: explicit bin edges, comma separated, overriding
   `--bin-range`/`--bin-num`.
 - `--moment-powers <powers>`: moment orders to accumulate and report, comma
-  separated (default `1,2,4,8`).
+  separated (default `1,2,4,8`). Variance and std need a highest power of at least 2, skewness 3 and
+  kurtosis 4; with a lower one they are written as null.
 - `--integer <mode>`: `true`, `false` (default), or `auto`. `true` means the data
   is integer valued: bins are one per integer and the ASH-derived counts are
   omitted from the output. `auto` decides `true`/`false` independently for each
