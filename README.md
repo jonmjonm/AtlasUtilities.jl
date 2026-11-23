@@ -27,15 +27,25 @@ Julia code — see [library.md](library.md).
 ## Installation
 
 `atlas` is built with [Comonicon](https://comonicon.org). The build step
-(`deps/build.jl`) drops an `atlas` launcher into `~/.julia/bin/` and gives the
-command its own Julia environment (`~/.julia/scratchspaces/020ba7bf-…/env`), with
-your clone developed into it and precompiled.
+(`deps/build.jl`, run automatically when the package is installed) drops an `atlas`
+launcher into `~/.julia/bin/` and gives the command its own Julia environment
+(`~/.julia/scratchspaces/020ba7bf-…/env`), with AtlasUtilities developed into it and
+precompiled.
 
-One dependency, [`StreamHistogram`](https://github.com/jonmjonm/StreamHistogram.jl),
-isn't registered in the Julia General registry — it's pinned by URL via
-`Project.toml`'s `[sources]` table. That pin is only honored when
-`AtlasUtilities` is the *active* project being resolved, so `Pkg.add(url=...)`
-into some other environment won't work; install from a local clone instead:
+**With Julia 1.13 or later**, install straight from GitHub. `@atlas` is a named
+environment that holds the package, kept out of your default one:
+
+```bash
+julia --project=@atlas -e 'import Pkg; Pkg.add(url="https://github.com/jonmjonm/AtlasUtilities.jl")'
+```
+
+To update later:
+
+```bash
+julia --project=@atlas -e 'import Pkg; Pkg.update(); Pkg.build("AtlasUtilities")'
+```
+
+**From a clone** (any supported Julia, and for working on AtlasUtilities itself):
 
 ```bash
 git clone https://github.com/jonmjonm/AtlasUtilities.jl
@@ -43,6 +53,16 @@ cd AtlasUtilities.jl
 julia --project -e 'using Pkg; Pkg.instantiate()'
 julia --project deps/build.jl        # installs the `atlas` launcher + its environment
 ```
+
+After `git pull`, rerun `julia --project deps/build.jl`.
+
+Why the Julia version matters: one dependency,
+[`StreamHistogram`](https://github.com/jonmjonm/StreamHistogram.jl), isn't registered
+in the Julia General registry yet. AtlasUtilities points to it by URL in
+`Project.toml`'s `[sources]` table. Julia 1.13 follows that pointer when you install
+AtlasUtilities by URL. Julia 1.10 ignores `[sources]`, and 1.11 and 1.12 are
+untested, so with those use the clone, where AtlasUtilities is the active project.
+Once StreamHistogram is registered, the URL install works on every supported Julia.
 
 Then add `~/.julia/bin` to your `PATH` (one time):
 
@@ -58,9 +78,9 @@ atlas info some_atlas.jsonl.gz
 
 > The first install precompiles about 110 packages (a few minutes on a fresh
 > depot; well under a minute when they are already cached). No system image is
-> built. After `git pull`, rerun `julia --project deps/build.jl`; it keeps the
-> plotting packages if you installed them. The launcher uses the Julia that ran
-> the build, or `julia` on your `PATH` if that version has since been removed.
+> built. Rebuilding (an update, or `deps/build.jl` again) keeps the plotting
+> packages if you installed them. The launcher uses the Julia that ran the build,
+> or `julia` on your `PATH` if that version has since been removed.
 
 `atlas render` needs plotting packages (CairoMakie, Shapefile, LibGEOS) that are **not** installed with
 AtlasUtilities, because together they are about 170 extra packages and most of the load time. Install them once,
