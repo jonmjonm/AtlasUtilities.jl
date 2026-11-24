@@ -25,10 +25,10 @@ read/write functions (`smartOpen`, `openAtlas`, `nextMap`, `addMap`, ...).
 ```julia
 Districting = Dict{Tuple{Vararg{String}}, Int64}   # node key -> district label
 
-Base.@kwdef struct Map{T}
+Base.@kwdef struct Map{T,W<:Real}
     name::String
     districting::Districting
-    weight::Int64 = 1
+    weight::W          # Int64 (the default) or Float64, as the atlas header's weightType says
     data::T
 end
 ```
@@ -47,6 +47,8 @@ end
 | [`atlasInfo`](#atlasinfo) | Structured atlas metadata (header, parameters, map data field names) — the data behind `atlas info`. |
 | [`listMapData`](#listmapdata) | List the data field names in an atlas's first map. |
 | [`mapDataHistograms`](#mapdatahistograms) | A StreamHistogram of every map-data field, weighted by the maps' weights — the data behind `extract-map-data-histogram` and `summarize-map-data`. |
+| [`WriterSet`](#writerset-and-computewriters), [`computeWriters`](#writerset-and-computewriters) | Compute CycleWalk writer statistics (spanning trees, isoperimetric scores, partisan margins, ...) on maps in memory — what `atlas add` writes. |
+| [`writerFields`](#writerset-and-computewriters), [`listWriters`](#writerset-and-computewriters) | The fields a `WriterSet` computes; the writer names it accepts. |
 | [`assignmentMatrix`](#assignmentmatrix) | Every map's district assignment as a maps × units matrix — the data behind `extract-assignments`. |
 | [`render_map`](#render_map-and-run_render) | Build (but don't save or display) a `Makie.Figure` drawing a map's districting from a shapefile or point-position JSON graph. |
 | [`run_render`](#render_map-and-run_render) | `render_map` plus saving to a file (`atlas render`'s driver). |
@@ -228,6 +230,52 @@ h = hists["get_log_spanning_trees"]           # a vector field: one StreamHist p
 mean(h[1]), quantile(h[1], [0.05, 0.5, 0.95])  # unweighted
 weightedMean(h[1]), weightedQuantile(h[1], 0.5), effectivesamplesize(h[1])
 f = density(h[1])                              # the density, as a function; also cdf, histogram(oh, edges)
+```
+
+### `WriterSet` and `computeWriters`
+
+```julia
+WriterSet(functions; config = "", graph = "", pop_col = "", node_col = "", area_col = "",
+          border_col = "", edge_perimeter_col = "", node_data = "", vote_cols = "")
+computeWriters(ws, m::Map) -> Dict{String,Any}
+computeWriters(ws, maps::AbstractVector{<:Map}; cores = Threads.nthreads()) -> Vector{Dict{String,Any}}
+writerFields(ws) -> Vector{String}
+listWriters() -> Vector{String}
+```
+
+The library form of `atlas add`: it computes CycleWalk writer statistics on maps in
+memory instead of writing them into a new atlas. A `WriterSet` resolves the writer
+functions and builds the dual graph once; `computeWriters` evaluates them on one
+map, or on a vector of maps in parallel. Each field's value is a per-district vector
+indexed by the map's own district numbers (entry `i` describes district `i` of
+`m.districting`), or a scalar, exactly as `atlas add` writes it.
+
+- `functions`: a writer name, a vector of names, or a comma-separated list;
+  `listWriters()` gives the names (it smoke-tests every CycleWalk `get_*` writer, so
+  it takes a moment).
+- The graph is described as for `atlas add`: a CycleWalk TOML `config` (its
+  `[plans]` table) and/or the keywords, which override it — `graph` (the dual-graph
+  JSON), `pop_col`, `node_col` (the column the districting keys use) and the
+  geometry columns some writers need.
+- The partisan writers `get_partisan_margins` and `get_partisan_seats` need
+  `vote_cols`, `"votes1,votes2"` pairs separated by `;`; each pair gives a field
+  `<writer>_<votes1>_<votes2>`. `writerFields(ws)` lists the fields in order.
+
+Writers with a partition-free method are evaluated straight from the districting;
+the others on the map's partition rebuilt as CycleWalk does at startup, which draws
+a random spanning tree per district: the values don't depend on it, but their last
+digits' rounding can.
+
+```julia
+using AtlasIO, AtlasUtilities
+ws = WriterSet(["get_log_spanning_trees", "get_isoperimetric_scores", "get_partisan_margins"];
+               graph = "CT_pct20.json", pop_col = "POP20", node_col = "NAME", area_col = "area",
+               border_col = "border_length", edge_perimeter_col = "length",
+               vote_cols = "G20PREDEM,G20PREREP")
+io = smartOpen("atlas.jsonl.gz", "r"); a = openAtlas(io)
+maps = Map[]; while !eof(a) push!(maps, nextMap(a)) end; close(io)
+stats = computeWriters(ws, maps)               # one Dict per map, in parallel
+stats[1]["get_partisan_margins_G20PREDEM_G20PREREP"]   # district 1's margin first
 ```
 
 ### `assignmentMatrix`
