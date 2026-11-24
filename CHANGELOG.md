@@ -22,6 +22,15 @@ here).
   `summarize-map-data` prints the same values, except that integer-valued histograms now give the bin's integer
   instead of a value interpolated across it.
 
+### Installing the `atlas` command
+
+- `deps/build.jl` builds the command's environment in a new directory and swaps it in only on success: a failed
+  build used to delete the environment first, leaving `atlas` broken and its plotting packages gone.
+- The build ignores the checkout's own `Manifest.toml` (not in git) while it resolves. A stale one pinned
+  StreamHistogram, which the checkout gets by URL, to an old commit, so the build failed or installed an old
+  version. The manifest is put back unchanged.
+- CI's install job builds again when the launcher is missing, and fails on a failed build.
+
 ### Map weights
 
 `extract-map-data-histogram`, `summarize-map-data` and `extract-map-data` use each map's weight,
