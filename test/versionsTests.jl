@@ -111,16 +111,14 @@ end
         @test read(p1) == read(p2)
     end
 
-    @testset "extract-assignments on a multiscale atlas: a plain error, not a task failure" begin
-        for m in (ms1, ms2)
-            err = try
-                vcli("extract-assignments", m, "--quiet")
-                nothing
-            catch e
-                e
-            end
-            @test err isa ErrorException
-            @test occursin("multiscale", err.msg)
+    @testset "extract-assignments on a multiscale atlas: same CSV for v1 and v2, with and without --graph" begin
+        g = joinpath(VEX, "demo_multiscale_graph.json")
+        for flags in ([], ["--graph", g])
+            vcli("extract-assignments", ms1, "--no-compression", "--force", "--quiet", flags...)
+            vcli("extract-assignments", ms2, "--no-compression", "--force", "--quiet", flags...)
+            c1 = read(stripAtlasExt(ms1) * "-assignments.csv", String)
+            @test c1 == read(stripAtlasExt(ms2) * "-assignments.csv", String)
+            @test occursin(":", split(c1, '\n')[1])        # finest-unit columns, county:prec
         end
     end
 end

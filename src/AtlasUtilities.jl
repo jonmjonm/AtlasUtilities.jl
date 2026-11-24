@@ -35,8 +35,8 @@ Installs a single `atlas` command with twelve subcommands:
   * `atlas summarize-map-data <Atlas1> [--max-maps <n>] [--quiet]` — print, per
     map-data field, its mean, standard deviation, and
     [min, 25% quartile, median, 75% quartile, max].
-  * `atlas extract-assignments <Atlas1> [--no-compression] [--force] [--quiet]` —
-    write a single wide CSV of the per-node district assignment for each map.
+  * `atlas extract-assignments <Atlas1> [--graph <graph.json>] [--no-compression] [--force] [--quiet]` —
+    write a single wide CSV of each map's district assignment, per node (multiscale atlases: per finest unit).
   * `atlas render <Atlas1> <geo> --key <col> [--map k] [--format png|svg|pdf]
     [--out <path>] [--strip-suffix <regex>] [--county-column <col>]
     [--county-lines] [--no-precinct-lines] [--skip-missing] [--show]
@@ -405,22 +405,27 @@ Print, for every map-data field of atlas Atlas1, its mean, standard deviation, a
 end
 
 """
-Write atlas Atlas1 per-map district assignments to a single wide CSV, named from the Atlas1 basename plus `-assignments.csv` (or `.csv.gz`): one row per map, columns `name` (the map name) then one column per node (the sorted node ids found in the first map of Atlas1) holding that node district number in the map. Errors if any map node set does not exactly match the first map node set, including multiscale atlases (whose node ids have more than one component) — those are not supported yet.
+Write atlas Atlas1 per-map district assignments to a single wide CSV, named from the Atlas1 basename plus `-assignments.csv` (or `.csv.gz`): one row per map, columns `name` (the map name) then one column per unit holding that unit's district number in the map. For a single-level atlas the units are its nodes. For a multiscale atlas (whose maps mix whole counties and split ones) each unit's district is that of the region covering it in each map; the units are the dual graph's finest units with `--graph`, otherwise the finest regions seen in the atlas.
 
 # Args
 
 - `atlas1`: input atlas (`.jsonl` / `.jsonl.gz` / `.jsonl.bz2`).
 
+# Options
+
+- `--graph <graph.json>`: dual-graph JSON whose finest units (per the atlas's `levels in graph` parameter) become the columns, e.g. every precinct, including those in counties never split.
+
 # Flags
 
 - `--no-compression`: write plain `.csv` instead of gzip-compressed `.csv.gz`.
 - `--force`: overwrite the output file if it already exists (otherwise it is skipped).
-- `--quiet`: suppress the progress bar.
+- `--quiet`: suppress the progress bar and messages.
 """
-@cast function extract_assignments(atlas1::String;
+@cast function extract_assignments(atlas1::String; graph::String = "",
                                    no_compression::Bool = false, force::Bool = false,
                                    quiet::Bool = false)
-    run_extract_assignments(atlas1; compress = !no_compression, force = force, quiet = quiet)
+    run_extract_assignments(atlas1; graph = isempty(graph) ? nothing : graph,
+                            compress = !no_compression, force = force, quiet = quiet)
 end
 
 """
