@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.3.4]
+
+- **`atlas extract-assignments` supports multiscale atlases**, writing them at the finest scale: one column per
+  finest unit, holding the district of the region that covers it in each map (the precinct where its county is
+  split, the whole county where it is not). Node ids with several components are joined with `:`
+  (e.g. `MECKLENBURG:052`).
+  - New `--graph <graph.json>`: the columns are the dual graph's finest units (read with the atlas's
+    `levels in graph` parameter, as `relabel` does), including precincts in counties no map splits.
+  - Without a graph, the columns are the finest regions seen in the atlas (a county no map splits stays one
+    column); the command says when it switches to this, and reads the atlas a second time to collect them.
+  - Single-level atlases are written exactly as before, in one pass.
+  - Errors name the map and node: a unit no key covers, or (with `--graph`) a node the graph does not have. No
+    partial file is left behind.
+  - On the NC example atlas (100 maps): 2,650 precinct columns with the precinct graph, 2,194 without, in about
+    6 s.
+- Multi-component node ids that are the same in every map were rejected before; they are now written like any
+  others.
+
 ## [0.3.3]
 
 - `atlas info` (and the `about.md` written by `extract-map-data`) shows the atlas's **format version** (`"1"` or

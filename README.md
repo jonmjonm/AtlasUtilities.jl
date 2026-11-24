@@ -16,7 +16,7 @@ The package installs a single `atlas` command with seven subcommands:
 | `atlas relabel <Atlas1> <Atlas2> [<graph.json>] [--first-map] [--quiet] [--weight-population <pop.json> --population-attr <attr>]` | Relabel district numbers across every map in atlas `Atlas1` so consecutive maps stay as consistent as possible, writing the result to `Atlas2`. |
 | `atlas add <functions> <Atlas1> <Atlas2> [--config <param.toml>] [column flags] [--overwrite] [--quiet]` / `atlas add --list-writers` | Evaluate one or more CycleWalk "pushable writer" functions (e.g. `get_log_spanning_trees`) on every map in `Atlas1` and add the results to the map data, writing to `Atlas2`; `--list-writers` prints the usable writer function names instead. |
 | `atlas extract-map-data <Atlas1> [--add <functions>] [--no-compression] [--force] [column flags]` | Write each map-data field to its own CSV (one row per map) in a directory named after the atlas; `--add` also computes writer functions to extract. |
-| `atlas extract-assignments <Atlas1> [--no-compression] [--force] [--quiet]` | Write a single wide CSV (`name`, then one column per node) with each map's per-node district number; errors on multiscale atlases. |
+| `atlas extract-assignments <Atlas1> [--graph <graph.json>] [--no-compression] [--force] [--quiet]` | Write a single wide CSV (`name`, then one column per node) with each map's per-node district number; multiscale atlases are written per finest unit (the graph's with `--graph`). |
 
 Run `atlas --help` or `atlas <subcommand> --help` for full option details.
 
@@ -395,8 +395,8 @@ atlas extract-assignments examples/demo_grid_3x3.jsonl.gz
 Writes a single wide CSV named after the atlas (its path with the `.jsonl` /
 `.jsonl.gz` / `.jsonl.bz2` extension removed, plus `-assignments` — e.g.
 `demo_grid_3x3-assignments.csv.gz`): one row per map, first column `name` (the
-map name), remaining columns one per node — the sorted node ids found in the
-first map — holding that node's district number in the map:
+map name), remaining columns one per node, sorted, holding that node's district
+number in the map:
 
 ```
 name,n0,n1,n2,n3,n4,n5,n6,n7,n8
@@ -404,11 +404,33 @@ map1,1,1,1,2,2,2,3,3,3
 map2,3,3,3,1,1,1,2,2,2
 ```
 
+**Multiscale atlases** (whose maps keep some counties whole and split others into
+precincts) are written at the finest scale: one column per finest unit, holding
+the district of the region that covers it in each map — the precinct itself where
+its county is split, the whole county where it is not. A node id with several
+components is written joined with `:` (e.g. `MECKLENBURG:052`), as `list-nodes`
+does. Which units become columns:
+
+- With `--graph <graph.json>`, the dual graph's finest units, read with the
+  atlas's `levels in graph` parameter (as `atlas relabel` does). This is the true
+  finest scale: every precinct, including those in counties that no map splits.
+
+  ```bash
+  atlas extract-assignments examples/demo_multiscale.jsonl.gz --graph examples/demo_multiscale_graph.json
+  ```
+
+- Without a graph, the finest regions seen anywhere in the atlas: a county that no
+  map splits stays a single column. The command says so when it switches to this
+  (it reads the atlas a second time to collect every region).
+
+A single-level atlas (every map has the same nodes) is written exactly as before
+and read only once.
+
 Output is gzip-compressed by default; `--no-compression` writes plain `.csv`.
 The output file is **skipped** if it already exists; pass `--force` to
-overwrite. Every map must have exactly the first map's node set — **multiscale
-atlases are not supported yet** and produce an error (with no partial output
-file left behind).
+overwrite. A map that leaves a unit uncovered, or (with `--graph`) uses a node the
+graph does not have, stops the command with an error naming the map and node, and
+no partial output file is left behind.
 
 ## Example atlases
 
