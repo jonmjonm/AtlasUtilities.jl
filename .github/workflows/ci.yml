@@ -47,8 +47,12 @@ jobs:
           version: '1'   # Julia 1.13+ follows [sources] for StreamHistogram when installing from a repository
       - uses: julia-actions/cache@v2
       # Like the README's `Pkg.add(url=...)`, but from this checkout, so a pull request installs its own code.
+      # Pkg.add runs deps/build.jl only for a newly installed package and only logs a failure, so build again when
+      # the launcher is missing (e.g. the package came from the cache): Pkg.build fails the step with the error.
       - name: Install AtlasUtilities into a named environment (runs deps/build.jl)
-        run: julia --project=@atlas -e 'import Pkg; Pkg.add(path=".")'
+        run: |
+          julia --project=@atlas -e 'import Pkg; Pkg.add(path=".")
+              isfile(joinpath(first(DEPOT_PATH), "bin", "atlas")) || Pkg.build("AtlasUtilities")'
       - name: Run the installed command
         run: |
           export PATH="$HOME/.julia/bin:$PATH"
