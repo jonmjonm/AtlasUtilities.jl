@@ -7,6 +7,12 @@ here).
 
 ### Library API
 
+- **`WriterSet` and `computeWriters`**: CycleWalk writer statistics computed on maps in memory, the library form
+  of `atlas add`. `WriterSet(functions; graph keywords or config, vote_cols)` resolves the writers and builds the
+  graph once; `computeWriters(ws, m)` returns each field's value in the map's own district numbering, and
+  `computeWriters(ws, maps)` does a vector of maps in parallel. `writerFields(ws)` lists the fields (partisan
+  writers expanded per vote pair), `listWriters()` the accepted names. Error messages shared with `atlas add` now
+  name both the flag and the keyword (e.g. `--graph (graph =)`).
 - **`assignmentMatrix(atlas; graph)`**: the district assignments as data instead of a CSV: map names, weights,
   the units (as node keys and as `extract-assignments` column names) and a maps × units matrix of district numbers.
   It uses the same units as `atlas extract-assignments` (now built on it), multiscale atlases and `graph`

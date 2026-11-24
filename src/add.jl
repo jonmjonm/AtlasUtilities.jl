@@ -38,7 +38,7 @@ function parseFunctionNames(s::AbstractString)
         name = strip(strip(part), ['"', '\'', ' '])
         isempty(name) || push!(names, String(name))
     end
-    isempty(names) && error("atlas add: no writer function names were given.")
+    isempty(names) && error("no writer function names were given.")
     return names
 end
 
@@ -63,7 +63,7 @@ function parseVotePairs(s::AbstractString)
         isempty(strip(part)) && continue
         cols = strip.(split(part, ','))
         length(cols) == 2 && all(!isempty, cols) ||
-            error("atlas add: --vote-cols pair \"$part\" must be exactly two " *
+            error("vote-column pair \"$part\" (--vote-cols / vote_cols) must be exactly two " *
                   "comma-separated columns (votes1,votes2).")
         push!(pairs, (String(cols[1]), String(cols[2])))
     end
@@ -90,7 +90,7 @@ function resolveFunctions(names::Vector{String},
     for name in names
         if name in PARTISAN_WRITERS
             isempty(votePairs) &&
-                error("atlas add: \"$name\" needs vote columns; pass --vote-cols " *
+                error("\"$name\" needs vote columns; pass --vote-cols (or vote_cols =) " *
                       "\"votes1,votes2\" (one or more `;`-separated pairs).")
             builder = getfield(CycleWalk, Symbol("build_" * name))
             for (v1, v2) in votePairs
@@ -100,11 +100,11 @@ function resolveFunctions(names::Vector{String},
         end
         sym = Symbol(name)
         isdefined(CycleWalk, sym) ||
-            error("atlas add: CycleWalk has no name \"$name\"; it must be a " *
-                  "function usable with push_writer!.")
+            error("CycleWalk has no name \"$name\"; it must be a function usable with push_writer! " *
+                  "(see `atlas add --list-writers` or `listWriters()`).")
         f = getfield(CycleWalk, sym)
         f isa Function ||
-            error("atlas add: CycleWalk's \"$name\" is not a function.")
+            error("CycleWalk's \"$name\" is not a function.")
         push!(fns, (name, f))
     end
     return fns
@@ -284,12 +284,12 @@ function resolveGraphSpec(; config::AbstractString, graph::AbstractString,
     isempty(edge_perimeter_col) || (ec = String(edge_perimeter_col))
     isempty(node_data)          || (nd = Set(String.(strip.(split(node_data, ',')))))
 
-    isempty(path) && error("atlas add: no graph given; pass --graph or a --config " *
+    isempty(path) && error("no graph given; pass --graph (graph =) or a --config (config =) " *
                            "whose [plans] has map_file.")
-    isempty(pc)   && error("atlas add: no population column; pass --pop-col or " *
-                           "[plans].pop_col in --config.")
-    isempty(levels) && error("atlas add: no node column; pass --node-col or " *
-                             "[plans].geo_units in --config.")
+    isempty(pc)   && error("no population column; pass --pop-col (pop_col =) or " *
+                           "[plans].pop_col in the config.")
+    isempty(levels) && error("no node column; pass --node-col (node_col =) or " *
+                             "[plans].geo_units in the config.")
 
     # Make sure the graph keeps the columns the reconstruction and functions need.
     union!(nd, Set(levels))
@@ -388,7 +388,7 @@ function labelPermutation(partition, m)
         key = (string(graph.node_attributes[ni][col]),)
         σ[partition.node_to_dist[ni]] = m.districting[key]
     end
-    any(iszero, σ) && error("atlas add: could not align reconstructed districts " *
+    any(iszero, σ) && error("could not align reconstructed districts " *
                             "with map \"$(m.name)\"'s districting labels.")
     return σ
 end

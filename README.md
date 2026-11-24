@@ -25,8 +25,9 @@ Run `atlas --help` or `atlas <subcommand> --help` for full option details.
 The district-relabeling/alignment logic behind `atlas relabel`, the structured
 metadata behind `atlas info`, the (weighted) histograms behind
 `extract-map-data-histogram`, and the district assignments behind
-`extract-assignments` (as a matrix) are also usable directly from other Julia
-code — see [library.md](library.md).
+`extract-assignments` (as a matrix), and the writer statistics `atlas add`
+computes (on maps in memory) are also usable directly from other Julia code — see
+[library.md](library.md).
 
 ## Installation
 
