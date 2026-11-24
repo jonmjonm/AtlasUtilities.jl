@@ -6,55 +6,40 @@
 
 using Test
 using AtlasIO
-using StreamHistogram: StreamHist, add!, finalize!, nobs, datarange, outofrange, mean, std
-using AtlasUtilities: run_summarize_map_data, histQuantile, ashQuantileGap, fieldSummaryLines,
+using StreamHistogram: StreamHist, add!, finalize!, nobs, datarange, outofrange, mean, std, quantile
+using AtlasUtilities: run_summarize_map_data, quartiles, ashQuantileGap, fieldSummaryLines,
                       mapDataHistograms
 
 @testset "summarize-map-data" begin
 
-    @testset "histQuantile: quartiles of a uniform 1:100 sample" begin
+    # The quantile estimates themselves are StreamHistogram's (tested there); `quartiles` adds the ASH check.
+    @testset "quartiles: StreamHistogram's quantiles, the ASH checked only inside the range" begin
         oh = StreamHist(; binRange = (1.0, 100.0), binNum = 99)
         add!(oh, collect(1.0:100.0))
         finalize!(oh)
+        qs, gap = quartiles(oh)
+        @test qs == quantile(oh, [0.25, 0.5, 0.75])
+        @test isapprox(qs[2], 50.5; atol = 2.0)
+        @test gap !== nothing && abs(gap) < 0.05
 
-        mn, inRangeMin = histQuantile(oh, 0.0)
-        md, inRangeMd = histQuantile(oh, 0.5)
-        mx, inRangeMax = histQuantile(oh, 1.0)
-        @test mn == 1.0
-        @test mx == 100.0
-        @test isapprox(md, 50.5; atol = 2.0)
-        @test inRangeMin && inRangeMd && inRangeMax
-    end
-
-    @testset "histQuantile: a quantile landing in the tail bucket is flagged inRange = false" begin
-        # lo = 10 is fixed narrower than the data, so the 9 points below it
-        # (1..9) land in the underflow bucket rather than a regular bin.
-        oh = StreamHist(; binRange = (10.0, 95.0), binNum = 50)
-        add!(oh, collect(1.0:100.0))
-        finalize!(oh)
-
-        uf, of = outofrange(oh)
-        @test uf == 9
-        @test of == 6   # 95..100 fall at/above hi = 95 (closed = :left, so hi itself is out of range)
-
-        val, inRange = histQuantile(oh, 0.03)   # target rank 3, inside the 9-point underflow bucket
-        @test !inRange
-        @test 1.0 <= val <= 10.0
+        # every quartile among the out-of-range values: nothing for the density to check
+        out = StreamHist(; binRange = (1000.0, 2000.0), binNum = 10)
+        add!(out, collect(1.0:100.0))
+        finalize!(out)
+        qs, gap = quartiles(out)
+        @test all(<(1000.0), qs) && gap === nothing
     end
 
     @testset "ashQuantileGap: nothing in integer mode, small for a symmetric sample" begin
         ohInt = StreamHist(; integer = true, binRange = (1.0, 10.0))
         add!(ohInt, collect(1.0:10.0))
         finalize!(ohInt)
-        val, _ = histQuantile(ohInt, 0.5)
-        @test ashQuantileGap(ohInt, 0.5, val) === nothing
+        @test ashQuantileGap(ohInt, 0.5, quantile(ohInt, 0.5)) === nothing
 
         oh = StreamHist(; binRange = (0.0, 100.0), binNum = 50)
         add!(oh, collect(0.5:1.0:99.5))   # evenly spaced, no under/overflow
         finalize!(oh)
-        val, inRange = histQuantile(oh, 0.5)
-        @test inRange
-        gap = ashQuantileGap(oh, 0.5, val)
+        gap = ashQuantileGap(oh, 0.5, quantile(oh, 0.5))
         @test gap !== nothing
         @test abs(gap) < 0.05
     end

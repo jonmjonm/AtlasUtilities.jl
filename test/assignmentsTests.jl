@@ -2,7 +2,7 @@
 
 using Test
 using AtlasIO
-using AtlasUtilities: run_extract_assignments, loadHierarchy, expandLabels, nodeIdString
+using AtlasUtilities: run_extract_assignments, assignmentMatrix, loadHierarchy, expandLabels, nodeIdString
 
 """Write an atlas at `path` with one map per entry of `districtings`
 (named m1, m2, ...)."""
@@ -165,6 +165,95 @@ readlines_(path) = filter(!isempty, split(read(path, String), '\n'))
         end
         close(io)
         @test k == length(lines) && length(cols) == length(h.finest)
+    end
+
+    # assignmentMatrix is the CSV as data: the same names, columns and districts, plus the weights.
+    "The cells of a CSV line, unquoting `\"...\"` cells (CT's unit names hold commas)."
+    function csvsplit(line)
+        cells, buf, quoted, i = String[], IOBuffer(), false, firstindex(line)
+        while i <= lastindex(line)
+            c = line[i]
+            if quoted && c == '"' && i < lastindex(line) && line[nextind(line, i)] == '"'
+                print(buf, '"'); i = nextind(line, i)
+            elseif c == '"'
+                quoted = !quoted
+            elseif c == ',' && !quoted
+                push!(cells, String(take!(buf)))
+            else
+                print(buf, c)
+            end
+            i = nextind(line, i)
+        end
+        push!(cells, String(take!(buf)))
+        return cells
+    end
+    "`assignmentMatrix(path; kw...)` and the CSV `extract-assignments` writes with the same options agree."
+    function sameAsCSV(path; kw...)
+        A = assignmentMatrix(path; kw...)
+        run_extract_assignments(path; compress = false, force = true, quiet = true, kw...)
+        lines = readlines_(replace(path, r"\.jsonl(\.gz)?$" => "-assignments.csv"))
+        rows = csvsplit.(lines[2:end])
+        return csvsplit(lines[1])[2:end] == A.unitNames && A.unitNames == nodeIdString.(A.units) &&
+               first.(rows) == A.names &&
+               size(A.districts) == (length(rows), length(A.units)) &&
+               all(parse.(Int, rows[i][2:end]) == A.districts[i, :] for i in eachindex(rows))
+    end
+
+    @testset "assignmentMatrix: the CSV's table, as data" begin
+        dir = mktempdir()
+        single = joinpath(dir, "single.jsonl")
+        writeAssignmentsAtlas(single, [Districting(("c",) => 1, ("a",) => 2, ("b",) => 1),
+                                       Districting(("c",) => 2, ("a",) => 1, ("b",) => 2)])
+        A = assignmentMatrix(single)
+        @test A.names == ["m1", "m2"] && A.weights == [1.0, 1.0]
+        @test A.units == [("a",), ("b",), ("c",)] && A.unitNames == ["a", "b", "c"]
+        @test A.districts == [2 1 1; 1 2 2]
+        @test sameAsCSV(single)
+
+        ms = joinpath(dir, "ms.jsonl")
+        writeAssignmentsAtlas(ms, multiscale; params = levelsParams)
+        @test sameAsCSV(ms)                                          # the finest regions seen in the atlas
+        @test assignmentMatrix(ms).unitNames == ["X:1", "X:2", "Y:1", "Y:2", "Z"]
+        g = joinpath(dir, "g.json")
+        write(g, graphJSON)
+        @test sameAsCSV(ms; graph = g)                               # the graph's finest units
+        @test assignmentMatrix(ms; graph = g).districts == [1 1 1 2 2 2; 2 1 2 2 1 1]
+        out = capture_stdout(() -> assignmentMatrix(ms; quiet = false))
+        @test occursin("multiscale", out)
+
+        ex = joinpath(@__DIR__, "..", "examples")
+        demo = joinpath(dir, "demo_multiscale.jsonl.gz")
+        cp(joinpath(ex, "demo_multiscale.jsonl.gz"), demo)
+        @test sameAsCSV(demo; graph = joinpath(ex, "demo_multiscale_graph.json"))
+        ct = joinpath(dir, "ct.jsonl.gz")
+        cp(joinpath(ex, "cycleWalk_ct_slice.jsonl.gz"), ct)
+        @test sameAsCSV(ct)
+        @test any(occursin(',', u) for u in assignmentMatrix(ct).unitNames)   # quoted in the CSV
+    end
+
+    @testset "assignmentMatrix: weights, errors, no maps" begin
+        dir = mktempdir()
+        path = joinpath(dir, "w.jsonl")
+        io = smartOpen(path, "w")
+        newAtlas(io, AtlasHeader("desc", Dict{String,Any}, Dict{String,Any}; weightType = Float64),
+                 Dict{String,Any}("districts" => 2))
+        for (k, w) in enumerate([0.5, 2.25])
+            addMap(io, Map("m$k", Districting(("a",) => k, ("b",) => 3 - k), w, Dict{String,Any}()))
+        end
+        close(io)
+        A = assignmentMatrix(path)
+        @test A.weights == [0.5, 2.25] && A.districts == [1 2; 2 1]
+
+        bad = joinpath(dir, "bad.jsonl")
+        writeAssignmentsAtlas(bad, [Districting(("a",) => 1, ("b",) => 2), Districting(("a",) => 1)];
+                              params = levelsParams)
+        err = try assignmentMatrix(bad); nothing catch e; e end
+        @test err isa ErrorException && occursin("map \"m2\" assigns no district to \"b\"", err.msg)
+
+        none = joinpath(dir, "none.jsonl")
+        writeAssignmentsAtlas(none, Districting[])
+        E = assignmentMatrix(none)
+        @test isempty(E.names) && isempty(E.units) && size(E.districts) == (0, 0)
     end
 
     @testset "run_extract_assignments: no maps prints a message, writes nothing" begin

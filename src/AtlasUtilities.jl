@@ -71,6 +71,7 @@ include("convert.jl")
 include("nodes.jl")
 include("relabel.jl")
 include("add.jl")
+include("writers.jl")
 include("extract.jl")
 include("extractHistogram.jl")
 include("summarize.jl")
@@ -81,7 +82,8 @@ include("render.jl")
 
 export confusionMatrix, permutationFromConfusion, hammingDistance, relabelMap,
        findRelabeling, Hierarchy, loadHierarchy, loadPopulation, atlasInfo, listMapData,
-       mapDataHistograms, render_map, run_render, districtColors
+       mapDataHistograms, assignmentMatrix, WriterSet, computeWriters, writerFields, listWriters,
+       render_map, run_render, districtColors
 
 """
 Print the header of an Atlas file (metadata and atlas parameters); the bulky embedded generating `script`, its `script_includes`, and the TOML config are never printed, though their presence is noted (use `--extract-script` to write them out).

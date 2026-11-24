@@ -20,60 +20,13 @@ const OUTOFRANGE_WARN_FRAC = 0.01
 const ASH_QUANTILE_WARN_TOL = 0.02
 
 """
-    histQuantile(oh, q; weighted = false) -> (value, inRange)
-
-Estimate the `q`-quantile (`0 <= q <= 1`) of `oh`'s data from its exact histogram
-(`exactHistogram`), linearly interpolating within whichever bin the target rank
-falls in. With `weighted`, the quantile of the weighted data: each map counts its
-weight (`weightedHistogram`, `outofrangeweight`, `totalweight`). `q = 0`/`q = 1`
-return the exact min/max (`datarange`) directly. If the target rank falls in the
-underflow or overflow bucket instead of a regular bin, interpolates uniformly across
-that whole bucket (exact min/max to the nearest bin edge) -- a much coarser
-estimate, since that bucket is not one of the histogram's even bins -- and returns
-`inRange = false` so callers know not to trust it (or try to corroborate it against
-the ASH density, which is zero outside the histogram range and so cannot
-corroborate a tail estimate anyway). `(NaN, false)` when there is nothing to take a
-quantile of (no maps, or total weight 0).
-"""
-function histQuantile(oh::StreamHist, q::Real; weighted::Bool = false)
-    total = weighted ? totalweight(oh) : nobs(oh)
-    total == 0 && return NaN, false
-    mn, mx = datarange(oh)
-    q <= 0 && return mn, true
-    q >= 1 && return mx, true
-
-    uf, of = weighted ? outofrangeweight(oh) : outofrange(oh)
-    edges = collect(exactHistogram(oh).edges[1])
-    weights = weighted ? weightedHistogram(oh).weights : exactHistogram(oh).weights
-    target = q * total
-
-    if target <= uf
-        frac = uf == 0 ? 0.0 : target / uf
-        return mn + frac * (edges[1] - mn), false
-    end
-
-    cum = uf
-    for b in eachindex(weights)
-        cumNext = cum + weights[b]
-        if target <= cumNext
-            lo, hi = edges[b], edges[b + 1]
-            frac = weights[b] == 0 ? 0.0 : (target - cum) / weights[b]
-            return lo + frac * (hi - lo), true
-        end
-        cum = cumNext
-    end
-
-    frac = of == 0 ? 0.0 : (target - cum) / of
-    return edges[end] + frac * (mx - edges[end]), false
-end
-
-"""
     ashQuantileGap(oh, q, xhat; weighted = false) -> Union{Float64,Nothing}
 
 The disagreement (`impliedProb - q`) between target quantile `q` and the
 probability the ASH density assigns to `[exact min, xhat]` (underflow mass plus
-the ASH-integrated mass up to `xhat`, via `histogram`), for a `histQuantile`
-estimate `xhat` known to fall inside the histogram's regular bin range. With
+the ASH-integrated mass up to `xhat`, via `histogram`), for a quantile estimate
+`xhat` (StreamHistogram's `quantile`/`weightedQuantile`) inside the histogram's
+range. With
 `weighted`, the same for the weighted data and density (`weightedHistogram`).
 `nothing` when there is no ASH to check against (`oh.integer`) or nothing to
 check (no maps, or total weight 0).
@@ -98,15 +51,19 @@ weight 1) give the same weighted and unweighted results.
 """
 weightsVary(oh::StreamHist) = effectivesamplesize(oh) < nobs(oh) * (1 - 1e-9)
 
-"""The quartiles of `oh` (unweighted, or `weighted`) and the largest disagreement of
-an in-range one with the ASH density (`nothing` if none could be checked)."""
+"""The quartiles of `oh` (unweighted, or `weighted`; StreamHistogram's `quantile`
+and `weightedQuantile`) and the largest disagreement of one inside the histogram's
+range with the ASH density (`nothing` if none could be checked). One outside the
+range was interpolated across the out-of-range values, and the density, zero there,
+can't corroborate it."""
 function quartiles(oh::StreamHist; weighted::Bool = false)
+    lo, hi = extrema(only(exactHistogram(oh).edges))
     qs = Float64[]
     worstGap = nothing
     for q in (0.25, 0.5, 0.75)
-        x, inRange = histQuantile(oh, q; weighted = weighted)
+        x = weighted ? weightedQuantile(oh, q) : quantile(oh, q)
         push!(qs, x)
-        if inRange
+        if lo <= x <= hi
             gap = ashQuantileGap(oh, q, x; weighted = weighted)
             if gap !== nothing && (worstGap === nothing || abs(gap) > abs(worstGap))
                 worstGap = gap
@@ -122,7 +79,7 @@ end
 `mean`/`std`/`[min, 25%, median, 75%, max]` lines for one `StreamHist`, plus a
 warning line if too much of its data fell out of the histogram range
 (`OUTOFRANGE_WARN_FRAC`) and/or its worst quartile-vs-ASH disagreement exceeds
-`ASH_QUANTILE_WARN_TOL` (see `histQuantile`/`ashQuantileGap`). When the maps'
+`ASH_QUANTILE_WARN_TOL` (see `quartiles`/`ashQuantileGap`). When the maps'
 weights vary (`weightsVary`), the same lines for the weighted data follow, with the
 effective sample size, and the same warnings for it; when every weight is 0, a line
 saying so.
