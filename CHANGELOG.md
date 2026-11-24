@@ -1,8 +1,24 @@
 # Changelog
 
-## [0.4.0]
+## [0.3.2]
 
-**Map weights.** `extract-map-data-histogram`, `summarize-map-data` and `extract-map-data` use each map's weight,
+Everything since 0.3.1, which was the last version installed (none of 0.3.2–0.4.0 was released; they are folded in
+here).
+
+### Library API
+
+- **`assignmentMatrix(atlas; graph)`**: the district assignments as data instead of a CSV: map names, weights,
+  the units (as node keys and as `extract-assignments` column names) and a maps × units matrix of district numbers.
+  It uses the same units as `atlas extract-assignments` (now built on it), multiscale atlases and `graph`
+  included.
+- `mapDataHistograms` is documented in library.md, with the weighted statistics.
+- Quantile estimates moved to StreamHistogram (`quantile`, `weightedQuantile`); `histQuantile` is gone.
+  `summarize-map-data` prints the same values, except that integer-valued histograms now give the bin's integer
+  instead of a value interpolated across it.
+
+### Map weights
+
+`extract-map-data-histogram`, `summarize-map-data` and `extract-map-data` use each map's weight,
 for weighted ensembles such as CycleWalk's importance-sampled atlases. Every unweighted result is unchanged: each
 value is counted both once and with its map's weight.
 
@@ -24,7 +40,7 @@ value is counted both once and with its map's weight.
   don't change, an integer weight `k` counts like the map repeated `k` times, and the CSV, JSON and summary
   output. `test/cliTests.jl` also runs `extract-map-data-histogram` with a `--bin-range` no value falls in.
 
-## [0.3.4]
+### `atlas extract-assignments` on multiscale atlases
 
 - **`atlas extract-assignments` supports multiscale atlases**, writing them at the finest scale: one column per
   finest unit, holding the district of the region that covers it in each map (the precinct where its county is
@@ -42,7 +58,7 @@ value is counted both once and with its map's weight.
 - Multi-component node ids that are the same in every map were rejected before; they are now written like any
   others.
 
-## [0.3.3]
+### Format version, parallel errors, tests
 
 - `atlas info` (and the `about.md` written by `extract-map-data`) shows the atlas's **format version** (`"1"` or
   `"2"`); `atlasInfo` returns it under `"header"` → `"format version"`.
@@ -51,8 +67,6 @@ value is counted both once and with its map's weight.
 - New `test/versionsTests.jl`: every subcommand gives the same output on a v1 atlas and on its v2 conversion
   (`relabel` and `add` keep the input's version, with the same maps); and atlases with Float64 weights keep them
   through `relabel`, `add` and `convert`.
-
-## [0.3.2]
 
 - **Fix:** `atlas extract-map-data-histogram --moment-powers` with a highest power below 4 (e.g. `1,2`) failed
   with "moment order 3 not tracked": the summary always computed skewness and kurtosis. Each statistic is now

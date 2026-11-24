@@ -7,7 +7,7 @@ import JSON
 using AtlasIO
 using StreamHistogram
 using AtlasUtilities: mapDataHistograms, run_extract_map_data_histogram, run_extract, run_summarize_map_data,
-                      histQuantile, ashQuantileGap, fieldSummaryLines, weightsVary, stripAtlasExt
+                      ashQuantileGap, fieldSummaryLines, weightsVary, stripAtlasExt
 
 const WCT = joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_slice.jsonl.gz")
 
@@ -156,14 +156,14 @@ everyHist(hs) = [(f, j, oh) for f in sort(collect(keys(hs)))
         @test occursin("every map has weight 0", zero) && !occursin("NaN", zero)
     end
 
-    @testset "weighted quartiles" begin
+    @testset "weighted quartiles and their summary lines" begin
         xs = collect(0.5:1.0:99.5)
         tilted = StreamHist(; binRange = (0.0, 100.0), binNum = 100)
         add!(tilted, xs, xs)                       # weight ∝ x: the weighted CDF is (x/100)², median 100/√2
         finalize!(tilted)
-        med, inRange = histQuantile(tilted, 0.5; weighted = true)
-        @test inRange && isapprox(med, 100 / sqrt(2); atol = 0.5)
-        @test isapprox(first(histQuantile(tilted, 0.5)), 50; atol = 0.5)
+        med = weightedQuantile(tilted, 0.5)
+        @test isapprox(med, 100 / sqrt(2); atol = 0.5)
+        @test isapprox(quantile(tilted, 0.5), 50; atol = 0.5)
         @test abs(ashQuantileGap(tilted, 0.5, med; weighted = true)) < 0.02
         @test weightsVary(tilted)
         lines = fieldSummaryLines(tilted)
@@ -174,7 +174,7 @@ everyHist(hs) = [(f, j, oh) for f in sort(collect(keys(hs)))
         finalize!(equal)
         @test !weightsVary(equal)
         for q in (0.0, 0.1, 0.25, 0.5, 0.9, 1.0)
-            @test first(histQuantile(equal, q; weighted = true)) ≈ first(histQuantile(equal, q))
+            @test weightedQuantile(equal, q) ≈ quantile(equal, q)
         end
         @test !any(contains("weighted"), fieldSummaryLines(equal))
 
@@ -185,12 +185,12 @@ everyHist(hs) = [(f, j, oh) for f in sort(collect(keys(hs)))
         lines = fieldSummaryLines(heavy)
         @test any(contains("of the weight fell out of the histogram range"), lines)
         @test !any(contains("of points fell out"), lines)
-        @test last(histQuantile(heavy, 0.9; weighted = true)) == false     # in the overflow bucket
+        @test weightedQuantile(heavy, 0.9) > 100                           # among the overflow
 
         nothingThere = StreamHist(; binRange = (0.0, 1.0))
         add!(nothingThere, 0.5, 0.0)
         finalize!(nothingThere)
-        @test isnan(first(histQuantile(nothingThere, 0.5; weighted = true)))
+        @test isnan(weightedQuantile(nothingThere, 0.5))
         @test ashQuantileGap(nothingThere, 0.5, 0.5; weighted = true) === nothing
     end
 
