@@ -25,10 +25,10 @@ read/write functions (`smartOpen`, `openAtlas`, `nextMap`, `addMap`, ...).
 ```julia
 Districting = Dict{Tuple{Vararg{String}}, Int64}   # node key -> district label
 
-Base.@kwdef struct Map{T}
+Base.@kwdef struct Map{T,W<:Real}
     name::String
     districting::Districting
-    weight::Int64 = 1
+    weight::W          # Int64 (the default) or Float64, as the atlas header's weightType says
     data::T
 end
 ```
