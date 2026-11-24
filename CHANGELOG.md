@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.4.0]
+
+**Map weights.** `extract-map-data-histogram`, `summarize-map-data` and `extract-map-data` use each map's weight,
+for weighted ensembles such as CycleWalk's importance-sampled atlases. Every unweighted result is unchanged: each
+value is counted both once and with its map's weight.
+
+- `extract-map-data-histogram`:
+  - the CSV gains a last column, `weight_sum`: each bin's sum of map weights, next to `exact_count`;
+  - the JSON gains, per histogram: `total_weight`, `effective_sample_size` (Kish's `(Σw)²/Σw²`),
+    `underflow_weight` and `overflow_weight`, `weighted_mean`, `weighted_variance`, `weighted_std`,
+    `weighted_skewness`, `weighted_kurtosis`, `weighted_relerr_moments` and `ash_weight` (the weighted ASH
+    density's expected weight per bin, next to `ash_count`).
+- `summarize-map-data`: when the maps' weights vary, each field also gets the weighted mean, std and quartiles,
+  with its effective sample size and the same warnings. Unweighted atlases (or equal weights) print what they
+  did before.
+- `extract-map-data`: every CSV gains a last column, `map_weight`, so existing
+  readers see the field columns where they were.
+- A map whose weight is negative or not finite stops these commands with an error naming the map.
+- StreamHistogram 0.2 (compat `"0.2"`). It also fixes the ASH-derived counts (`ash_count`) when some values fall
+  outside the histogram's range: they were scaled by every value, not only those in range.
+- New `test/weightsTests.jl`: the weighted results are those of the weighted map values, the unweighted ones
+  don't change, an integer weight `k` counts like the map repeated `k` times, and the CSV, JSON and summary
+  output. `test/cliTests.jl` also runs `extract-map-data-histogram` with a `--bin-range` no value falls in.
+
 ## [0.3.4]
 
 - **`atlas extract-assignments` supports multiscale atlases**, writing them at the finest scale: one column per

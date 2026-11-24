@@ -3,8 +3,9 @@
 # Read every map in an input atlas Atlas1 and write its map data out as CSV: one CSV
 # file per data field, inside a directory named after the atlas (its path with the
 # `.jsonl`/`.jsonl.gz`/`.jsonl.bz2` extension stripped). Each map is one row --
-# first column the map name, remaining columns the field's value (a scalar is one
-# column, a vector is one column per entry). A header row names the columns.
+# first column the map name, then the field's value (a scalar is one column, a vector
+# is one column per entry), and last the map's weight (`map_weight`). A header row
+# names the columns.
 #
 # By default every field already present in the maps' data is extracted. `--add`
 # additionally computes CycleWalk "pushable writer" functions (exactly as
@@ -44,19 +45,19 @@ function csvcell(s::AbstractString)
     return '"' * replace(s, '"' => "\"\"") * '"'
 end
 
-"""Header for a field's CSV: `name` then either the bare field (width 1) or
-`field_1 … field_w`."""
+"""Header for a field's CSV: `name`, then either the bare field (width 1) or
+`field_1 … field_w`, then `map_weight`."""
 function headerRow(field::AbstractString, width::Int)
     cols = width == 1 ? [field] : ["$(field)_$i" for i in 1:width]
-    return "name," * join((csvcell(c) for c in cols), ",") * "\n"
+    return "name," * join((csvcell(c) for c in cols), ",") * ",map_weight\n"
 end
 
 """Row for map `name` with field value `val` laid out in `width` columns
-(missing/`nothing` becomes empty cells)."""
-function valueRow(name::AbstractString, val, width::Int)
+(missing/`nothing` becomes empty cells), then the map's `weight`."""
+function valueRow(name::AbstractString, val, width::Int, weight::Real)
     cells = val === nothing ? String[] : [string(x) for x in flattenVal(val)]
     length(cells) < width && append!(cells, fill("", width - length(cells)))
-    return csvcell(name) * "," * join(cells, ",") * "\n"
+    return csvcell(name) * "," * join(cells, ",") * "," * string(weight) * "\n"
 end
 
 # ---------------------------------------------------------------------------
@@ -229,7 +230,7 @@ function run_extract(Atlas1::AbstractString;
         # `ext` (.csv.gz vs. .csv), so no codec import is needed here.
         io = smartOpen(joinpath(outdir, field * ext), "w")
         write(io, headerRow(field, width))
-        write(io, valueRow(first.name, val, width))
+        write(io, valueRow(first.name, val, width, first.weight))
         push!(streams, (field, io, width))
     end
 
@@ -270,7 +271,7 @@ function run_extract(Atlas1::AbstractString;
                 added = computeAdded(m)
                 rr = Vector{String}(undef, length(streams))
                 for (k, (field, _, width)) in enumerate(streams)
-                    rr[k] = valueRow(m.name, valueOf(m, field, added), width)
+                    rr[k] = valueRow(m.name, valueOf(m, field, added), width, m.weight)
                 end
                 rows[i] = rr
             end

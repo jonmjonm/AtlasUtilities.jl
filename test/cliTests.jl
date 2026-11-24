@@ -112,6 +112,27 @@ mapsof(path) = (io = smartOpen(path, "r"); a = openAtlas(io); ms = Map[]; while 
         @test_throws ErrorException atlascli("extract-map-data-histogram", a, "--integer", "maybe", "--quiet")
     end
 
+    @testset "extract-map-data-histogram with a --bin-range no value falls in" begin
+        # Every value is below the range: the counts go to `underflow`, the density-based entries are null or zero, and
+        # the command succeeds (StreamHistogram used to fail on a histogram with nothing in range).
+        a = excopy("cycleWalk_ct_slice.jsonl.gz")
+        @test atlascli("extract-map-data-histogram", a, "--bin-range", "1e6,2e6", "--no-compression",
+                       "--quiet")[1] == 0
+        for field in ("get_log_spanning_trees", "get_isoperimetric_scores")
+            base = joinpath(stripAtlasExt(a), field * "-histogram")
+            for x in values(JSON.parse(read(base * ".json", String))["histograms"])
+                @test x["underflow"] == x["nobs"] > 0 && x["overflow"] == 0
+                @test x["underflow_weight"] == x["total_weight"]
+                @test all(==(0), x["ash_count"]) && all(==(0), x["ash_weight"])
+                @test all(isnothing, values(x["relerr_moments"]))
+                @test all(isnothing, values(x["weighted_relerr_moments"]))
+                @test x["mean"] isa Real && x["weighted_mean"] isa Real      # the moments use every value
+            end
+            rows = split(strip(read(base * ".csv", String)), '\n')[2:end]
+            @test all(r -> endswith(r, ",0,0.0"), rows)                       # no count, no weight in any bin
+        end
+    end
+
     @testset "add: --list-writers, and refusing to overwrite a field without --overwrite" begin
         @test atlascli("add", "--list-writers")[1] == 0
         dir = mktempdir()

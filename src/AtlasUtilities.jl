@@ -257,7 +257,7 @@ Add CycleWalk pushable writer function(s) (e.g. `get_log_spanning_trees`) to eve
 end
 
 """
-Write each map-data field of atlas Atlas1 to its own CSV (one row per map) in a directory named after the atlas, plus an `about.md` describing the atlas (its `atlas info` header, minus the embedded script, with the source atlas name and extraction date); `--add` also computes CycleWalk writer functions to extract, using the same graph inputs as `atlas add`.
+Write each map-data field of atlas Atlas1 to its own CSV (one row per map: the map name, the field value, then the map weight in a last `map_weight` column) in a directory named after the atlas, plus an `about.md` describing the atlas (its `atlas info` header, minus the embedded script, with the source atlas name and extraction date); `--add` also computes CycleWalk writer functions to extract, using the same graph inputs as `atlas add`.
 
 # Args
 
@@ -305,7 +305,7 @@ Write each map-data field of atlas Atlas1 to its own CSV (one row per map) in a 
 end
 
 """
-Like `extract-map-data`, but instead of writing per-map CSV rows, accumulate the values of each map-data field into a StreamHistogram: a single histogram for a scalar field, or one histogram per index for a vector field (with `--no-sort`, index `j` gets raw entry `j`; by default entry `j` of each map vector is sorted ascending first, so histogram `j` holds the `j`-th order statistic across maps rather than raw index `j`). The first `--burn-in` maps are skipped entirely. Writes a CSV + JSON pair per field, named `<field>-histogram.csv` and `<field>-histogram.json` (or `.csv.gz`/`.json.gz`), plus `about.md`, to the same directory `extract-map-data` uses. The CSV holds only the exact per-bin edges and counts (a plain numeric table for loading straight into a histogram plot); the JSON holds everything else -- per-index summary statistics, moment errors, the ASH-density bin counts, and the bin edges again -- as a human-readable dictionary keyed by index.
+Like `extract-map-data`, but instead of writing per-map CSV rows, accumulate the values of each map-data field into a StreamHistogram: a single histogram for a scalar field, or one histogram per index for a vector field (with `--no-sort`, index `j` gets raw entry `j`; by default entry `j` of each map vector is sorted ascending first, so histogram `j` holds the `j`-th order statistic across maps rather than raw index `j`). The first `--burn-in` maps are skipped entirely. Writes a CSV + JSON pair per field, named `<field>-histogram.csv` and `<field>-histogram.json` (or `.csv.gz`/`.json.gz`), plus `about.md`, to the same directory `extract-map-data` uses. Each value is counted both once and with its map weight. The CSV holds only the exact per-bin edges, counts (`exact_count`) and sums of map weights (`weight_sum`), a plain numeric table for loading straight into a histogram plot; the JSON holds everything else -- per-index summary statistics, unweighted and weighted (`total_weight`, `effective_sample_size`, `weighted_mean`, ...), moment errors, the ASH-density bin counts and weights, and the bin edges again -- as a human-readable dictionary keyed by index.
 
 # Args
 
@@ -385,7 +385,7 @@ Like `extract-map-data`, but instead of writing per-map CSV rows, accumulate the
 end
 
 """
-Print, for every map-data field of atlas Atlas1, its mean, standard deviation, and [min, 25% quartile, median, 75% quartile, max], each computed from a StreamHistogram built over the field values (one histogram per index for a vector field, each map vector sorted ascending first, so histogram j holds the j-th order statistic across maps). Warns when too much of a field data set fell outside its histogram learned range (the tail quantile estimates lean on a single coarse interpolation across that whole bucket), or when a quartile estimate disagrees with the ASH density estimate for that field by more than a couple of percentage points (the within-bin-uniform interpolation may not fit the shape of that field).
+Print, for every map-data field of atlas Atlas1, its mean, standard deviation, and [min, 25% quartile, median, 75% quartile, max], each computed from a StreamHistogram built over the field values (one histogram per index for a vector field, each map vector sorted ascending first, so histogram j holds the j-th order statistic across maps). When the map weights vary, the weighted mean, standard deviation and quartiles (each map counting its weight) follow, with the effective sample size. Warns when too much of a field data set fell outside its histogram learned range (the tail quantile estimates lean on a single coarse interpolation across that whole bucket), or when a quartile estimate disagrees with the ASH density estimate for that field by more than a couple of percentage points (the within-bin-uniform interpolation may not fit the shape of that field).
 
 # Args
 

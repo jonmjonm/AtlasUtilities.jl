@@ -19,13 +19,13 @@ rowsof(s) = filter(!isempty, split(s, "\n"))
         @test flattenVal(3.0) == [3.0]                   # scalar -> one cell
         @test flattenVal([1, 2, 3]) == [1, 2, 3]         # vector -> spread
 
-        @test headerRow("f", 1) == "name,f\n"
-        @test headerRow("f", 3) == "name,f_1,f_2,f_3\n"
+        @test headerRow("f", 1) == "name,f,map_weight\n"
+        @test headerRow("f", 3) == "name,f_1,f_2,f_3,map_weight\n"
 
-        @test valueRow("m", 900.5, 1) == "m,900.5\n"
-        @test valueRow("m", [1.0, 2.0], 2) == "m,1.0,2.0\n"
-        @test valueRow("m", nothing, 2) == "m,,\n"       # missing -> empty cells
-        @test valueRow("a,b", 1, 1) == "\"a,b\",1\n"     # name with comma is quoted
+        @test valueRow("m", 900.5, 1, 1) == "m,900.5,1\n"
+        @test valueRow("m", [1.0, 2.0], 2, 0.25) == "m,1.0,2.0,0.25\n"
+        @test valueRow("m", nothing, 2, 3) == "m,,,3\n"       # missing -> empty cells, weight still written
+        @test valueRow("a,b", 1, 1, 1) == "\"a,b\",1,1\n"     # name with comma is quoted
     end
 
     # End-to-end: extract the real CT slice's map data and check each CSV against
@@ -55,11 +55,12 @@ rowsof(s) = filter(!isempty, split(s, "\n"))
             @test length(rows) == length(maps) + 1       # header + one row per map
             width = length(asvec(maps[1].data[f]))
             @test rows[1] == (width == 1 ? "name,$f" :
-                              "name," * join(["$(f)_$i" for i in 1:width], ","))
+                              "name," * join(["$(f)_$i" for i in 1:width], ",")) * ",map_weight"
             for (i, m) in enumerate(maps)
                 cells = split(rows[i + 1], ",")
                 @test cells[1] == m.name
-                @test parse.(Float64, cells[2:end]) == asvec(m.data[f])
+                @test parse.(Float64, cells[2:end-1]) == asvec(m.data[f])
+                @test parse(Float64, cells[end]) == m.weight
             end
         end
 
@@ -78,7 +79,7 @@ rowsof(s) = filter(!isempty, split(s, "\n"))
         rows = rowsof(readtext(joinpath(dir2, "run", "get_isoperimetric_scores.csv.gz")))
         maxrel = 0.0
         for (i, m) in enumerate(maps)
-            got = parse.(Float64, split(rows[i + 1], ",")[2:end])
+            got = parse.(Float64, split(rows[i + 1], ",")[2:end-1])
             for (x, y) in zip(got, asvec(m.data["get_isoperimetric_scores"]))
                 maxrel = max(maxrel, abs(x - y) / max(abs(y), 1e-12))
             end
@@ -108,9 +109,9 @@ rowsof(s) = filter(!isempty, split(s, "\n"))
         d = Int(a.atlasParam["districts"])
         nmaps = length(rows) - 1
         @test nmaps >= 40
-        @test rows[1] == "name," * join(["$(field)_$i" for i in 1:d], ",")   # per-district header
+        @test rows[1] == "name," * join(["$(field)_$i" for i in 1:d], ",") * ",map_weight"   # per-district header
         for r in rows[2:end]
-            cells = parse.(Float64, split(r, ",")[2:end])
+            cells = parse.(Float64, split(r, ",")[2:end-1])
             @test length(cells) == d
             @test all(0 .<= cells .<= 100)                                    # vote shares
         end

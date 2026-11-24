@@ -156,9 +156,13 @@ end
         @test h.weightType == Float64
         @test [m.weight for m in ms] == [m.weight for m in m0]
     end
-    # The read-only subcommands run on it too (they do not use the weights yet).
+    # The read-only subcommands use the weights (see test/weightsTests.jl for the values).
     @test occursin(r"weight type\s*:\s*\"Float64\"", vcli("info", src))
-    @test !isempty(vcli("summarize-map-data", src, "--quiet"))
+    @test occursin("weighted mean:", vcli("summarize-map-data", src, "--quiet"))
     vcli("extract-map-data", src, "--no-compression", "--quiet")
-    @test length(filter(endswith(".csv"), readdir(stripAtlasExt(src)))) == 3
+    csvs = filter(endswith(".csv"), readdir(stripAtlasExt(src)))
+    @test length(csvs) == 3
+    rows = split(strip(read(joinpath(stripAtlasExt(src), csvs[1]), String)), '\n')
+    @test endswith(rows[1], ",map_weight") && [parse(Float64, last(split(r, ','))) for r in rows[2:end]] ==
+                                                [m.weight for m in m0]
 end

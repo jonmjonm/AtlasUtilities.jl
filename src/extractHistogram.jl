@@ -12,11 +12,15 @@
 # `Dict{String,Union{StreamHist,Vector{StreamHist}}}`); `run_extract_map_data_histogram`
 # is the CLI driver, which also writes each field's histogram(s) to a pair of files
 # (`<field>-histogram.csv[.gz]` + `<field>-histogram.json[.gz]`) in the same output
-# directory `extract-map-data` uses. The CSV holds only the exact per-bin edges and
-# counts (a plain numeric table for loading straight into a histogram plot in
-# Python/Julia); the JSON holds everything else -- per-index summary statistics,
-# moment errors, the ASH-density bin counts, and the bin edges again (so the JSON is
-# self-contained) -- as a human-readable dictionary keyed by index.
+# directory `extract-map-data` uses. The CSV holds only the exact per-bin edges,
+# counts and sums of map weights (a plain numeric table for loading straight into a
+# histogram plot in Python/Julia); the JSON holds everything else -- per-index summary
+# statistics, unweighted and weighted, moment errors, the ASH-density bin counts and
+# weights, and the bin edges again (so the JSON is self-contained) -- as a
+# human-readable dictionary keyed by index.
+#
+# Every value is added with its map's weight. StreamHistogram keeps each tally both
+# unweighted and weighted, so the unweighted results are the same as without weights.
 
 # ---------------------------------------------------------------------------
 # Library entry point
@@ -39,6 +43,11 @@ computing any `add` writer fields (exactly as `extract-map-data`/`add` do -- see
 scalars), so histogram `j` holds the `j`-th order statistic across maps.
 `max_maps` (0 = unlimited, the default) stops after accumulating that many maps
 past the burn-in.
+
+Each value is added with its map's weight (`add!(oh, x, w)`), so every histogram
+has both the unweighted results (each map counts once) and the weighted ones (each
+map counts its weight; see StreamHistogram's `weighted*` functions). A map whose
+weight is negative or not finite is an error.
 
 `integer`, `bin_range`, `bin_num`, `bins`, and `moment_powers` are forwarded to
 every `StreamHist` constructed (see `StreamHist`); a bin range is otherwise learned
@@ -113,23 +122,24 @@ function mapDataHistograms(Atlas1::AbstractString;
         return vals
     end
 
-    """Feed one map's already-extracted per-field value vectors into `hists`."""
-    function feedRow!(rr)
+    """Feed one map's already-extracted per-field value vectors into `hists`, with
+    the map's weight `w`."""
+    function feedRow!(rr, w)
         for k in eachindex(fieldNames)
             vals = rr[k]
             isempty(vals) && continue
             if widths[k] == 1
-                add!(hists[k]::StreamHist, vals[1])
+                add!(hists[k]::StreamHist, vals[1], w)
             else
                 hv = hists[k]::Vector{StreamHist}
                 for j in 1:min(widths[k], length(vals))
-                    add!(hv[j], vals[j])
+                    add!(hv[j], vals[j], w)
                 end
             end
         end
     end
 
-    feedRow!([extractVals(valueOf(first, f, firstAdded)) for f in fieldNames])
+    feedRow!([extractVals(valueOf(first, f, firstAdded)) for f in fieldNames], mapWeight(first))
 
     # `fns` empty means `computeAdded` never touches `m.districting` (it
     # short-circuits to an empty dict), so parse a `MapData` instead of a full
@@ -151,12 +161,14 @@ function mapDataHistograms(Atlas1::AbstractString;
             n == 0 && break
 
             # rows[i][k] is map i's extracted (flattened, possibly sorted) value
-            # vector for field k.
+            # vector for field k; ws[i] is map i's weight.
             rows = Vector{Vector{Vector{Float64}}}(undef, n)
+            ws = Vector{Float64}(undef, n)
             parallelDo!(n, cores) do i
                 m = parseLine(lines[i])
                 added = computeAdded(m)
                 rows[i] = [extractVals(valueOf(m, field, added)) for field in fieldNames]
+                ws[i] = mapWeight(m)
             end
 
             # Order does not matter for histogram accumulation (unlike the CSV
@@ -165,13 +177,13 @@ function mapDataHistograms(Atlas1::AbstractString;
             # whole read batch -- far cheaper than one scalar `add!` per map.
             for k in eachindex(fieldNames)
                 if widths[k] == 1
-                    batch = [rows[i][k][1] for i in 1:n if !isempty(rows[i][k])]
-                    isempty(batch) || add!(hists[k]::StreamHist, batch)
+                    has = [i for i in 1:n if !isempty(rows[i][k])]
+                    isempty(has) || add!(hists[k]::StreamHist, [rows[i][k][1] for i in has], ws[has])
                 else
                     hv = hists[k]::Vector{StreamHist}
                     for j in 1:widths[k]
-                        batch = Float64[rows[i][k][j] for i in 1:n if length(rows[i][k]) >= j]
-                        isempty(batch) || add!(hv[j], batch)
+                        has = [i for i in 1:n if length(rows[i][k]) >= j]
+                        isempty(has) || add!(hv[j], [rows[i][k][j] for i in has], ws[has])
                     end
                 end
             end
@@ -194,33 +206,49 @@ function mapDataHistograms(Atlas1::AbstractString;
         fieldNames[k] => hists[k] for k in eachindex(fieldNames)), written
 end
 
+"""
+    mapWeight(m) -> Float64
+
+Map `m`'s weight, which must be finite and nonnegative; otherwise an error naming
+the map.
+"""
+function mapWeight(m)
+    w = Float64(m.weight)
+    (isfinite(w) && w >= 0) ||
+        error("atlas: map \"$(m.name)\" has weight $(m.weight); map weights must be finite and nonnegative.")
+    return w
+end
+
 # ---------------------------------------------------------------------------
 # CSV + JSON rendering
 # ---------------------------------------------------------------------------
 
-"""Bin edges, exact histogram counts, and ASH-density-derived counts (integrated
-over those same edges; `nothing` in `integer` mode, where the ASH is disabled) for
-one `StreamHist`."""
+"""The bins of one `StreamHist`: its `edges`, each bin's map count (`counts`) and
+sum of map weights (`weights`), and the same two from the ASH density integrated
+over the edges (`ashCounts`, `ashWeights`; `nothing` in `integer` mode, which has no
+ASH)."""
 function histBins(oh::StreamHist)
     eh = exactHistogram(oh)
     edges = collect(eh.edges[1])
-    weights = eh.weights
-    ashWeights = oh.integer ? nothing : histogram(oh, edges).weights
-    return edges, weights, ashWeights
+    ashCounts = oh.integer ? nothing : histogram(oh, edges).weights
+    ashWeights = oh.integer ? nothing : weightedHistogram(oh, edges).weights
+    return (edges = edges, counts = eh.weights, weights = weightedHistogram(oh).weights,
+            ashCounts = ashCounts, ashWeights = ashWeights)
 end
 
-"""Write the exact per-bin edges/counts for one field's histogram(s) (`entry`, a
-`StreamHist` or `Vector{StreamHist}`) to `path` as a plain numeric CSV table:
-`index,edge_lo,edge_hi,exact_count` (`index` is the position within `entry`, `1` for
-a scalar field)."""
+"""Write the exact bins of one field's histogram(s) (`entry`, a `StreamHist` or
+`Vector{StreamHist}`) to `path` as a plain numeric CSV table:
+`index,edge_lo,edge_hi,exact_count,weight_sum` (`index` is the position within
+`entry`, `1` for a scalar field; `exact_count` the number of maps in the bin,
+`weight_sum` the sum of their weights)."""
 function writeHistogramCSV(path::AbstractString, entry)
     ohs = entry isa StreamHist ? [entry] : entry
     io = smartOpen(path, "w")
-    write(io, "index,edge_lo,edge_hi,exact_count\n")
+    write(io, "index,edge_lo,edge_hi,exact_count,weight_sum\n")
     for (idx, oh) in enumerate(ohs)
-        edges, weights, _ = histBins(oh)
-        for b in eachindex(weights)
-            write(io, join((idx, edges[b], edges[b + 1], weights[b]), ",") * "\n")
+        b = histBins(oh)
+        for k in eachindex(b.counts)
+            write(io, join((idx, b.edges[k], b.edges[k + 1], b.counts[k], b.weights[k]), ",") * "\n")
         end
     end
     close(io)
@@ -233,28 +261,38 @@ so map non-finite floats to `null` on the way out."""
 jsonFloat(x::AbstractFloat) = isfinite(x) ? x : nothing
 jsonFloat(x) = x
 
-"""Everything about one `StreamHist` other than its exact bin counts, as a plain
-`Dict` suitable for `JSON.json`: summary statistics, moment errors, whether it
-learned integer-ness, and its bin edges + ASH-density-derived counts (`nothing` in
-`integer` mode). A statistic needs moments up to its order -- variance and std 2, skewness 3, kurtosis 4 --
-and a `StreamHist` tracks them only up to its highest moment power, so a lower `--moment-powers` gives
-`nothing` (null) for the ones it cannot compute."""
+"""Everything about one `StreamHist` other than its exact bins, as a plain `Dict`
+suitable for `JSON.json`: summary statistics, moment errors, whether it learned
+integer-ness, its bin edges and ASH-density-derived counts (`nothing` in `integer`
+mode), and the same for the weighted data (`total_weight`, `effective_sample_size`,
+`underflow_weight`/`overflow_weight`, `weighted_*`, `ash_weight`). A statistic needs
+moments up to its order -- variance and std 2, skewness 3, kurtosis 4 -- and a
+`StreamHist` tracks them only up to its highest moment power, so a lower
+`--moment-powers` gives `nothing` (null) for the ones it cannot compute."""
 function histSummaryDict(oh::StreamHist)
     maxp = maximum(oh.momentPowers)
     upto(order, stat) = maxp >= order ? jsonFloat(stat(oh)) : nothing
+    relerrDict(errs) = errs === nothing ? nothing :
+        Dict(string(p) => jsonFloat(e) for (p, e) in zip(oh.momentPowers, errs))
     uf, of = outofrange(oh)
+    ufw, ofw = outofrangeweight(oh)
     mn, mx = datarange(oh)
-    edges, _, ashWeights = histBins(oh)
-    relerrs = oh.integer ? nothing : densityQuality(oh)
+    b = histBins(oh)
     return Dict{String,Any}(
         "nobs" => nobs(oh), "underflow" => uf, "overflow" => of,
         "exact_min" => jsonFloat(mn), "exact_max" => jsonFloat(mx),
         "mean" => jsonFloat(mean(oh)), "variance" => upto(2, variance), "std" => upto(2, std),
         "skewness" => upto(3, skewness), "kurtosis" => upto(4, kurtosis),
         "integer" => oh.integer,
-        "relerr_moments" => relerrs === nothing ? nothing :
-            Dict(string(p) => jsonFloat(e) for (p, e) in zip(oh.momentPowers, relerrs)),
-        "edges" => jsonFloat.(edges), "ash_count" => ashWeights)
+        "relerr_moments" => relerrDict(oh.integer ? nothing : densityQuality(oh)),
+        "edges" => jsonFloat.(b.edges), "ash_count" => b.ashCounts,
+        "total_weight" => totalweight(oh), "effective_sample_size" => effectivesamplesize(oh),
+        "underflow_weight" => ufw, "overflow_weight" => ofw,
+        "weighted_mean" => jsonFloat(weightedMean(oh)), "weighted_variance" => upto(2, weightedVariance),
+        "weighted_std" => upto(2, weightedStd), "weighted_skewness" => upto(3, weightedSkewness),
+        "weighted_kurtosis" => upto(4, weightedKurtosis),
+        "weighted_relerr_moments" => relerrDict(oh.integer ? nothing : weightedDensityQuality(oh)),
+        "ash_weight" => b.ashWeights)
 end
 
 """Write one field's histogram(s) (`entry`, a `StreamHist` or `Vector{StreamHist}`)
