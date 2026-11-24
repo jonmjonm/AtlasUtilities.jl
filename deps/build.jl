@@ -2,7 +2,8 @@
 #
 #   1. The command's own environment, ~/.julia/scratchspaces/<AtlasUtilities uuid>/env, with this checkout of
 #      AtlasUtilities developed into it and everything precompiled. `atlas install-render` later adds the plotting
-#      packages to this environment, never to the checkout's Project.toml.
+#      packages to this environment, never to the checkout's Project.toml. It is rebuilt in a new directory and
+#      swapped in only on success, and resolves afresh, ignoring the checkout's own Manifest.toml.
 #   2. The launcher ~/.julia/bin/atlas, which runs Julia in that environment (and only it, plus the standard
 #      library). It prefers the Julia that ran this build, and falls back to `julia` on the PATH if that one has been
 #      removed (e.g. by juliaup), so a Julia update does not break the command.
@@ -26,15 +27,37 @@ if isfile(joinpath(ENV_DIR, "Project.toml"))
     deps = get(Pkg.TOML.parsefile(joinpath(ENV_DIR, "Project.toml")), "deps", Dict())
     render = [p.name for p in AtlasUtilities.RENDER_PACKAGES if haskey(deps, p.name)]
 end
-rm(ENV_DIR; force = true, recursive = true)
-mkpath(ENV_DIR)
+
+# A checkout's own manifest (its development environment; not in git) is read when the checkout is developed
+# into another environment, so it would pin the packages it gets by URL from [sources] (StreamHistogram) to the
+# commit it last resolved, however old: a stale one makes the build fail, or install an old version. Set it aside
+# while the environment resolves, so those are fetched afresh, and put it back afterwards.
+manifests = filter(f -> occursin(r"^(Julia)?Manifest(-v[0-9.]+)?\.toml$", f), readdir(PKG_DIR))
+aside(f) = joinpath(PKG_DIR, f * ".aside-during-atlas-build")
 setup = """
     import Pkg
     Pkg.develop(path = $(repr(PKG_DIR)))
     isempty($(repr(render))) || Pkg.add($(repr(render)))
     Pkg.precompile()
     """
-run(`$(Base.julia_cmd()) --startup-file=no --project=$ENV_DIR -e $setup`)
+
+# Built in a new directory and moved into place only once complete, so a failed build leaves the installed
+# command (and its plotting packages) as it was.
+NEW_ENV = ENV_DIR * ".new"
+rm(NEW_ENV; force = true, recursive = true)
+mkpath(NEW_ENV)
+try
+    foreach(f -> mv(joinpath(PKG_DIR, f), aside(f)), manifests)
+    run(`$(Base.julia_cmd()) --startup-file=no --project=$NEW_ENV -e $setup`)
+catch
+    rm(NEW_ENV; force = true, recursive = true)
+    error("atlas: building the command's environment failed (see above); the installed `atlas` command, if " *
+          "any, is unchanged.")
+finally
+    foreach(f -> isfile(aside(f)) && mv(aside(f), joinpath(PKG_DIR, f); force = true), manifests)
+end
+rm(ENV_DIR; force = true, recursive = true)
+mv(NEW_ENV, ENV_DIR)
 
 # The system image older versions built (about 1.2 GB) is no longer used.
 rm(joinpath(UUID_DIR, "sysimg"); force = true, recursive = true)
