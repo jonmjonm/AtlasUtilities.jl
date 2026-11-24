@@ -38,7 +38,7 @@ readHistJSON(path) = JSON.parse(readtext(path); dicttype = Dict{String,Any})["hi
             writeHistogramJSON(jsonPath, oh)
 
             header, rows = csvRows(readtext(csvPath))
-            @test header == "index,edge_lo,edge_hi,exact_count"
+            @test header == "index,edge_lo,edge_hi,exact_count,weight_sum"
             @test length(rows) == 5                             # 5 bins
             @test all(startswith(r, "1,") for r in rows)
 
@@ -266,7 +266,7 @@ readHistJSON(path) = JSON.parse(readtext(path); dicttype = Dict{String,Any})["hi
         dirCsv = mktempdir(); atlasCsv = joinpath(dirCsv, "run.jsonl.gz"); cp(src, atlasCsv)
         run_extract(atlasCsv; addOpts...)
         rowsCsv = filter(!isempty, split(readtext(joinpath(dirCsv, "run", field * ".csv.gz")), "\n"))
-        w = length(split(rowsCsv[1], ",")) - 1
+        w = length(split(rowsCsv[1], ",")) - 2          # minus the name and map_weight columns
         colvals(j) = [parse(Float64, split(r, ",")[1 + j]) for r in rowsCsv[2:end]]
 
         dirHist = mktempdir(); atlasHist = joinpath(dirHist, "run.jsonl.gz"); cp(src, atlasHist)

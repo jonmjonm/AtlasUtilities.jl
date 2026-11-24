@@ -4,7 +4,8 @@
 # StreamHist per index for a vector field, sorted ascending so index j holds the
 # j-th order statistic), but instead of writing files, prints mean/std/quartiles
 # straight to stdout. No --add/graph/config support -- this only summarizes the
-# map data already present in the atlas.
+# map data already present in the atlas. When the maps' weights vary, the weighted
+# mean/std/quartiles (each map counting its weight) are printed too.
 
 # A field/index whose points fall out of the learned histogram range more than
 # this often gets a warning: the min/max/tail-quantile estimates lean on a single
@@ -19,29 +20,32 @@ const OUTOFRANGE_WARN_FRAC = 0.01
 const ASH_QUANTILE_WARN_TOL = 0.02
 
 """
-    histQuantile(oh, q) -> (value, inRange)
+    histQuantile(oh, q; weighted = false) -> (value, inRange)
 
 Estimate the `q`-quantile (`0 <= q <= 1`) of `oh`'s data from its exact histogram
 (`exactHistogram`), linearly interpolating within whichever bin the target rank
-falls in. `q = 0`/`q = 1` return the exact min/max (`datarange`) directly. If the
-target rank falls in the underflow or overflow bucket instead of a regular bin,
-interpolates uniformly across that whole bucket (exact min/max to the nearest bin
-edge) -- a much coarser estimate, since that bucket is not one of the histogram's
-even bins -- and returns `inRange = false` so callers know not to trust it (or try
-to corroborate it against the ASH density, which is zero outside the histogram
-range and so cannot corroborate a tail estimate anyway).
+falls in. With `weighted`, the quantile of the weighted data: each map counts its
+weight (`weightedHistogram`, `outofrangeweight`, `totalweight`). `q = 0`/`q = 1`
+return the exact min/max (`datarange`) directly. If the target rank falls in the
+underflow or overflow bucket instead of a regular bin, interpolates uniformly across
+that whole bucket (exact min/max to the nearest bin edge) -- a much coarser
+estimate, since that bucket is not one of the histogram's even bins -- and returns
+`inRange = false` so callers know not to trust it (or try to corroborate it against
+the ASH density, which is zero outside the histogram range and so cannot
+corroborate a tail estimate anyway). `(NaN, false)` when there is nothing to take a
+quantile of (no maps, or total weight 0).
 """
-function histQuantile(oh::StreamHist, q::Real)
-    n = nobs(oh)
+function histQuantile(oh::StreamHist, q::Real; weighted::Bool = false)
+    total = weighted ? totalweight(oh) : nobs(oh)
+    total == 0 && return NaN, false
     mn, mx = datarange(oh)
     q <= 0 && return mn, true
     q >= 1 && return mx, true
 
-    uf, of = outofrange(oh)
-    eh = exactHistogram(oh)
-    edges = collect(eh.edges[1])
-    weights = eh.weights
-    target = q * n
+    uf, of = weighted ? outofrangeweight(oh) : outofrange(oh)
+    edges = collect(exactHistogram(oh).edges[1])
+    weights = weighted ? weightedHistogram(oh).weights : exactHistogram(oh).weights
+    target = q * total
 
     if target <= uf
         frac = uf == 0 ? 0.0 : target / uf
@@ -64,23 +68,52 @@ function histQuantile(oh::StreamHist, q::Real)
 end
 
 """
-    ashQuantileGap(oh, q, xhat) -> Union{Float64,Nothing}
+    ashQuantileGap(oh, q, xhat; weighted = false) -> Union{Float64,Nothing}
 
 The disagreement (`impliedProb - q`) between target quantile `q` and the
 probability the ASH density assigns to `[exact min, xhat]` (underflow mass plus
 the ASH-integrated mass up to `xhat`, via `histogram`), for a `histQuantile`
-estimate `xhat` known to fall inside the histogram's regular bin range.
-`nothing` when there is no ASH to check against (`oh.integer`) or `oh` is empty.
+estimate `xhat` known to fall inside the histogram's regular bin range. With
+`weighted`, the same for the weighted data and density (`weightedHistogram`).
+`nothing` when there is no ASH to check against (`oh.integer`) or nothing to
+check (no maps, or total weight 0).
 """
-function ashQuantileGap(oh::StreamHist, q::Real, xhat::Real)
+function ashQuantileGap(oh::StreamHist, q::Real, xhat::Real; weighted::Bool = false)
     oh.integer && return nothing
-    n = nobs(oh)
-    n == 0 && return nothing
-    uf, _ = outofrange(oh)
+    total = weighted ? totalweight(oh) : nobs(oh)
+    total == 0 && return nothing
+    uf = weighted ? outofrangeweight(oh).underflow : outofrange(oh).underflow
     lo = first(exactHistogram(oh).edges[1])
-    ashMass = histogram(oh, [lo, xhat]).weights[1]
-    impliedProb = (uf + ashMass) / n
-    return impliedProb - q
+    bins = [lo, xhat]
+    ashMass = (weighted ? weightedHistogram(oh, bins) : histogram(oh, bins)).weights[1]
+    return (uf + ashMass) / total - q
+end
+
+"""
+    weightsVary(oh) -> Bool
+
+Whether the maps in `oh` have different weights: their effective sample size is
+then below the number of maps. Equal weights (e.g. an unweighted atlas, every
+weight 1) give the same weighted and unweighted results.
+"""
+weightsVary(oh::StreamHist) = effectivesamplesize(oh) < nobs(oh) * (1 - 1e-9)
+
+"""The quartiles of `oh` (unweighted, or `weighted`) and the largest disagreement of
+an in-range one with the ASH density (`nothing` if none could be checked)."""
+function quartiles(oh::StreamHist; weighted::Bool = false)
+    qs = Float64[]
+    worstGap = nothing
+    for q in (0.25, 0.5, 0.75)
+        x, inRange = histQuantile(oh, q; weighted = weighted)
+        push!(qs, x)
+        if inRange
+            gap = ashQuantileGap(oh, q, x; weighted = weighted)
+            if gap !== nothing && (worstGap === nothing || abs(gap) > abs(worstGap))
+                worstGap = gap
+            end
+        end
+    end
+    return qs, worstGap
 end
 
 """
@@ -89,41 +122,46 @@ end
 `mean`/`std`/`[min, 25%, median, 75%, max]` lines for one `StreamHist`, plus a
 warning line if too much of its data fell out of the histogram range
 (`OUTOFRANGE_WARN_FRAC`) and/or its worst quartile-vs-ASH disagreement exceeds
-`ASH_QUANTILE_WARN_TOL` (see `histQuantile`/`ashQuantileGap`).
+`ASH_QUANTILE_WARN_TOL` (see `histQuantile`/`ashQuantileGap`). When the maps'
+weights vary (`weightsVary`), the same lines for the weighted data follow, with the
+effective sample size, and the same warnings for it; when every weight is 0, a line
+saying so.
 """
 function fieldSummaryLines(oh::StreamHist)
     n = nobs(oh)
-    uf, of = outofrange(oh)
     mn, mx = datarange(oh)
+    lines = String[]
 
-    quartiles = Float64[]
-    worstGap = nothing
-    for q in (0.25, 0.5, 0.75)
-        x, inRange = histQuantile(oh, q)
-        push!(quartiles, x)
-        if inRange
-            gap = ashQuantileGap(oh, q, x)
-            if gap !== nothing && (worstGap === nothing || abs(gap) > abs(worstGap))
-                worstGap = gap
-            end
+    function summarize!(weighted)
+        qs, worstGap = quartiles(oh; weighted = weighted)
+        μ, σ = weighted ? (weightedMean(oh), weightedStd(oh)) : (mean(oh), std(oh))
+        label = weighted ? "weighted " : ""
+        push!(lines, "$(label)mean: $μ   $(label)std: $σ" *
+                     (weighted ? "   (effective sample size: $(effectivesamplesize(oh)) of $n maps)" : ""))
+        push!(lines, "$(label)[min, 25%, median, 75%, max]: [$mn, $(qs[1]), $(qs[2]), $(qs[3]), $mx]")
+
+        total = weighted ? totalweight(oh) : n
+        uf, of = weighted ? outofrangeweight(oh) : outofrange(oh)
+        oorFrac = total == 0 ? 0.0 : (uf + of) / total
+        if oorFrac > OUTOFRANGE_WARN_FRAC
+            what = weighted ? "of the weight" : "of points"
+            counts = weighted ? "underflow weight=$uf, overflow weight=$of of $total" :
+                                "underflow=$uf, overflow=$of of $n"
+            push!(lines, "WARNING: $(round(100 * oorFrac; digits = 1))% $what fell out of the " *
+                         "histogram range ($counts) -- tail quantile estimates may be inaccurate.")
+        end
+        if worstGap !== nothing && abs(worstGap) > ASH_QUANTILE_WARN_TOL
+            push!(lines, "WARNING: a $(label)quartile estimate disagrees with the $(label)ASH density by " *
+                         "$(round(100 * abs(worstGap); digits = 1)) percentage points -- the " *
+                         "within-bin interpolation may not fit this field's shape.")
         end
     end
 
-    lines = String[
-        "mean: $(mean(oh))   std: $(std(oh))",
-        "[min, 25%, median, 75%, max]: [$mn, $(quartiles[1]), $(quartiles[2]), $(quartiles[3]), $mx]",
-    ]
-
-    oorFrac = n == 0 ? 0.0 : (uf + of) / n
-    if oorFrac > OUTOFRANGE_WARN_FRAC
-        push!(lines, "WARNING: $(round(100 * oorFrac; digits = 1))% of points fell out of the " *
-                      "histogram range (underflow=$uf, overflow=$of of $n) -- tail quantile " *
-                      "estimates may be inaccurate.")
-    end
-    if worstGap !== nothing && abs(worstGap) > ASH_QUANTILE_WARN_TOL
-        push!(lines, "WARNING: a quartile estimate disagrees with the ASH density by " *
-                      "$(round(100 * abs(worstGap); digits = 1)) percentage points -- the " *
-                      "within-bin interpolation may not fit this field's shape.")
+    summarize!(false)
+    if totalweight(oh) == 0
+        push!(lines, "weighted: every map has weight 0, so there are no weighted statistics")
+    elseif weightsVary(oh)
+        summarize!(true)
     end
     return lines
 end
@@ -136,6 +174,8 @@ Print the number of maps considered, then for every map-data field of atlas
 `Atlas1`: `mean`, `std`, and `[min, 25% quartile, median, 75% quartile, max]`, each
 computed from a `StreamHist` (a `Vector{StreamHist}` per index for a vector
 field, with each map's vector sorted ascending first -- see `mapDataHistograms`).
+When the maps' weights vary, the weighted mean, std and quartiles (each map counting
+its weight) and the effective sample size follow (see `fieldSummaryLines`).
 `max_maps` (0 = unlimited, the default) considers only the atlas's first `n` maps.
 """
 function run_summarize_map_data(Atlas1::AbstractString; max_maps::Int = 0,

@@ -16,6 +16,8 @@ The package installs a single `atlas` command with seven subcommands:
 | `atlas relabel <Atlas1> <Atlas2> [<graph.json>] [--first-map] [--quiet] [--weight-population <pop.json> --population-attr <attr>]` | Relabel district numbers across every map in atlas `Atlas1` so consecutive maps stay as consistent as possible, writing the result to `Atlas2`. |
 | `atlas add <functions> <Atlas1> <Atlas2> [--config <param.toml>] [column flags] [--overwrite] [--quiet]` / `atlas add --list-writers` | Evaluate one or more CycleWalk "pushable writer" functions (e.g. `get_log_spanning_trees`) on every map in `Atlas1` and add the results to the map data, writing to `Atlas2`; `--list-writers` prints the usable writer function names instead. |
 | `atlas extract-map-data <Atlas1> [--add <functions>] [--no-compression] [--force] [column flags]` | Write each map-data field to its own CSV (one row per map) in a directory named after the atlas; `--add` also computes writer functions to extract. |
+| `atlas extract-map-data-histogram <Atlas1> [--burn-in n] [--bin-range lo,hi \| --bins edges] [--integer true\|false\|auto] [--add <functions>] [...]` | Accumulate each map-data field into a histogram (one per index for a vector field) and write its bins as CSV and its statistics, density-based counts and moment checks as JSON. |
+| `atlas summarize-map-data <Atlas1> [--max-maps n]` | Print each map-data field's mean, std and quartiles, and their weighted versions when the map weights vary. |
 | `atlas extract-assignments <Atlas1> [--graph <graph.json>] [--no-compression] [--force] [--quiet]` | Write a single wide CSV (`name`, then one column per node) with each map's per-node district number; multiscale atlases are written per finest unit (the graph's with `--graph`). |
 
 Run `atlas --help` or `atlas <subcommand> --help` for full option details.
@@ -359,9 +361,10 @@ cycleWalk_ct_slice/
   get_isoperimetric_scores.csv.gz
 ```
 
-Each map is one row. The first column is the map name; the remaining columns are
-the field's value — a scalar is a single column, a vector is one column per entry
-— under a header row (`name,get_isoperimetric_scores_1,get_isoperimetric_scores_2,…`).
+Each map is one row. The first column is the map name, then the field's value — a
+scalar is a single column, a vector is one column per entry — and last the map's
+weight, under a header row
+(`name,get_isoperimetric_scores_1,get_isoperimetric_scores_2,…,map_weight`).
 
 `about.md` describes the extraction: the source atlas name, the extraction date, and
 the atlas's header information — everything [`atlas info`](#atlas-info) prints except
@@ -385,6 +388,39 @@ atlas extract-map-data run.jsonl.gz \
 
 Without `--add`, no graph is needed — it simply streams the maps and dumps their
 existing data.
+
+### `atlas extract-map-data-histogram` and `atlas summarize-map-data`
+
+```bash
+atlas extract-map-data-histogram cycleWalk_ct_slice.jsonl.gz
+atlas summarize-map-data cycleWalk_ct_slice.jsonl.gz
+```
+
+`extract-map-data-histogram` accumulates each map-data field into a
+[StreamHistogram](https://github.com/jonmjonm/StreamHistogram.jl) (one per index
+for a vector field, each map's vector sorted first unless `--no-sort`) and writes,
+in the directory `extract-map-data` uses, a pair of files per field:
+
+- `<field>-histogram.csv.gz`: `index,edge_lo,edge_hi,exact_count,weight_sum`, the
+  exact bins: the number of maps in each bin and the sum of their weights;
+- `<field>-histogram.json.gz`: per index, the summary statistics (`nobs`,
+  `exact_min`/`exact_max`, `mean`, `std`, ...), the values outside the range
+  (`underflow`, `overflow`), the ASH density's expected count per bin
+  (`ash_count`), how well its moments match the exact ones (`relerr_moments`), and
+  the bin edges.
+
+`summarize-map-data` prints each field's mean, std and `[min, 25%, median, 75%,
+max]` instead, with warnings when many values fall outside the histogram range or
+a quartile disagrees with the density.
+
+**Map weights.** Each value is counted both once and with its map's weight, so
+weighted ensembles (e.g. importance-sampled CycleWalk runs) get weighted results
+without changing the unweighted ones. The JSON adds `total_weight`,
+`effective_sample_size` (Kish's `(Σw)²/Σw²`: how many equally weighted maps the
+sample is worth), `underflow_weight`/`overflow_weight`, `weighted_mean`,
+`weighted_std`, ..., `weighted_relerr_moments` and `ash_weight`. When the weights
+vary, `summarize-map-data` adds the weighted mean, std and quartiles with the
+effective sample size. A negative or non-finite weight is an error naming the map.
 
 ### `atlas extract-assignments`
 
