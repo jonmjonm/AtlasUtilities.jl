@@ -24,6 +24,9 @@ here).
 
 ### Installing the `atlas` command
 
+- StreamHistogram comes from the General registry (compat `"0.2.1"`, for its quantiles) instead of by URL from a
+  `[sources]` table, so installing from GitHub (`Pkg.add(url = ...)`) works on every supported Julia, not only
+  1.13 and later. CI tests Julia 1.10 too.
 - `deps/build.jl` builds the command's environment in a new directory and swaps it in only on success: a failed
   build used to delete the environment first, leaving `atlas` broken and its plotting packages gone.
 - The build ignores the checkout's own `Manifest.toml` (not in git) while it resolves. A stale one pinned
