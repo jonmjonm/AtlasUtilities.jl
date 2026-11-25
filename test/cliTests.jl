@@ -92,8 +92,8 @@ mapsof(path) = (io = smartOpen(path, "r"); a = openAtlas(io); ms = Map[]; while 
                        "--no-compression", "--quiet")[1] == 0
         h = hist(out)
         @test h["moment_powers"] == [1, 2]
-        # powers up to 2: variance is computed; skewness and kurtosis (orders 3, 4) are null, not an error
-        @test all(x["variance"] isa Real && x["skewness"] === nothing && x["kurtosis"] === nothing
+        # powers up to 2: variance is computed; skewness and excess kurtosis (orders 3, 4) are null, not an error
+        @test all(x["variance"] isa Real && x["skewness"] === nothing && x["excess_kurtosis"] === nothing
                   for x in values(h["histograms"]))
         @test all(length(x["edges"]) == 4 for x in values(h["histograms"]))     # 3 bins -> 4 edges
         @test all(x["edges"] == [0, 250, 500, 1000] for x in values(h["histograms"]))
@@ -102,7 +102,8 @@ mapsof(path) = (io = smartOpen(path, "r"); a = openAtlas(io); ms = Map[]; while 
                        "--no-compression", "--force", "--quiet")[1] == 0
         h = hist(out)
         @test h["moment_powers"] == [1, 2, 4, 8]                                # the default
-        @test all(x["skewness"] isa Real && x["kurtosis"] isa Real for x in values(h["histograms"]))
+        @test all(x["skewness"] isa Real && x["excess_kurtosis"] isa Real for x in values(h["histograms"]))
+        @test !any(haskey(x, "kurtosis") || haskey(x, "weighted_kurtosis") for x in values(h["histograms"]))
         @test all(length(x["edges"]) == 11 && first(x["edges"]) == 0 && last(x["edges"]) == 1000
                   for x in values(h["histograms"]))                             # --bin-num 10
 

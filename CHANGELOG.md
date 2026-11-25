@@ -41,7 +41,7 @@ value is counted both once and with its map's weight.
   - the CSV gains a last column, `weight_sum`: each bin's sum of map weights, next to `exact_count`;
   - the JSON gains, per histogram: `total_weight`, `effective_sample_size` (Kish's `(Σw)²/Σw²`),
     `underflow_weight` and `overflow_weight`, `weighted_mean`, `weighted_variance`, `weighted_std`,
-    `weighted_skewness`, `weighted_kurtosis`, `weighted_relerr_moments` and `ash_weight` (the weighted ASH
+    `weighted_skewness`, `weighted_excess_kurtosis`, `weighted_relerr_moments` and `ash_weight` (the weighted ASH
     density's expected weight per bin, next to `ash_count`).
 - `summarize-map-data`: when the maps' weights vary, each field also gets the weighted mean, std and quartiles,
   with its effective sample size and the same warnings. Unweighted atlases (or equal weights) print what they
@@ -49,7 +49,11 @@ value is counted both once and with its map's weight.
 - `extract-map-data`: every CSV gains a last column, `map_weight`, so existing
   readers see the field columns where they were.
 - A map whose weight is negative or not finite stops these commands with an error naming the map.
-- StreamHistogram 0.2 (compat `"0.2"`). It also fixes the ASH-derived counts (`ash_count`) when some values fall
+- **Breaking: the JSON's `kurtosis` field is now `excess_kurtosis`**, the kurtosis minus 3 (0 for a normal), as
+  StreamHistogram 0.2.1 and StatsBase compute it; it was the kurtosis itself, 3 for a normal. Renamed, not just
+  changed, so a reader of the old field fails loudly instead of being 3 off. The weighted one is
+  `weighted_excess_kurtosis`.
+- StreamHistogram 0.2.1 or later 0.2.x (compat `"0.2.1"`), for the excess kurtosis. It also fixes the ASH-derived counts (`ash_count`) when some values fall
   outside the histogram's range: they were scaled by every value, not only those in range.
 - New `test/weightsTests.jl`: the weighted results are those of the weighted map values, the unweighted ones
   don't change, an integer weight `k` counts like the map repeated `k` times, and the CSV, JSON and summary

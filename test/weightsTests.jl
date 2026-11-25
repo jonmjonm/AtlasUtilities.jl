@@ -116,7 +116,7 @@ everyHist(hs) = [(f, j, oh) for f in sort(collect(keys(hs)))
                     @test h["effective_sample_size"] ≈ effectivesamplesize(oh)
                     @test h["weighted_mean"] ≈ weightedMean(oh)
                     @test h["weighted_std"] ≈ weightedStd(oh)
-                    @test h["weighted_kurtosis"] ≈ weightedKurtosis(oh)
+                    @test h["weighted_excess_kurtosis"] ≈ weightedKurtosis(oh)
                     @test Set(keys(h["weighted_relerr_moments"])) == Set(string.(oh.momentPowers))
                     @test length(h["ash_weight"]) == length(h["ash_count"]) == length(h["edges"]) - 1
                     @test sum(h["ash_weight"]) ≈ h["total_weight"] - h["underflow_weight"] - h["overflow_weight"]
