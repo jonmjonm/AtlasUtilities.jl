@@ -184,7 +184,6 @@ function run_extract(Atlas1::AbstractString;
     ext = (max_maps > 0 ? "-partial" : "") * (compress ? ".csv.gz" : ".csv")
 
     atlas = openAtlas(smartOpen(String(Atlas1), "r"))
-    mpt, wt = atlas.mapParamType, atlas.weightType
     if eof(atlas)
         close(atlas)
         println("atlas extract-map-data: $Atlas1 has no maps; nothing written.")
@@ -241,45 +240,29 @@ function run_extract(Atlas1::AbstractString;
         return nothing
     end
 
-    # --- stream the remaining maps in batches ---------------------------------
-    # Read serially, then per map parse + compute (--add) + render each field's row
-    # in parallel, then write the rows to their streams serially in map order.
+    # --- stream the remaining maps --------------------------------------------
+    # Per map, parse + compute (--add) + render each field's row in parallel (AtlasIO's
+    # `eachMap(f, ...)`), then write the rows to their streams serially in map order.
     #
     # `activeFns` empty means no writer will actually be evaluated this run (either
     # no `--add` was given, or every requested field was skipped as already
-    # existing), so `computeAdded` never touches `m.districting` -- parse a
+    # existing), so `computeAdded` never touches `m.districting` -- read a
     # `MapData` instead of a full `Map` to skip reconstructing it, which otherwise
     # dominates the parse cost (see AtlasIO's `MapData`).
-    # (Named `parseLine`, not `parseMap`: AtlasIO exports a `parseMap` function, which
-    # a local variable of the same name would shadow inside the closure below.)
-    parseLine = isempty(activeFns) ? (line -> parseMapData(line, mpt, wt)) :
-                                     (line -> parseMap(line, mpt, wt))
+    rowsOf(m) = begin
+        added = computeAdded(m)
+        [valueRow(m.name, valueOf(m, field, added), width, m.weight) for (field, _, width) in streams]
+    end
+    each = isempty(activeFns) ? eachMapData : eachMap
     progress = quiet ? nothing :
                ProgressUnknown(desc = "Extracting map data:", spinner = true)
     written = 1
-    remaining() = max_maps == 0 ? typemax(Int) : max_maps - written
     with_serial_blas() do
-        while !eof(atlas) && remaining() > 0
-            lines = readBatch(atlas.io, min(BATCH, remaining()))
-            n = length(lines)
-            n == 0 && break
-
-            # rows[i][k] is map i's row string for stream k.
-            rows = Vector{Vector{String}}(undef, n)
-            parallelDo!(n, cores) do i
-                m = parseLine(lines[i])
-                added = computeAdded(m)
-                rr = Vector{String}(undef, length(streams))
-                for (k, (field, _, width)) in enumerate(streams)
-                    rr[k] = valueRow(m.name, valueOf(m, field, added), width, m.weight)
-                end
-                rows[i] = rr
+        for rows in each(rowsOf, atlas; max = max_maps == 0 ? typemax(Int) : max_maps - 1, ntasks = cores)
+            for k in eachindex(streams)
+                write(streams[k][2], rows[k])
             end
-
-            for i in 1:n, k in eachindex(streams)
-                write(streams[k][2], rows[i][k])
-            end
-            written += n
+            written += 1
             progress === nothing ||
                 next!(progress; showvalues = [("maps written", written)])
         end

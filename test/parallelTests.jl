@@ -13,7 +13,7 @@
 
 using Test
 using AtlasIO
-using AtlasUtilities: run_add, run_extract
+using AtlasUtilities: run_add, run_extract, run_extract_assignments
 
 const RTOL = 1e-10   # observed threading/serial nondeterminism is ~1e-15
 
@@ -82,5 +82,26 @@ asvec(x) = x isa AbstractVector ? Float64.(x) : [Float64(x)]
                 @test approxvals(r1, r4)
             end
         end
+    end
+
+    @testset "extract-assignments: cores=1 vs cores=4" begin
+        outs = map((1, 4)) do cores
+            d = mktempdir()
+            p = joinpath(d, "run.jsonl.gz"); cp(src, p)
+            run_extract_assignments(p; compress = false, quiet = true, cores = cores)
+            read(joinpath(d, "run-assignments.csv"), String)
+        end
+        @test outs[1] == outs[2] && count('\n', outs[1]) == length(readmaps(src)) + 1
+    end
+
+    @testset "a malformed map line stops add and extract at that map (cores=$cores)" for cores in (1, 4)
+        lines = readlines(smartOpen(src, "r"))
+        lines[3 + 4] = "{\"name\": broken"                  # map 4 of the slice
+        d = mktempdir()
+        bad = joinpath(d, "bad.jsonl")
+        write(bad, join(lines, "\n") * "\n")
+        @test_throws AtlasFormatError run_add(funcs, bad, joinpath(d, "out.jsonl"); gargs..., overwrite = true,
+                                              quiet = true, cores = cores)
+        @test_throws AtlasFormatError run_extract(bad; force = true, quiet = true, cores = cores)
     end
 end

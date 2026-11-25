@@ -1,27 +1,30 @@
-# threading.jl -- small batched-parallelism helpers shared by the map-processing
-# subcommands (`relabel`, `add`, `extract-map-data`).
-#
-# The common pattern is: read a batch of map lines serially, do the per-map work
-# (parse / reconstruct / evaluate / serialize) in parallel across `cores` tasks
-# into preallocated per-index storage, then consume the results serially in map
-# order. `cores` defaults to the threads Julia was started with, so `cores == 1`
-# is a clean serial fallback and the same code path serves both.
+# threading.jl -- small parallelism helpers. Reading an atlas's maps in parallel is AtlasIO's `eachMap(f, ...)`
+# (run with `ntasks = cores`); `parallelDo!` is for the rest (`relabel`, `computeWriters` on maps in memory).
 
-# Maps processed per batch. Large enough to amortize task overhead, small enough
-# to bound memory (a batch of parsed maps -- or reconstructed partitions -- is
-# held at once).
+# Maps processed per batch, where a command still batches: the maps it writes with `writeMaps!` (parallel gzip),
+# the values it adds to histograms at once, and `relabel`. Large enough to amortize the per-batch work, small
+# enough to bound memory.
 const BATCH = 512
 
-"""Read up to `cap` lines from `io` (fewer if `eof(io)` is reached first). `cap`
-defaults to `BATCH`; pass a smaller value to stop short of a full batch (e.g. a
-`--max-maps` limit close to being reached)."""
-function readBatch(io, cap::Int = BATCH)
-    lines = String[]
-    while length(lines) < cap && !eof(io)
-        push!(lines, readline(io))
-    end
-    return lines
+# Errors meant for the user, from a function run on each map in AtlasIO's `eachMap(f, ...)`. `eachMap` raises an
+# error from `f` after an `@error` log with the backtrace, which helps with an unexpected failure (a writer bug)
+# but is noise for a message meant for the user. So `captureErrors(f)` returns the error as a value, and the loop
+# raises it with `raiseCaptured`, as itself.
+struct CapturedError
+    exception::Any
 end
+
+"`f`, returning a `CapturedError` instead of throwing."
+captureErrors(f) = function (m)
+    try
+        return f(m)
+    catch e
+        return CapturedError(e)
+    end
+end
+
+"Raise the error `r` holds, if `r` is a `CapturedError`."
+raiseCaptured(r) = r isa CapturedError ? throw(r.exception) : nothing
 
 """Split `1:n` into at most `k` contiguous ranges (one per task)."""
 function chunkranges(n::Int, k::Int)

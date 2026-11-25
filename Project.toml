@@ -30,7 +30,7 @@ AtlasUtilitiesRenderExt = ["CairoMakie", "Colors", "LibGEOS", "Makie", "Shapefil
 StreamHistogram = {url = "https://github.com/jonmjonm/StreamHistogram.jl"}
 
 [compat]
-AtlasIO = "0.2.2"
+AtlasIO = "0.2.5"
 CairoMakie = "0.15"
 Colors = "0.13"
 Comonicon = "1.0.8"
