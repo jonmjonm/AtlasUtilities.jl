@@ -143,15 +143,20 @@ mapsof(path) = (io = smartOpen(path, "r"); a = openAtlas(io); ms = Map[]; while 
         @test atlascli("add", "get_partisan_margins", ct, a2, flags...)[1] == 0
         @test all(haskey(m.data, field) for m in mapsof(a2))
 
-        # a2 already has the field: without --overwrite, add stops and names the map and the field
-        err = try
-            atlascli("add", "get_partisan_margins", a2, a3, flags...)
-            nothing
-        catch e
-            e
+        # a2 already has the field: without --overwrite, add stops and names the (first) map and the field, with
+        # no error log before the message (it is meant for the user, not a writer failure)
+        logs, err = Test.collect_test_logs() do
+            try
+                atlascli("add", "get_partisan_margins", a2, a3, flags...)
+                nothing
+            catch e
+                e
+            end
         end
         @test err isa ErrorException
         @test occursin("already has field \"$field\"", err.msg) && occursin("--overwrite", err.msg)
+        @test occursin("map \"$(first(mapsof(a2)).name)\"", err.msg)
+        @test !any(l -> l.level >= Base.CoreLogging.Error, logs)
 
         @test atlascli("add", "get_partisan_margins", a2, a3, flags..., "--overwrite")[1] == 0
         @test [m.data[field] for m in mapsof(a3)] == [m.data[field] for m in mapsof(a2)]

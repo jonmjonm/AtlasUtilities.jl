@@ -73,6 +73,22 @@ value is counted both once and with its map's weight.
 - Multi-component node ids that are the same in every map were rejected before; they are now written like any
   others.
 
+### Reading maps with AtlasIO's `eachMap`
+
+- `extract-map-data`, `extract-map-data-histogram`, `extract-assignments` and `add` read and process the maps
+  with AtlasIO 0.2.5's `eachMap(f, ...)` (compat `"0.2.5"`) instead of their own batches: the per-map work runs
+  in its parallel tasks, each taking the next map as it finishes one, so a slow map no longer holds up a whole
+  batch. `relabel` keeps its own batches (its relabeling is a serial chain).
+- An error is now raised at the first map in file order that fails (it used to be the first task that failed),
+  and each map line is checked against the format version in the header, as AtlasIO's readers do.
+- An unexpected error inside a writer is logged by AtlasIO, naming the map, with the backtrace from inside the
+  writer, before it is raised. Errors meant for the user (a field `add` would overwrite, a map that doesn't fit
+  `extract-assignments`' columns) are raised without that log.
+- Progress bars update per map.
+- **`computeWriters(ws, path)`** (or an open `Atlas`; keywords `cores`, `skip`, `max`): the writers on every map
+  of an atlas file, streamed, giving `(name, weight, values)` per map in file order.
+- `readBatch` is gone; `parallelDo!` remains for `relabel` and `computeWriters` on maps in memory.
+
 ### Format version, parallel errors, tests
 
 - `atlas info` (and the `about.md` written by `extract-map-data`) shows the atlas's **format version** (`"1"` or

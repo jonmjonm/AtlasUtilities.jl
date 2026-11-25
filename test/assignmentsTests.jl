@@ -77,8 +77,11 @@ readlines_(path) = filter(!isempty, split(read(path, String), '\n'))
         ])
 
         # The node sets differ, so the finest regions seen (a, b, c) become the columns; m1 covers no "c".
-        err = try run_extract_assignments(path; compress = false, quiet = true); nothing catch e; e end
+        logs, err = Test.collect_test_logs() do
+            try run_extract_assignments(path; compress = false, quiet = true); nothing catch e; e end
+        end
         @test err isa ErrorException && occursin("map \"m1\" assigns no district to \"c\"", err.msg)
+        @test !any(l -> l.level >= Base.CoreLogging.Error, logs)    # an error for the user: no AtlasIO log
         @test !isfile(joinpath(dir, "a-assignments.csv"))
         @test !isfile(joinpath(dir, "a-assignments.tmp.csv"))
         @test isempty(filter(f -> occursin("assignments", f), readdir(dir)))
@@ -107,10 +110,13 @@ readlines_(path) = filter(!isempty, split(read(path, String), '\n'))
         dir = mktempdir()
         path = joinpath(dir, "ms.jsonl")
         writeAssignmentsAtlas(path, multiscale; params = levelsParams)
-        out = capture_stdout() do
-            run_extract_assignments(path; compress = false)
+        logs, out = Test.collect_test_logs() do
+            capture_stdout() do
+                run_extract_assignments(path; compress = false)
+            end
         end
         @test occursin("multiscale", out) && occursin("finest regions seen in the atlas", out)
+        @test !any(l -> l.level >= Base.CoreLogging.Error, logs)    # the restart on a node-set change is silent
         # X:1 X:2 Y:1 Y:2 are finest; Z is never split, so it stays one column
         @test readlines_(joinpath(dir, "ms-assignments.csv")) ==
               ["name,X:1,X:2,Y:1,Y:2,Z", "m1,1,1,1,2,2", "m2,2,1,2,2,1"]

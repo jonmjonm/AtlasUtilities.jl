@@ -198,13 +198,16 @@ everyHist(hs) = [(f, j, oh) for f in sort(collect(keys(hs)))
         for bad in (1, 3)                            # the first map is read apart from the rest
             path = reweighted(k -> k == bad ? -1.0 : 1.0)
             name = allmaps(path)[bad].name
-            err = try
-                mapDataHistograms(path; quiet = true)
-                nothing
-            catch e
-                e
+            logs, err = Test.collect_test_logs() do
+                try
+                    mapDataHistograms(path; quiet = true)
+                    nothing
+                catch e
+                    e
+                end
             end
             @test err !== nothing
+            @test !any(l -> l.level >= Base.CoreLogging.Error, logs)    # meant for the user: no AtlasIO log
             msg = sprint(showerror, err)
             @test occursin("map \"$name\" has weight -1.0", msg) && occursin("nonnegative", msg)
         end
