@@ -272,7 +272,7 @@ suitable for `JSON.json`: summary statistics, moment errors, whether it learned
 integer-ness, its bin edges and ASH-density-derived counts (`nothing` in `integer`
 mode), and the same for the weighted data (`total_weight`, `effective_sample_size`,
 `underflow_weight`/`overflow_weight`, `weighted_*`, `ash_weight`). A statistic needs
-moments up to its order -- variance and std 2, skewness 3, kurtosis 4 -- and a
+moments up to its order -- variance and std 2, skewness 3, excess kurtosis 4 -- and a
 `StreamHist` tracks them only up to its highest moment power, so a lower
 `--moment-powers` gives `nothing` (null) for the ones it cannot compute."""
 function histSummaryDict(oh::StreamHist)
@@ -288,7 +288,7 @@ function histSummaryDict(oh::StreamHist)
         "nobs" => nobs(oh), "underflow" => uf, "overflow" => of,
         "exact_min" => jsonFloat(mn), "exact_max" => jsonFloat(mx),
         "mean" => jsonFloat(mean(oh)), "variance" => upto(2, variance), "std" => upto(2, std),
-        "skewness" => upto(3, skewness), "kurtosis" => upto(4, kurtosis),
+        "skewness" => upto(3, skewness), "excess_kurtosis" => upto(4, kurtosis),
         "integer" => oh.integer,
         "relerr_moments" => relerrDict(oh.integer ? nothing : densityQuality(oh)),
         "edges" => jsonFloat.(b.edges), "ash_count" => b.ashCounts,
@@ -296,7 +296,7 @@ function histSummaryDict(oh::StreamHist)
         "underflow_weight" => ufw, "overflow_weight" => ofw,
         "weighted_mean" => jsonFloat(weightedMean(oh)), "weighted_variance" => upto(2, weightedVariance),
         "weighted_std" => upto(2, weightedStd), "weighted_skewness" => upto(3, weightedSkewness),
-        "weighted_kurtosis" => upto(4, weightedKurtosis),
+        "weighted_excess_kurtosis" => upto(4, weightedKurtosis),
         "weighted_relerr_moments" => relerrDict(oh.integer ? nothing : weightedDensityQuality(oh)),
         "ash_weight" => b.ashWeights)
 end
