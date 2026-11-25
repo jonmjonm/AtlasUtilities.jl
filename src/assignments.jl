@@ -165,30 +165,22 @@ function eachAssignmentRow(Atlas1::String; graph::Union{AbstractString,Nothing},
 end
 
 """`consume(render(m.name, m.weight, districtsOf(m)))` for every map of `Atlas1`, in order (`districtsOf` and
-`render` run in parallel batches). Returns the number of maps."""
+`render` run in parallel, in AtlasIO's `eachMap`). Returns the number of maps. An error from `districtsOf` (a
+`NodeSetChanged`, or a map that doesn't fit the units) is raised here, as itself."""
 function readAssignmentRows(districtsOf, render, consume, Atlas1::String, quiet::Bool, cores::Int)
-    atlas = openAtlas(smartOpen(Atlas1, "r"))
-    mpt, wt = atlas.mapParamType, atlas.weightType
     count = 0
-    try
-        progress = quiet ? nothing : ProgressUnknown(desc = "Reading district assignments:", spinner = true)
-        while !eof(atlas)
-            lines = readBatch(atlas.io)
-            n = length(lines)
-            n == 0 && break
-            rendered = Vector{Any}(undef, n)
-            parallelDo!(n, cores) do i
-                m = parseMap(lines[i], mpt, wt)
-                rendered[i] = render(m.name, Float64(m.weight), districtsOf(m))
-            end
-            foreach(consume, rendered)
-            count += n
+    progress = quiet ? nothing : ProgressUnknown(desc = "Reading district assignments:", spinner = true)
+    openAtlas(Atlas1) do atlas
+        rows = eachMap(captureErrors(m -> render(m.name, Float64(m.weight), districtsOf(m))), atlas;
+                       ntasks = cores)
+        for r in rows
+            raiseCaptured(r)
+            consume(r)
+            count += 1
             progress === nothing || next!(progress; showvalues = [("maps read", count)])
         end
-        progress === nothing || finish!(progress; showvalues = [("maps read", count)])
-    finally
-        close(atlas)
     end
+    progress === nothing || finish!(progress; showvalues = [("maps read", count)])
     return count
 end
 
@@ -224,21 +216,9 @@ end
 
 "Every node key used by any map of `Atlas1`."
 function atlasKeys(Atlas1::String, cores::Int)
-    atlas = openAtlas(smartOpen(Atlas1, "r"))
-    mpt, wt = atlas.mapParamType, atlas.weightType
     allKeys = Set{Tuple{Vararg{String}}}()
-    try
-        while !eof(atlas)
-            lines = readBatch(atlas.io)
-            isempty(lines) && break
-            keysets = Vector{Vector{Tuple{Vararg{String}}}}(undef, length(lines))
-            parallelDo!(length(lines), cores) do i
-                keysets[i] = collect(keys(parseMap(lines[i], mpt, wt).districting))
-            end
-            foreach(ks -> union!(allKeys, ks), keysets)
-        end
-    finally
-        close(atlas)
+    for ks in eachMap(m -> collect(keys(m.districting)), Atlas1; ntasks = cores)
+        union!(allKeys, ks)
     end
     return allKeys
 end

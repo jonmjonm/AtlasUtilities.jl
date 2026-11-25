@@ -86,7 +86,6 @@ function mapDataHistograms(Atlas1::AbstractString;
     valueOf(m, field, added) = field in addedSet ? added[field] : get(m.data, field, nothing)
 
     atlas = openAtlas(smartOpen(String(Atlas1), "r"))
-    mpt, wt = atlas.mapParamType, atlas.weightType
 
     n_burned = 0
     try
@@ -141,58 +140,65 @@ function mapDataHistograms(Atlas1::AbstractString;
 
     feedRow!([extractVals(valueOf(first, f, firstAdded)) for f in fieldNames], mapWeight(first))
 
-    # `fns` empty means `computeAdded` never touches `m.districting` (it
-    # short-circuits to an empty dict), so parse a `MapData` instead of a full
-    # `Map` to skip reconstructing districting, which otherwise dominates the
-    # parse cost (see AtlasIO's `MapData`).
-    # (Named `parseLine`, not `parseMap`: AtlasIO exports a `parseMap` function, which
-    # a local variable of the same name would shadow inside the closure below.)
-    parseLine = isempty(fns) ? (line -> parseMapData(line, mpt, wt)) :
-                               (line -> parseMap(line, mpt, wt))
+    # Per map, parse + compute (--add) + extract the values in parallel (AtlasIO's
+    # `eachMap(f, ...)`). `fns` empty means `computeAdded` never touches
+    # `m.districting` (it short-circuits to an empty dict), so read a `MapData`
+    # instead of a full `Map` to skip reconstructing districting, which otherwise
+    # dominates the parse cost (see AtlasIO's `MapData`).
+    # A map with a bad weight is an error meant for the user: returned as a
+    # `CapturedError` and raised in the loop below, without AtlasIO's error log.
+    valuesOf(m) = begin
+        w = try
+            mapWeight(m)
+        catch e
+            return CapturedError(e)
+        end
+        added = computeAdded(m)
+        ([extractVals(valueOf(m, field, added)) for field in fieldNames], w)
+    end
+    each = isempty(fns) ? eachMapData : eachMap
     progress = quiet ? nothing :
                ProgressUnknown(desc = "Building histograms:", spinner = true)
     written = 1                    # maps accumulated past burn-in (for --max-maps)
     processed = 1 + n_burned       # total maps read from the start (for the progress bar)
-    remaining() = max_maps == 0 ? typemax(Int) : max_maps - written
-    with_serial_blas() do
-        while !eof(atlas) && remaining() > 0
-            lines = readBatch(atlas.io, min(BATCH, remaining()))
-            n = length(lines)
-            n == 0 && break
 
-            # rows[i][k] is map i's extracted (flattened, possibly sorted) value
-            # vector for field k; ws[i] is map i's weight.
-            rows = Vector{Vector{Vector{Float64}}}(undef, n)
-            ws = Vector{Float64}(undef, n)
-            parallelDo!(n, cores) do i
-                m = parseLine(lines[i])
-                added = computeAdded(m)
-                rows[i] = [extractVals(valueOf(m, field, added)) for field in fieldNames]
-                ws[i] = mapWeight(m)
-            end
-
-            # Order does not matter for histogram accumulation (unlike the CSV
-            # writer, which must preserve map order), so rather than feed map by
-            # map, transpose to one batch `add!` per (field, index) across the
-            # whole read batch -- far cheaper than one scalar `add!` per map.
-            for k in eachindex(fieldNames)
-                if widths[k] == 1
-                    has = [i for i in 1:n if !isempty(rows[i][k])]
-                    isempty(has) || add!(hists[k]::StreamHist, [rows[i][k][1] for i in has], ws[has])
-                else
-                    hv = hists[k]::Vector{StreamHist}
-                    for j in 1:widths[k]
-                        has = [i for i in 1:n if length(rows[i][k]) >= j]
-                        isempty(has) || add!(hv[j], [rows[i][k][j] for i in has], ws[has])
-                    end
+    # rows[i][k] is buffered map i's extracted (flattened, possibly sorted) value
+    # vector for field k; ws[i] is its weight. Order does not matter for histogram
+    # accumulation (unlike the CSV writer, which must preserve map order), so rather
+    # than feed map by map, transpose BATCH maps at a time to one batch `add!` per
+    # (field, index) -- far cheaper than one scalar `add!` per map.
+    rows = Vector{Vector{Float64}}[]
+    ws = Float64[]
+    function flush!()
+        n = length(rows)
+        for k in eachindex(fieldNames)
+            if widths[k] == 1
+                has = [i for i in 1:n if !isempty(rows[i][k])]
+                isempty(has) || add!(hists[k]::StreamHist, [rows[i][k][1] for i in has], ws[has])
+            else
+                hv = hists[k]::Vector{StreamHist}
+                for j in 1:widths[k]
+                    has = [i for i in 1:n if length(rows[i][k]) >= j]
+                    isempty(has) || add!(hv[j], [rows[i][k][j] for i in has], ws[has])
                 end
             end
-
-            written += n
-            processed += n
+        end
+        empty!(rows)
+        empty!(ws)
+    end
+    with_serial_blas() do
+        for r in each(valuesOf, atlas; max = max_maps == 0 ? typemax(Int) : max_maps - 1, ntasks = cores)
+            raiseCaptured(r)
+            rr, w = r
+            push!(rows, rr)
+            push!(ws, w)
+            length(rows) == BATCH && flush!()
+            written += 1
+            processed += 1
             progress === nothing ||
                 next!(progress; showvalues = [("maps processed", processed)])
         end
+        flush!()
     end
     progress === nothing ||
         finish!(progress; showvalues = [("maps processed", processed)])

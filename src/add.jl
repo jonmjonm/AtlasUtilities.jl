@@ -580,58 +580,46 @@ function run_add(functions::AbstractString, Atlas1::AbstractString, Atlas2::Abst
 
     inIO = smartOpen(String(Atlas1), "r")
     atlas = openAtlas(inIO)
-    mpt, wt = atlas.mapParamType, atlas.weightType
     fv = atlas.formatVersion    # Atlas2's header comes from Atlas1's, so its maps must be in the same version
 
     progress = quiet ? nothing :
                ProgressUnknown(desc = "Adding map data:", spinner = true)
     written = 0
 
-    # Process maps in batches: read serially, then parse + reconstruct + evaluate +
-    # serialize each map in parallel (into preallocated per-index slots), then write
-    # the serialized bytes to Atlas2 serially in map order.
+    # Per map, parse + reconstruct + evaluate + serialize in parallel (AtlasIO's
+    # `eachMap(f, ...)`), then write the serialized bytes to Atlas2 in map order,
+    # BATCH maps per `writeMaps!` (which gzips a batch in parallel). A field that is
+    # already there (without --overwrite) is an error meant for the user: it is
+    # returned as a `CapturedError` and raised here, at the first such map.
+    function addTo(m)
+        if !overwrite
+            for (desc, _) in fns
+                haskey(m.data, desc) &&
+                    return CapturedError(ErrorException("atlas add: map \"$(m.name)\" already has field " *
+                                                        "\"$desc\"; pass --overwrite to recompute it."))
+            end
+        end
+        for (desc, val) in evalWriters(g, m, fns; treeless = treeless)
+            m.data[desc] = val
+        end
+        buf = IOBuffer()
+        addMap(buf, m; formatVersion = fv)
+        return take!(buf)
+    end
+    bytes = Vector{UInt8}[]
     with_serial_blas() do
-        while !eof(atlas)
-            lines = String[]
-            while length(lines) < BATCH && !eof(atlas)
-                push!(lines, readline(atlas.io))
+        for b in eachMap(addTo, atlas; ntasks = cores)
+            raiseCaptured(b)
+            push!(bytes, b)
+            if length(bytes) == BATCH
+                writeMaps!(outIO, bytes)
+                empty!(bytes)
             end
-            n = length(lines)
-            n == 0 && break
-
-            bytes = Vector{Vector{UInt8}}(undef, n)
-            conflict = Vector{Union{Nothing,Tuple{String,String}}}(nothing, n)
-            parallelDo!(n, cores) do i
-                m = parseMap(lines[i], mpt, wt)
-                if !overwrite
-                    for (desc, _) in fns
-                        if haskey(m.data, desc)
-                            conflict[i] = (m.name, desc)
-                            return
-                        end
-                    end
-                end
-                for (desc, val) in evalWriters(g, m, fns; treeless = treeless)
-                    m.data[desc] = val
-                end
-                buf = IOBuffer()
-                addMap(buf, m; formatVersion = fv)
-                bytes[i] = take!(buf)
-            end
-
-            # Report the first field collision in reading order (if any).
-            c = findfirst(!isnothing, conflict)
-            if c !== nothing
-                name, desc = conflict[c]
-                error("atlas add: map \"$name\" already has field \"$desc\"; " *
-                      "pass --overwrite to recompute it.")
-            end
-
-            writeMaps!(outIO, bytes)
-            written += n
+            written += 1
             progress === nothing ||
                 next!(progress; showvalues = [("maps written", written)])
         end
+        isempty(bytes) || writeMaps!(outIO, bytes)
     end
     progress === nothing ||
         finish!(progress; showvalues = [("maps written", written)])
