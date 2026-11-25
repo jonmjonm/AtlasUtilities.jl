@@ -239,6 +239,8 @@ WriterSet(functions; config = "", graph = "", pop_col = "", node_col = "", area_
           border_col = "", edge_perimeter_col = "", node_data = "", vote_cols = "")
 computeWriters(ws, m::Map) -> Dict{String,Any}
 computeWriters(ws, maps::AbstractVector{<:Map}; cores = Threads.nthreads()) -> Vector{Dict{String,Any}}
+computeWriters(ws, path::AbstractString; cores = Threads.nthreads(), skip = 0, max = typemax(Int))
+    -> iterator of (name, weight, values::Dict{String,Any})
 writerFields(ws) -> Vector{String}
 listWriters() -> Vector{String}
 ```
@@ -246,7 +248,9 @@ listWriters() -> Vector{String}
 The library form of `atlas add`: it computes CycleWalk writer statistics on maps in
 memory instead of writing them into a new atlas. A `WriterSet` resolves the writer
 functions and builds the dual graph once; `computeWriters` evaluates them on one
-map, or on a vector of maps in parallel. Each field's value is a per-district vector
+map, on a vector of maps in parallel, or on every map of an atlas file, streamed (read
+and evaluated in parallel with AtlasIO's `eachMap`, without holding the atlas in
+memory; run it with `BLAS.set_num_threads(1)` when using several threads). Each field's value is a per-district vector
 indexed by the map's own district numbers (entry `i` describes district `i` of
 `m.districting`), or a scalar, exactly as `atlas add` writes it.
 
@@ -272,10 +276,12 @@ ws = WriterSet(["get_log_spanning_trees", "get_isoperimetric_scores", "get_parti
                graph = "CT_pct20.json", pop_col = "POP20", node_col = "NAME", area_col = "area",
                border_col = "border_length", edge_perimeter_col = "length",
                vote_cols = "G20PREDEM,G20PREREP")
-io = smartOpen("atlas.jsonl.gz", "r"); a = openAtlas(io)
-maps = Map[]; while !eof(a) push!(maps, nextMap(a)) end; close(io)
+maps = collect(eachMap("atlas.jsonl.gz"))
 stats = computeWriters(ws, maps)               # one Dict per map, in parallel
 stats[1]["get_partisan_margins_G20PREDEM_G20PREREP"]   # district 1's margin first
+for r in computeWriters(ws, "atlas.jsonl.gz")  # streamed from the file, in parallel, in file order
+    println(r.name, " ", r.values["get_log_spanning_trees"])
+end
 ```
 
 ### `assignmentMatrix`

@@ -97,4 +97,21 @@ sameResults(a::Vector, b::Vector) = length(a) == length(b) && all(sameResults(x,
         @test err isa ErrorException && occursin("graph =", err.msg) && !occursin("atlas add", err.msg)
         @test_throws ErrorException WriterSet(String[]; CT_COLS...)
     end
+
+    @testset "computeWriters(ws, path): streamed from the file, in order" begin
+        ws = WriterSet("get_log_spanning_trees,get_isoperimetric_scores"; CT_COLS...)
+        expected = computeWriters(ws, maps; cores = 1)
+        for cores in (1, 2, 4)
+            got = collect(computeWriters(ws, WCT_ATLAS; cores = cores))
+            @test [r.name for r in got] == [m.name for m in maps]
+            @test [r.weight for r in got] == [m.weight for m in maps]
+            @test sameResults([r.values for r in got], expected)
+        end
+        @test [r.name for r in computeWriters(ws, WCT_ATLAS; skip = 2, max = 3)] == [m.name for m in maps[3:5]]
+        io = smartOpen(WCT_ATLAS, "r"); a = openAtlas(io)
+        nextMap(a)                                                  # from where an open atlas is
+        @test [r.name for r in computeWriters(ws, a)] == [m.name for m in maps[2:end]]
+        @test isopen(io)                                            # and it is left open
+        close(io)
+    end
 end

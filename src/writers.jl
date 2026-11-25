@@ -1,8 +1,8 @@
 # writers.jl -- computing CycleWalk writer statistics on maps in memory: the library form of `atlas add`.
 #
 # A `WriterSet` resolves the writer names and builds the dual graph once (as `atlas add` does from its flags);
-# `computeWriters` then evaluates them on a `Map` or a vector of maps, giving each field's value in the map's own
-# district numbering, exactly as `atlas add` writes it.
+# `computeWriters` then evaluates them on a `Map`, a vector of maps, or every map of an atlas file (streamed),
+# giving each field's value in the map's own district numbering, exactly as `atlas add` writes it.
 
 """
     WriterSet(functions; config = "", graph = "", pop_col = "", node_col = "", area_col = "", border_col = "",
@@ -59,6 +59,16 @@ CycleWalk does at startup (or skipped, for writers with a partition-free method)
 the districting.
 
 The vector form evaluates the maps in parallel across `cores` threads and returns the results in order.
+
+    computeWriters(ws::WriterSet, path::AbstractString; cores = Threads.nthreads(), skip = 0, max = typemax(Int))
+    computeWriters(ws::WriterSet, atlas::Atlas; ...)
+
+The writers on every map of an atlas file (or an open `Atlas`), streamed: an iterator giving
+`(name = m.name, weight = m.weight, values = computeWriters(ws, m))` for each map, in file order, with the maps
+read and evaluated in parallel across `cores` tasks (AtlasIO's `eachMap(f, ...)`), so the whole atlas is never
+in memory. `skip` maps are skipped first (a burn-in) and at most `max` are read; from a `path` the file is
+closed when the last map has been read. With several threads, run it with BLAS on one thread
+(`BLAS.set_num_threads(1)`; the vector form does this for you), or BLAS's threads compete with the tasks.
 """
 computeWriters(ws::WriterSet, m::Map) = evalWriters(ws.graph, m, ws.writers; treeless = ws.treeless)
 
@@ -71,6 +81,11 @@ function computeWriters(ws::WriterSet, maps::AbstractVector{<:Map}; cores::Int =
     end
     return out
 end
+
+computeWriters(ws::WriterSet, source::Union{AbstractString,Atlas}; cores::Int = Threads.nthreads(),
+               skip::Integer = 0, max::Integer = typemax(Int)) =
+    eachMap(m -> (name = m.name, weight = m.weight, values = computeWriters(ws, m)), source;
+            ntasks = cores, skip = skip, max = max)
 
 function Base.show(io::IO, ws::WriterSet)
     print(io, "WriterSet(", join(writerFields(ws), ", "), "; graph = ", repr(basename(ws.graphPath)), ")")
