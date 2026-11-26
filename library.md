@@ -229,7 +229,7 @@ hists, n = mapDataHistograms("atlas.jsonl.gz"; quiet = true)
 h = hists["get_log_spanning_trees"]           # a vector field: one StreamingHistogram per sorted index
 mean(h[1]), quantile(h[1], [0.05, 0.5, 0.95])  # unweighted
 weightedMean(h[1]), weightedQuantile(h[1], 0.5), effectivesamplesize(h[1])
-f = density(h[1])                              # the density, as a function; also cdf, histogram(oh, edges)
+f = density(h[1])                              # the density, as a function; also densityCdf, histogram(oh, edges)
 ```
 
 ### `WriterSet` and `computeWriters`
