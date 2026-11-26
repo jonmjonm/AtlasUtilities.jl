@@ -53,8 +53,8 @@ value is counted both once and with its map's weight.
   StreamHistogram 0.2.1 and StatsBase compute it; it was the kurtosis itself, 3 for a normal. Renamed, not just
   changed, so a reader of the old field fails loudly instead of being 3 off. The weighted one is
   `weighted_excess_kurtosis`.
-- **Breaking: StreamHistogram 0.3** (compat `"0.3"`), which renames its type `StreamHist` to `StreamingHistogram`;
-  `mapDataHistograms` returns the renamed type. It has the excess kurtosis (new in 0.2.1) and fixes the ASH-derived
+- **Breaking: StreamHistogram 0.2.1** (compat `"0.2.1"`), which renames its type `StreamHist` to `StreamingHistogram`;
+  `mapDataHistograms` returns the renamed type. It has the excess kurtosis and fixes the ASH-derived
   counts (`ash_count`) when some values fall outside the histogram's range: they were scaled by every value, not only
   those in range.
 - New `test/weightsTests.jl`: the weighted results are those of the weighted map values, the unweighted ones
