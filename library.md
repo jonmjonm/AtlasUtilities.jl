@@ -205,18 +205,18 @@ fieldNames = listMapData("atlas.jsonl.gz")
 mapDataHistograms(atlasPath; burn_in = 0, max_maps = 0, sortVals = true,
                   integer = false, bin_range = nothing, bin_num = 50, bins = nothing,
                   moment_powers = [1, 2, 4, 8], add = "", ..., quiet = false)
-    -> (Dict{String,Union{StreamHist,Vector{StreamHist}}}, nmaps)
+    -> (Dict{String,Union{StreamingHistogram,Vector{StreamingHistogram}}}, nmaps)
 ```
 
 Reads the atlas once and accumulates each map-data field into a
-[StreamHistogram](https://github.com/jonmjonm/StreamHistogram.jl) `StreamHist`: one
+[StreamHistogram](https://github.com/jonmjonm/StreamHistogram.jl) `StreamingHistogram`: one
 for a scalar field, a vector of them (one per index) for a vector field. With
 `sortVals` (the default) each map's vector is sorted first, so histogram `j` holds
 the `j`-th smallest value of each map — the `j`-th order statistic, which is
 comparable across maps even when district labels are not. The keywords are the
 `extract-map-data-histogram` options: `burn_in`/`max_maps` choose the maps,
 `integer`/`bin_range`/`bin_num`/`bins`/`moment_powers` are passed to every
-`StreamHist`, and `add` (with the graph keywords of `atlas add`) also computes
+`StreamingHistogram`, and `add` (with the graph keywords of `atlas add`) also computes
 writer functions. Returns the histograms and the number of maps read.
 
 Each value is added with its map's weight, so every histogram answers both
@@ -226,7 +226,7 @@ an unweighted atlas the two agree. A negative or non-finite weight is an error.
 ```julia
 using AtlasUtilities, StreamHistogram
 hists, n = mapDataHistograms("atlas.jsonl.gz"; quiet = true)
-h = hists["get_log_spanning_trees"]           # a vector field: one StreamHist per sorted index
+h = hists["get_log_spanning_trees"]           # a vector field: one StreamingHistogram per sorted index
 mean(h[1]), quantile(h[1], [0.05, 0.5, 0.95])  # unweighted
 weightedMean(h[1]), weightedQuantile(h[1], 0.5), effectivesamplesize(h[1])
 f = density(h[1])                              # the density, as a function; also cdf, histogram(oh, edges)

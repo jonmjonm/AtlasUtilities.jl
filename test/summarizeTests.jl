@@ -6,7 +6,7 @@
 
 using Test
 using AtlasIO
-using StreamHistogram: StreamHist, add!, finalize!, nobs, datarange, outofrange, mean, std, quantile
+using StreamHistogram: StreamingHistogram, add!, finalize!, nobs, datarange, outofrange, mean, std, quantile
 using AtlasUtilities: run_summarize_map_data, quartiles, ashQuantileGap, fieldSummaryLines,
                       mapDataHistograms
 
@@ -14,7 +14,7 @@ using AtlasUtilities: run_summarize_map_data, quartiles, ashQuantileGap, fieldSu
 
     # The quantile estimates themselves are StreamHistogram's (tested there); `quartiles` adds the ASH check.
     @testset "quartiles: StreamHistogram's quantiles, the ASH checked only inside the range" begin
-        oh = StreamHist(; binRange = (1.0, 100.0), binNum = 99)
+        oh = StreamingHistogram(; binRange = (1.0, 100.0), binNum = 99)
         add!(oh, collect(1.0:100.0))
         finalize!(oh)
         qs, gap = quartiles(oh)
@@ -23,7 +23,7 @@ using AtlasUtilities: run_summarize_map_data, quartiles, ashQuantileGap, fieldSu
         @test gap !== nothing && abs(gap) < 0.05
 
         # every quartile among the out-of-range values: nothing for the density to check
-        out = StreamHist(; binRange = (1000.0, 2000.0), binNum = 10)
+        out = StreamingHistogram(; binRange = (1000.0, 2000.0), binNum = 10)
         add!(out, collect(1.0:100.0))
         finalize!(out)
         qs, gap = quartiles(out)
@@ -31,12 +31,12 @@ using AtlasUtilities: run_summarize_map_data, quartiles, ashQuantileGap, fieldSu
     end
 
     @testset "ashQuantileGap: nothing in integer mode, small for a symmetric sample" begin
-        ohInt = StreamHist(; integer = true, binRange = (1.0, 10.0))
+        ohInt = StreamingHistogram(; integer = true, binRange = (1.0, 10.0))
         add!(ohInt, collect(1.0:10.0))
         finalize!(ohInt)
         @test ashQuantileGap(ohInt, 0.5, quantile(ohInt, 0.5)) === nothing
 
-        oh = StreamHist(; binRange = (0.0, 100.0), binNum = 50)
+        oh = StreamingHistogram(; binRange = (0.0, 100.0), binNum = 50)
         add!(oh, collect(0.5:1.0:99.5))   # evenly spaced, no under/overflow
         finalize!(oh)
         gap = ashQuantileGap(oh, 0.5, quantile(oh, 0.5))
@@ -45,7 +45,7 @@ using AtlasUtilities: run_summarize_map_data, quartiles, ashQuantileGap, fieldSu
     end
 
     @testset "fieldSummaryLines: warns when out-of-range fraction exceeds threshold" begin
-        oh = StreamHist(; binRange = (10.0, 95.0), binNum = 50)
+        oh = StreamingHistogram(; binRange = (10.0, 95.0), binNum = 50)
         add!(oh, collect(1.0:100.0))   # 9 below lo, 6 at/above hi -- 15% out of range
         finalize!(oh)
 
@@ -54,7 +54,7 @@ using AtlasUtilities: run_summarize_map_data, quartiles, ashQuantileGap, fieldSu
     end
 
     @testset "fieldSummaryLines: no warnings for a well-behaved uniform sample" begin
-        oh = StreamHist(; binRange = (0.0, 100.0), binNum = 50)
+        oh = StreamingHistogram(; binRange = (0.0, 100.0), binNum = 50)
         add!(oh, collect(0.5:1.0:99.5))
         finalize!(oh)
 

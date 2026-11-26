@@ -7,7 +7,7 @@ import JSON
 using AtlasIO
 using AtlasUtilities: run_extract_map_data_histogram, mapDataHistograms,
                       writeHistogramCSV, writeHistogramJSON, run_extract
-using StreamHistogram: StreamHist, add!, finalize!, nobs, datarange, mean
+using StreamHistogram: StreamingHistogram, add!, finalize!, nobs, datarange, mean
 
 readtext(p) = (io = smartOpen(p, "r"); s = read(io, String); close(io); s)
 
@@ -23,10 +23,10 @@ readHistJSON(path) = JSON.parse(readtext(path); dicttype = Dict{String,Any})["hi
 
 @testset "extract-map-data-histogram" begin
 
-    @testset "helpers: writeHistogramCSV/JSON round-trip a synthetic StreamHist" begin
-        mkHist() = StreamHist(; binRange = (0.0, 10.0), binNum = 5)
+    @testset "helpers: writeHistogramCSV/JSON round-trip a synthetic StreamingHistogram" begin
+        mkHist() = StreamingHistogram(; binRange = (0.0, 10.0), binNum = 5)
 
-        @testset "scalar field (bare StreamHist)" begin
+        @testset "scalar field (bare StreamingHistogram)" begin
             oh = mkHist()
             add!(oh, [1.0, 2.0, 3.0, 9.0])
             finalize!(oh)
@@ -52,7 +52,7 @@ readHistJSON(path) = JSON.parse(readtext(path); dicttype = Dict{String,Any})["hi
             @test length(h1["ash_count"]) == 5
         end
 
-        @testset "vector field (Vector{StreamHist})" begin
+        @testset "vector field (Vector{StreamingHistogram})" begin
             oh1, oh2 = mkHist(), mkHist()
             add!(oh1, [1.0, 2.0]); add!(oh2, [7.0, 8.0, 9.0])
             finalize!(oh1); finalize!(oh2)
@@ -75,7 +75,7 @@ readHistJSON(path) = JSON.parse(readtext(path); dicttype = Dict{String,Any})["hi
         end
 
         @testset "--integer omits ash_count and relerr_moments" begin
-            oh = StreamHist(; integer = true, binRange = (0.0, 10.0))
+            oh = StreamingHistogram(; integer = true, binRange = (0.0, 10.0))
             add!(oh, [1.0, 2.0, 3.0])
             finalize!(oh)
 
@@ -154,7 +154,7 @@ readHistJSON(path) = JSON.parse(readtext(path); dicttype = Dict{String,Any})["hi
         @test issorted(mins)
     end
 
-    # Every point fed to a StreamHist lands in exactly one of: a traditional-
+    # Every point fed to a StreamingHistogram lands in exactly one of: a traditional-
     # histogram bin, underflow, or overflow -- never dropped, never double
     # counted. Check this directly against the written CSV (exact_count) and JSON
     # (underflow/overflow/nobs) for every field (scalar and vector) of a real run.

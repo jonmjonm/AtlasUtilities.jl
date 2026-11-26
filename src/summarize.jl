@@ -1,7 +1,7 @@
 # summarize.jl -- the `atlas summarize-map-data` subcommand.
 #
-# Like `extract-map-data-histogram`, builds a StreamHist per map-data field (or a
-# StreamHist per index for a vector field, sorted ascending so index j holds the
+# Like `extract-map-data-histogram`, builds a StreamingHistogram per map-data field (or a
+# StreamingHistogram per index for a vector field, sorted ascending so index j holds the
 # j-th order statistic), but instead of writing files, prints mean/std/quartiles
 # straight to stdout. No --add/graph/config support -- this only summarizes the
 # map data already present in the atlas. When the maps' weights vary, the weighted
@@ -31,7 +31,7 @@ range. With
 `nothing` when there is no ASH to check against (`oh.integer`) or nothing to
 check (no maps, or total weight 0).
 """
-function ashQuantileGap(oh::StreamHist, q::Real, xhat::Real; weighted::Bool = false)
+function ashQuantileGap(oh::StreamingHistogram, q::Real, xhat::Real; weighted::Bool = false)
     oh.integer && return nothing
     total = weighted ? totalweight(oh) : nobs(oh)
     total == 0 && return nothing
@@ -49,14 +49,14 @@ Whether the maps in `oh` have different weights: their effective sample size is
 then below the number of maps. Equal weights (e.g. an unweighted atlas, every
 weight 1) give the same weighted and unweighted results.
 """
-weightsVary(oh::StreamHist) = effectivesamplesize(oh) < nobs(oh) * (1 - 1e-9)
+weightsVary(oh::StreamingHistogram) = effectivesamplesize(oh) < nobs(oh) * (1 - 1e-9)
 
 """The quartiles of `oh` (unweighted, or `weighted`; StreamHistogram's `quantile`
 and `weightedQuantile`) and the largest disagreement of one inside the histogram's
 range with the ASH density (`nothing` if none could be checked). One outside the
 range was interpolated across the out-of-range values, and the density, zero there,
 can't corroborate it."""
-function quartiles(oh::StreamHist; weighted::Bool = false)
+function quartiles(oh::StreamingHistogram; weighted::Bool = false)
     lo, hi = extrema(only(exactHistogram(oh).edges))
     qs = Float64[]
     worstGap = nothing
@@ -76,7 +76,7 @@ end
 """
     fieldSummaryLines(oh) -> Vector{String}
 
-`mean`/`std`/`[min, 25%, median, 75%, max]` lines for one `StreamHist`, plus a
+`mean`/`std`/`[min, 25%, median, 75%, max]` lines for one `StreamingHistogram`, plus a
 warning line if too much of its data fell out of the histogram range
 (`OUTOFRANGE_WARN_FRAC`) and/or its worst quartile-vs-ASH disagreement exceeds
 `ASH_QUANTILE_WARN_TOL` (see `quartiles`/`ashQuantileGap`). When the maps'
@@ -84,7 +84,7 @@ weights vary (`weightsVary`), the same lines for the weighted data follow, with 
 effective sample size, and the same warnings for it; when every weight is 0, a line
 saying so.
 """
-function fieldSummaryLines(oh::StreamHist)
+function fieldSummaryLines(oh::StreamingHistogram)
     n = nobs(oh)
     mn, mx = datarange(oh)
     lines = String[]
@@ -129,7 +129,7 @@ end
 
 Print the number of maps considered, then for every map-data field of atlas
 `Atlas1`: `mean`, `std`, and `[min, 25% quartile, median, 75% quartile, max]`, each
-computed from a `StreamHist` (a `Vector{StreamHist}` per index for a vector
+computed from a `StreamingHistogram` (a `Vector{StreamingHistogram}` per index for a vector
 field, with each map's vector sorted ascending first -- see `mapDataHistograms`).
 When the maps' weights vary, the weighted mean, std and quartiles (each map counting
 its weight) and the effective sample size follow (see `fieldSummaryLines`).
@@ -147,7 +147,7 @@ function run_summarize_map_data(Atlas1::AbstractString; max_maps::Int = 0,
         entry = hists[field]
         println()
         println(field, ":")
-        if entry isa StreamHist
+        if entry isa StreamingHistogram
             for line in fieldSummaryLines(entry)
                 println("  ", line)
             end
