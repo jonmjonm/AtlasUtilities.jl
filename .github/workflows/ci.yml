@@ -19,9 +19,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # 1.10 (the oldest Julia [compat] allows) cannot find StreamHistogram until it is registered: Julia 1.10
-        # ignores Project.toml's [sources]. Add '1.10' here once it is in the General registry.
-        julia-version: ['1.11', '1']
+        # 1.10 is the oldest Julia [compat] allows.
+        julia-version: ['1.10', '1.11', '1']
     env:
       JULIA_NUM_THREADS: 2   # exercise the threaded map processing
     steps:
@@ -44,7 +43,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: julia-actions/setup-julia@v2
         with:
-          version: '1'   # Julia 1.13+ follows [sources] for StreamHistogram when installing from a repository
+          version: '1'
       - uses: julia-actions/cache@v2
       # Like the README's `Pkg.add(url=...)`, but from this checkout, so a pull request installs its own code.
       # Pkg.add runs deps/build.jl only for a newly installed package and only logs a failure, so build again when

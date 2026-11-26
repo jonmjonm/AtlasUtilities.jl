@@ -29,9 +29,10 @@ if isfile(joinpath(ENV_DIR, "Project.toml"))
 end
 
 # A checkout's own manifest (its development environment; not in git) is read when the checkout is developed
-# into another environment, so it would pin the packages it gets by URL from [sources] (StreamHistogram) to the
-# commit it last resolved, however old: a stale one makes the build fail, or install an old version. Set it aside
-# while the environment resolves, so those are fetched afresh, and put it back afterwards.
+# into another environment, so it would pin its dependencies to whatever it last resolved, however old (a
+# package added by URL, as StreamHistogram once was, to an old commit): a stale one makes the build fail, or
+# install an old version. Set it aside while the environment resolves, so they are resolved afresh, and put it
+# back afterwards.
 manifests = filter(f -> occursin(r"^(Julia)?Manifest(-v[0-9.]+)?\.toml$", f), readdir(PKG_DIR))
 aside(f) = joinpath(PKG_DIR, f * ".aside-during-atlas-build")
 setup = """

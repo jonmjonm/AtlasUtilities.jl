@@ -37,8 +37,8 @@ launcher into `~/.julia/bin/` and gives the command its own Julia environment
 (`~/.julia/scratchspaces/020ba7bf-…/env`), with AtlasUtilities developed into it and
 precompiled.
 
-**With Julia 1.13 or later**, install straight from GitHub. `@atlas` is a named
-environment that holds the package, kept out of your default one:
+Install straight from GitHub (Julia 1.10 or later). `@atlas` is a named environment
+that holds the package, kept out of your default one:
 
 ```bash
 julia --project=@atlas -e 'import Pkg; Pkg.add(url="https://github.com/jonmjonm/AtlasUtilities.jl")'
@@ -50,7 +50,7 @@ To update later:
 julia --project=@atlas -e 'import Pkg; Pkg.update(); Pkg.build("AtlasUtilities")'
 ```
 
-**From a clone** (any supported Julia, and for working on AtlasUtilities itself):
+**From a clone** (for working on AtlasUtilities itself):
 
 ```bash
 git clone https://github.com/jonmjonm/AtlasUtilities.jl
@@ -60,14 +60,6 @@ julia --project deps/build.jl        # installs the `atlas` launcher + its envir
 ```
 
 After `git pull`, rerun `julia --project deps/build.jl`.
-
-Why the Julia version matters: one dependency,
-[`StreamHistogram`](https://github.com/jonmjonm/StreamHistogram.jl), isn't registered
-in the Julia General registry yet. AtlasUtilities points to it by URL in
-`Project.toml`'s `[sources]` table. Julia 1.13 follows that pointer when you install
-AtlasUtilities by URL. Julia 1.10 ignores `[sources]`, and 1.11 and 1.12 are
-untested, so with those use the clone, where AtlasUtilities is the active project.
-Once StreamHistogram is registered, the URL install works on every supported Julia.
 
 Then add `~/.julia/bin` to your `PATH` (one time):
 
