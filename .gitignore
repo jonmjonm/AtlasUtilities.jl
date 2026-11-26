@@ -5,3 +5,5 @@ Manifest.toml
 # Large generated atlas data (exceeds GitHub's 100 MB file limit; kept on the
 # Duke GitLab remote only).
 Data/*.jsonl.gz
+Data/northCarolinaPrecinct2021.zip
+.gitignore
