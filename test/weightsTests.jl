@@ -36,9 +36,9 @@ allmaps(path) = (io = smartOpen(path, "r"); a = openAtlas(io); ms = Map[]; while
                  close(io); ms)
 wreadtext(p) = (io = smartOpen(p, "r"); s = read(io, String); close(io); s)
 
-"Every histogram of a `mapDataHistograms` result, as (field, index, StreamHist)."
+"Every histogram of a `mapDataHistograms` result, as (field, index, StreamingHistogram)."
 everyHist(hs) = [(f, j, oh) for f in sort(collect(keys(hs)))
-                 for (j, oh) in enumerate(hs[f] isa StreamHist ? [hs[f]] : hs[f])]
+                 for (j, oh) in enumerate(hs[f] isa StreamingHistogram ? [hs[f]] : hs[f])]
 
 @testset "map weights" begin
     src = reweighted(k -> 0.25 * k)
@@ -105,7 +105,7 @@ everyHist(hs) = [(f, j, oh) for f in sort(collect(keys(hs)))
                 @test lines[1] == "index,edge_lo,edge_hi,exact_count,weight_sum"
                 cells = [split(l, ',') for l in lines[2:end]]
                 doc = JSON.parse(wreadtext(joinpath(dir, f * "-histogram.json")); dicttype = Dict{String,Any})
-                ohs = hists[f] isa StreamHist ? [hists[f]] : hists[f]
+                ohs = hists[f] isa StreamingHistogram ? [hists[f]] : hists[f]
                 for (j, oh) in enumerate(ohs)
                     h = doc["histograms"][string(j)]
                     mine = [c for c in cells if c[1] == string(j)]
@@ -158,7 +158,7 @@ everyHist(hs) = [(f, j, oh) for f in sort(collect(keys(hs)))
 
     @testset "weighted quartiles and their summary lines" begin
         xs = collect(0.5:1.0:99.5)
-        tilted = StreamHist(; binRange = (0.0, 100.0), binNum = 100)
+        tilted = StreamingHistogram(; binRange = (0.0, 100.0), binNum = 100)
         add!(tilted, xs, xs)                       # weight ∝ x: the weighted CDF is (x/100)², median 100/√2
         finalize!(tilted)
         med = weightedQuantile(tilted, 0.5)
@@ -169,7 +169,7 @@ everyHist(hs) = [(f, j, oh) for f in sort(collect(keys(hs)))
         lines = fieldSummaryLines(tilted)
         @test any(startswith("weighted mean:"), lines) && !any(contains("WARNING"), lines)
 
-        equal = StreamHist(; binRange = (0.0, 100.0), binNum = 100)
+        equal = StreamingHistogram(; binRange = (0.0, 100.0), binNum = 100)
         add!(equal, xs, fill(2.5, length(xs)))
         finalize!(equal)
         @test !weightsVary(equal)
@@ -179,7 +179,7 @@ everyHist(hs) = [(f, j, oh) for f in sort(collect(keys(hs)))
         @test !any(contains("weighted"), fieldSummaryLines(equal))
 
         # heavy weights outside the range: the weighted out-of-range warning, not the unweighted one
-        heavy = StreamHist(; binRange = (0.0, 100.0), binNum = 100)
+        heavy = StreamingHistogram(; binRange = (0.0, 100.0), binNum = 100)
         add!(heavy, [xs; 150.0], [ones(length(xs)); 50.0])
         finalize!(heavy)
         lines = fieldSummaryLines(heavy)
@@ -187,7 +187,7 @@ everyHist(hs) = [(f, j, oh) for f in sort(collect(keys(hs)))
         @test !any(contains("of points fell out"), lines)
         @test weightedQuantile(heavy, 0.9) > 100                           # among the overflow
 
-        nothingThere = StreamHist(; binRange = (0.0, 1.0))
+        nothingThere = StreamingHistogram(; binRange = (0.0, 1.0))
         add!(nothingThere, 0.5, 0.0)
         finalize!(nothingThere)
         @test isnan(weightedQuantile(nothingThere, 0.5))
