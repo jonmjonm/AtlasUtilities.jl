@@ -322,6 +322,7 @@ rgs(; kw...) = resolveGraphSpec("test"; kw...)
 
         # a partisan writer without vote columns is an error
         @test_throws ErrorException resolveFunctions(["get_partisan_margins"])
+        @test_throws "vote_cols = [(\"votes1\", \"votes2\"), ...]" resolveFunctions(["get_partisan_margins"])
     end
 
     # End-to-end: add per-district vote shares and check them against an independent

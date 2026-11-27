@@ -27,6 +27,9 @@ function cliMessage(msg::AbstractString, command::AbstractString)
     m = match(r"^([A-Za-z]+): ", msg)
     (m === nothing || !(m.captures[1] in LIBRARY_FUNCTIONS)) && return String(msg)
     out = "mapatlas $command: " * msg[(length(m.match) + 1):end]
+    # The command takes the vote pairs as one string, so its format differs from the library's.
+    out = replace(out, "vote_cols = [(\"votes1\", \"votes2\"), ...]" =>
+                       "--vote-cols \"votes1,votes2\" (one or more `;`-separated pairs)")
     out = replace(out, r"\b([a-z][a-z0-9_]*) = true\b" => s -> get(KEYWORD_FLAGS, s[1:(end - 7)], s))
     out = replace(out, r"\b([a-z][a-z0-9_]*) = " => s -> haskey(KEYWORD_FLAGS, s[1:(end - 3)]) ?
                                                          KEYWORD_FLAGS[s[1:(end - 3)]] * " " : s)

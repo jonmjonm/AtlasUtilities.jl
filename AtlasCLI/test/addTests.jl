@@ -1,4 +1,5 @@
 # `mapatlas add`: its string arguments and its command line.
+import AtlasCLI
 using AtlasCLI: parseFunctionNames, parseVotePairs, parseNodeData, add
 
 @testset "mapatlas add" begin
@@ -37,6 +38,13 @@ using AtlasCLI: parseFunctionNames, parseVotePairs, parseNodeData, add
     @testset "parseNodeData" begin
         @test parseNodeData("") == String[]
         @test parseNodeData("COUNTY, NAME") == ["COUNTY", "NAME"]
+    end
+
+    @testset "missing vote columns: the error shows the format of --vote-cols" begin
+        msg = AtlasCLI.cliMessage("WriterSet: \"get_partisan_seats\" needs vote columns; " *
+                                  "pass vote_cols = [(\"votes1\", \"votes2\"), ...].", "add")
+        @test msg == "mapatlas add: \"get_partisan_seats\" needs vote columns; pass --vote-cols " *
+                     "\"votes1,votes2\" (one or more `;`-separated pairs)."
     end
 
     @testset "parseVotePairs" begin

@@ -52,7 +52,7 @@ function resolveFunctions(names::AbstractVector{<:AbstractString},
     for name in names
         if name in PARTISAN_WRITERS
             isempty(votePairs) &&
-                error("WriterSet: \"$name\" needs vote columns; pass vote_cols = <pairs of vote columns>.")
+                error("WriterSet: \"$name\" needs vote columns; pass vote_cols = [(\"votes1\", \"votes2\"), ...].")
             builder = getfield(CycleWalk, Symbol("build_" * name))
             for (v1, v2) in votePairs
                 push!(fns, ("$(name)_$(v1)_$(v2)", builder(String(v1), String(v2))))
