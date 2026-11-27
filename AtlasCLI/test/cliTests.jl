@@ -1,14 +1,14 @@
-# Every subcommand run through `command_main`, the entry point the installed `atlas` command uses, so the
+# Every subcommand run through `command_main`, the entry point the installed `mapatlas` command uses, so the
 # command-line layer is tested too: option parsing (e.g. --bins "a,b,c", --integer auto), flags turned into
-# settings (--no-compression -> compress = false), and argument order. The other test files call the run_*
+# settings (--no-compression -> compress = false), and argument order. The other test files call the library
 # functions directly; these check that the flags reach them.
-import JSON
-using AtlasUtilities: command_main, stripAtlasExt
+using AtlasCLI: command_main
+using AtlasUtilities: stripAtlasExt
 
-const EX = joinpath(@__DIR__, "..", "examples")
-const DATA = joinpath(@__DIR__, "..", "Data")
+const EX = joinpath(@__DIR__, "..", "..", "examples")
+const DATA = joinpath(@__DIR__, "..", "..", "Data")
 
-"Run `atlas args...` and return (exit code, what it printed)."
+"Run `mapatlas args...` and return (exit code, what it printed)."
 function atlascli(args...)
     path, io = mktemp()
     code = redirect_stdout(io) do
@@ -28,6 +28,54 @@ end
 mapsof(path) = (io = smartOpen(path, "r"); a = openAtlas(io); ms = Map[]; while !eof(a) push!(ms, nextMap(a)) end; close(io); ms)
 
 @testset "command line" begin
+
+    @testset "--help describes the <atlas> argument" begin
+        for cmd in ("info", "list-map-data", "list-nodes")
+            code, out = atlascli(cmd, "--help")
+            @test code == 0 && occursin("path to the atlas file", out)
+        end
+    end
+
+    @testset "a damaged map: located in the error; --keep-partial keeps what was written" begin
+        dir = mktempdir()
+        io = smartOpen(joinpath(EX, "cycleWalk_ct_slice.jsonl.gz"), "r")
+        lines = readlines(io)
+        close(io)
+        lines[4 + 19] = lines[4 + 19][1:100]                     # map 20, on line 23
+        cut = joinpath(dir, "cut.jsonl")
+        write(cut, join(lines, "\n") * "\n")
+        err(args...) = try atlascli(args...); nothing catch e; e end
+        for cmd in (["relabel", cut, joinpath(dir, "r.jsonl.gz")], ["extract-map-data", cut],
+                    ["extract-map-data-histogram", cut], ["summarize-map-data", cut], ["extract-assignments", cut])
+            e = err(cmd..., "--quiet")
+            @test e isa AtlasFormatError && startswith(e.msg, "$cut, line 23 (map 20): ")
+        end
+        @test !isfile(joinpath(dir, "r.jsonl.gz")) && !isfile(joinpath(dir, "r.incomplete.jsonl.gz"))
+        @test_logs (:warn, r"kept") match_mode = :any begin
+            @test err("relabel", cut, joinpath(dir, "r.jsonl.gz"), "--keep-partial", "--quiet") isa AtlasFormatError
+        end
+        @test !isfile(joinpath(dir, "r.jsonl.gz")) && isfile(joinpath(dir, "r.incomplete.jsonl.gz"))
+        @test_logs (:warn, r"kept") match_mode = :any begin
+            err("extract-map-data", cut, "--keep-partial", "--quiet")
+            err("extract-assignments", cut, "--keep-partial", "--quiet")
+        end
+        @test isfile(joinpath(dir, "cut", "get_log_spanning_trees.incomplete.csv.gz"))
+        @test isfile(joinpath(dir, "cut-assignments.incomplete.csv.gz"))
+        @test isempty(filter(f -> occursin(".tmp", f), vcat(readdir(dir), readdir(joinpath(dir, "cut")))))
+    end
+
+    @testset "error messages in the terms of the command" begin
+        ct = joinpath(EX, "cycleWalk_ct_slice.jsonl.gz")
+        err(args...) = try atlascli(args...); nothing catch e; e.msg end
+        @test err("summarize-map-data", ct, "--max-maps", "-1") ==
+              "mapatlas summarize-map-data: --max-maps must be ≥ 0, got -1."
+        @test err("extract-map-data-histogram", excopy("cycleWalk_ct_slice.jsonl.gz"), "--max-maps", "-1") ==
+              "mapatlas extract-map-data-histogram: --max-maps must be ≥ 0, got -1."
+        @test err("list-nodes", ct, "--map", "0") == "mapatlas list-nodes: --map must be >= 1 (got 0)."
+        msg = err("add", "no_such_writer", ct, joinpath(mktempdir(), "o.jsonl"), "--graph",
+                  joinpath(DATA, "CT_pct20.json"), "--pop-col", "POP20", "--node-col", "NAME")
+        @test occursin("no_such_writer", msg) && occursin("(see `mapatlas add --list-writers`)", msg)
+    end
     ct = joinpath(EX, "cycleWalk_ct_slice.jsonl.gz")
 
     @testset "info, list-map-data, list-nodes, summarize-map-data" begin
@@ -70,7 +118,7 @@ mapsof(path) = (io = smartOpen(path, "r"); a = openAtlas(io); ms = Map[]; while 
         outdir = stripAtlasExt(a)
         csvs = filter(endswith(".csv"), readdir(outdir))
         @test length(csvs) == 3 && isfile(joinpath(outdir, "about.md"))
-        @test !any(endswith(".gz"), readdir(outdir))                  # --no-compression reached run_extract
+        @test !any(endswith(".gz"), readdir(outdir))                  # --no-compression reached extractMapData
         rows = readlines(joinpath(outdir, csvs[1]))
         @test length(rows) == 1 + 3                                   # header + --max-maps 3 rows
 
@@ -203,15 +251,5 @@ mapsof(path) = (io = smartOpen(path, "r"); a = openAtlas(io); ms = Map[]; while 
             e
         end
         @test err isa ErrorException && occursin("levels in graph", err.msg)
-    end
-
-    @testset "render and install-render" begin
-        out = joinpath(mktempdir(), "ct.png")
-        @test atlascli("render", ct, joinpath(DATA, "shapefile_CT.zip"), "--key", "NAME", "--map", "2",
-                       "--out", out, "--quiet")[1] == 0
-        @test isfile(out) && filesize(out) > 0
-        # The test environment has the plotting packages, so install-render only reports that.
-        code, msg = atlascli("install-render")
-        @test code == 0 && occursin("already installed", msg)
     end
 end

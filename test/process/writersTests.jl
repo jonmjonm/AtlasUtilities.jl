@@ -3,11 +3,12 @@
 
 using Test
 using AtlasIO
-using AtlasUtilities: WriterSet, computeWriters, writerFields, listWriters, run_add, hasFastMethod
+using AtlasUtilities: WriterSet, computeWriters, writerFields, listWriters, addMapData
 import CycleWalk
+using .CWExt: hasFastMethod          # CWExt: the CycleWalk extension (addTests.jl)
 
-const WCT_GRAPH = joinpath(@__DIR__, "..", "Data", "CT_pct20.json")
-const WCT_ATLAS = joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_slice.jsonl.gz")
+const WCT_GRAPH = joinpath(@__DIR__, "..", "..", "Data", "CT_pct20.json")
+const WCT_ATLAS = joinpath(@__DIR__, "..", "..", "examples", "cycleWalk_ct_slice.jsonl.gz")
 const CT_COLS = (graph = WCT_GRAPH, pop_col = "POP20", node_col = "NAME", area_col = "area",
                  border_col = "border_length", edge_perimeter_col = "length")
 
@@ -40,14 +41,14 @@ sameResults(a::Vector, b::Vector) = length(a) == length(b) && all(sameResults(x,
     end
 
     @testset "the same values atlas add writes, partisan fields included" begin
-        names = "get_log_spanning_trees,get_isoperimetric_scores,get_partisan_margins,get_partisan_seats"
-        votes = "G20PREDEM,G20PREREP;G20PREREP,G20PREDEM"                  # the CT graph has one election
+        names = ["get_log_spanning_trees", "get_isoperimetric_scores", "get_partisan_margins", "get_partisan_seats"]
+        votes = [("G20PREDEM", "G20PREREP"), ("G20PREREP", "G20PREDEM")]     # the CT graph has one election
         ws = WriterSet(names; vote_cols = votes, CT_COLS...)
         @test writerFields(ws) == ["get_log_spanning_trees", "get_isoperimetric_scores",
                                    "get_partisan_margins_G20PREDEM_G20PREREP", "get_partisan_margins_G20PREREP_G20PREDEM",
                                    "get_partisan_seats_G20PREDEM_G20PREREP", "get_partisan_seats_G20PREREP_G20PREDEM"]
         out = joinpath(mktempdir(), "added.jsonl.gz")
-        run_add(names, WCT_ATLAS, out; vote_cols = votes, overwrite = true, quiet = true, CT_COLS...)
+        @test addMapData(WCT_ATLAS, out, ws; overwrite = true) == length(maps)
         io = smartOpen(out, "r"); a = openAtlas(io); added = Map[]; while !eof(a) push!(added, nextMap(a)) end; close(io)
         results = computeWriters(ws, maps)
         @test length(results) == length(maps) == length(added)
@@ -74,6 +75,13 @@ sameResults(a::Vector, b::Vector) = length(a) == length(b) && all(sameResults(x,
         @test sameResults(computeWriters(mixed, maps), computeWriters(mixed, maps; cores = 1))
         @test computeWriters(fast, maps) == [computeWriters(fast, m) for m in maps]     # the fast path: exactly
         @test computeWriters(mixed, Map[]) == Dict{String,Any}[]
+
+        # writerSubset (extractMapData's hook): only the writers asked for, with the fast path chosen for them.
+        sub = AtlasUtilities.writerSubset(mixed, Set(["get_isoperimetric_scores"]))
+        @test writerFields(sub) == ["get_isoperimetric_scores"] && sub.treeless && sub.graph === mixed.graph
+        @test computeWriters(sub, maps[1]) == computeWriters(fast, maps[1])        # the fast path: exactly
+        @test !AtlasUtilities.writerSubset(mixed, Set(writerFields(mixed))).treeless
+        @test isempty(writerFields(AtlasUtilities.writerSubset(mixed, Set{String}())))
     end
 
     @testset "a map's own district numbers: relabeling the map permutes the values" begin
@@ -93,13 +101,15 @@ sameResults(a::Vector, b::Vector) = length(a) == length(b) && all(sameResults(x,
         @test issorted(names) && "get_log_spanning_trees" in names && "get_partisan_margins" in names
         @test_throws ErrorException WriterSet("no_such_writer_xyz"; CT_COLS...)
         @test_throws ErrorException WriterSet("get_partisan_margins"; CT_COLS...)   # no vote_cols
+        @test_throws ErrorException WriterSet("get_partisan_margins"; vote_cols = ["G20PREDEM,G20PREREP"], CT_COLS...)
+        @test_throws ErrorException WriterSet("get_log_spanning_trees,get_isoperimetric_scores"; CT_COLS...)  # a vector, not a list in a string
         err = try WriterSet("get_log_spanning_trees"; pop_col = "POP20", node_col = "NAME"); nothing catch e; e end
         @test err isa ErrorException && occursin("graph =", err.msg) && !occursin("atlas add", err.msg)
         @test_throws ErrorException WriterSet(String[]; CT_COLS...)
     end
 
     @testset "computeWriters(ws, path): streamed from the file, in order" begin
-        ws = WriterSet("get_log_spanning_trees,get_isoperimetric_scores"; CT_COLS...)
+        ws = WriterSet(["get_log_spanning_trees", "get_isoperimetric_scores"]; CT_COLS...)
         expected = computeWriters(ws, maps; cores = 1)
         for cores in (1, 2, 4)
             got = collect(computeWriters(ws, WCT_ATLAS; cores = cores))

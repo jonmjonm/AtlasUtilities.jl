@@ -1,5 +1,57 @@
 # Changelog
 
+## [0.4.0]
+
+**Breaking.** AtlasUtilities is now a library, and the command is a separate package, AtlasCLI (in `AtlasCLI/`), first released as 0.1.0.
+
+### Atlas output
+
+- The `"added map data"` header entry now reads `"by": "addMapData"` (was `"atlas add"`) and records the
+  AtlasUtilities `version`. Entries already in an atlas are left as they are.
+- The `about.md` of `extract-map-data` names `mapatlas info`.
+
+### The command
+
+- **Renamed from `atlas` to `mapatlas`** (`atlas` collides with MongoDB's command). Its subcommands, options and
+  output files are otherwise unchanged; messages name `mapatlas`.
+- Installed from AtlasCLI (see README.md). An old `atlas` launcher is left in place: remove it with
+  `rm ~/.julia/bin/atlas ~/.julia/completions/_atlas`.
+- **`render` and `install-render` are removed** (plotting is being redesigned; the code is on the `pre-refactor`
+  branch), with `render_map`, `run_render` and `districtColors`.
+- The zsh completion script no longer fails to parse (apostrophes in help text left it unbalanced).
+- Some error messages are reworded: each names `mapatlas <command>` and its flags.
+
+### The library
+
+- The `run_*` drivers are gone. In their place are exported functions that print nothing and return what they did:
+  `relabelAtlas`, `listNodes`, `extractScripts`, `addMapData`, `extractMapData`, `writeHistograms`,
+  `summarizeMapData` (a `MapDataSummary` of `FieldSummary`s, both
+  exported; displayed, it gives the command's text, and printed, one line) and `extractAssignments`.
+  `convert` is AtlasIO's `convertAtlas`. See library.md.
+- **Changed keywords:** `quiet = false` is now `progress = false` (silent by default), `sortVals` is `sort_values`,
+  and the `add` and graph keywords of `extractMapData`/`mapDataHistograms` are now `writers = WriterSet(...)`.
+- **`WriterSet` takes typed arguments:** a vector of names (or one name), not a comma-separated string;
+  `vote_cols` as `(votes1, votes2)` pairs; `node_data` as a vector. Graph keywords default to `nothing`.
+- **CycleWalk is a weak dependency.** `using AtlasUtilities` no longer loads it; `using CycleWalk` switches on
+  the extension holding `addMapData`, `computeWriters`, `listWriters` and the `WriterSet` constructor, and calling
+  them without it says so. `WriterSet`, `writerFields` and their types stay in the library.
+- **No partial output on failure.** `relabelAtlas`, `addMapData`, `extractMapData`, `writeHistograms` and
+  `extractAssignments` write each file under a temporary name and move it into place only when it is complete:
+  a run that fails (a damaged map, a writer error) leaves an existing output as it was and no truncated file that
+  a rerun would skip as done. An output atlas may now be its input (`mapatlas relabel a.jsonl.gz a.jsonl.gz`).
+  `keep_partial = true` (`--keep-partial`) keeps what a failed run wrote, as `out.incomplete.jsonl.gz`, for
+  debugging: every map before the one that failed.
+- **A damaged map is located.** Its `AtlasFormatError` names the file, line and map
+  (`cut.jsonl, line 23 (map 20): not a valid Atlas map line ...`); before, it said neither.
+- New `public` (not exported) names: `nodeIdString`, `atlasHeaderInfo`, `listWriterDetails`, `loadGraph`.
+- Comonicon and Pkg are no longer dependencies.
+- **Julia 1.11 or later** (was 1.10).
+
+### Development
+
+- Tests are split between the packages; the library tests run without CycleWalk, then the CycleWalk ones.
+- Aqua checks, and CI jobs with Codecov coverage for both packages.
+
 ## [0.3.2]
 
 Everything since 0.3.1, which was the last version installed (none of 0.3.2–0.4.0 was released; they are folded in

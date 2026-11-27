@@ -1,10 +1,9 @@
-# info.jl -- the `atlas info` subcommand.
+# info.jl -- reading an atlas header (`mapatlas info`, `mapatlas list-map-data`).
 #
-# Read an Atlas file with AtlasIO.jl and print the information in its header
-# (the header metadata on line 2 and the atlas parameters on line 3). The bulky
-# "script" entry -- the entire source of the script that generated the atlas --
-# is never printed; `extract_script` writes it out to its own file instead
-# (named by the header's "script_name" entry).
+# `atlasInfo` returns the header (the metadata on line 2 and the atlas parameters on line 3) as data, and
+# `atlasHeaderInfo` renders it as text. The bulky "script" entry -- the entire source of the script that generated
+# the atlas -- is never rendered; `extractScripts` writes it out to its own file instead (named by the header's
+# "script_name" entry), with the TOML config and the script's includes.
 
 # The header entry holding the generating script's full source. It is omitted
 # from the printed output and is the entry written out by --extract-script.
@@ -118,8 +117,7 @@ Structured atlas metadata, for programmatic (library) use. Returns a dict with:
 
 Accepts either an already-open atlas (as returned by `AtlasIO.openAtlas`) or a
 path/URL, which is opened via `smartOpen`/`openAtlas` and closed before
-returning. `run_info` builds on this for display, stripping `script` and
-formatting the rest.
+returning. [`atlasHeaderInfo`](@ref) renders the same information as text.
 """
 function atlasInfo(atlasPath::AbstractString)
     io = smartOpen(String(atlasPath), "r")
@@ -145,6 +143,7 @@ function atlasInfo(atlas)
 end
 
 """
+    atlasHeaderInfo(atlasPath) -> String
     atlasHeaderInfo(atlas, fieldNames = String[]) -> String
 
 The atlas's header rendered as text: the "Atlas Header" block (description, date,
@@ -153,9 +152,19 @@ config are embedded and extractable), the "Atlas Parameters" block, and a
 "Map Data Fields" block listing `fieldNames` (the field names found in the first
 map, e.g. `log_spanning_trees`; see [`firstMapFieldNames`](@ref)), with the bulky
 embedded generating `script`/`toml_config` entries omitted. This is exactly what
-`atlas info` prints (minus the script/config bodies) and is reused verbatim in the
-`about.md` that `atlas extract-map-data` writes alongside the CSVs.
+`mapatlas info` prints (minus the script/config bodies) and is reused verbatim in the
+`about.md` that `mapatlas extract-map-data` writes alongside the CSVs. Given a path, it opens the atlas and
+lists its first map's fields.
 """
+function atlasHeaderInfo(atlasPath::AbstractString)
+    atlas = openAtlas(smartOpen(String(atlasPath), "r"))
+    try
+        return atlasHeaderInfo(atlas, something(firstMapFieldNames(atlas), String[]))
+    finally
+        close(atlas)
+    end
+end
+
 function atlasHeaderInfo(atlas, fieldNames::AbstractVector{<:AbstractString} = String[])
     param = atlas.atlasParam
     hdrPairs = Pair[
@@ -211,90 +220,68 @@ function extractName(name::AbstractString, fallback::AbstractString)
 end
 
 """
-    writeExtracted(outName, body, what; force = false) -> Bool
+    extractScripts(atlasPath, dir = pwd(); force = false)
+        -> (written = Vector{String}, skipped = Vector{String}, entries = Vector{Pair{String,String}})
 
-Write an embedded header entry `body` to `outName` in the current directory,
-reporting what happened, and return whether it was written. An existing file is
-left alone unless `force` is set: extraction names its output after whatever the
-run recorded, which can easily collide with a file already sitting there.
-`what` names the entry in the messages (e.g. `"script"`).
+Write out the embedded sources the header of the atlas at `atlasPath` carries, each into `dir` (never to the path
+the run recorded it under, which would write back over the original file): the "script" entry under its
+"script_name" (falling back to "extracted_script.jl"), the "toml_config" entry under its "toml_config_file"
+(falling back to "extracted_config.toml"), and every "script_includes" entry under its own name. Every entry gets a
+file of its own: when two share a basename (two includes from different directories, or an include named like
+the script), the later one is renamed, an include to its recorded path with `/` and `..` turned into `_`, otherwise
+with a numeric suffix (`run_2.jl`). An existing file is kept, and its entry skipped, unless `force` is set.
+
+Returns the paths `written` and `skipped`, and `entries`, every entry in the order handled as `entry => path`, with
+`entry` one of `"script"`, `"toml_config"` or `"script_includes[<name>]"`. An atlas with no "script" entry has no
+`"script"` in `entries`; the TOML config and the includes are optional.
 """
-function writeExtracted(outName::AbstractString, body, what::AbstractString;
-                        force::Bool = false)
-    if isfile(outName) && !force
-        msg = "--extract-script: $outName already exists; the $what entry was not " *
-              "written (pass --force to overwrite)."
-        println(msg)          # stdout, so it shows in the normal output too
-        println(stderr, msg)  # stderr, for pipelines that only watch that stream
-        return false
-    end
-    open(outName, "w") do f
-        write(f, body)
-    end
-    println("Wrote $what entry to: ", outName)
-    return true
-end
-
-"""
-    run_info(atlasPath; extract_script = false, force = false)
-
-Print the header of the atlas at `atlasPath`, plus the names of the data fields
-found in its first map. With `extract_script = true`, also write out the embedded
-sources the header carries, each into the current directory (never to the path the
-run recorded it under, which would write back over the original file): the "script"
-entry under its "script_name" (falling back to "extracted_script.jl"), the
-"toml_config" entry under its "toml_config_file" (falling back to
-"extracted_config.toml"), and every "script_includes" entry under its own name.
-Warns if there is no script entry; the TOML config and the includes are optional
-and extracted, silently, only when present. An existing file of the same name is
-kept, and its entry skipped with a message, unless `force` is set.
-"""
-function run_info(atlasPath::AbstractString; extract_script::Bool = false,
-                  force::Bool = false)
-    io = smartOpen(String(atlasPath), "r")
-    atlas = openAtlas(io)
-
-    info = atlasInfo(atlas)
-    param = info["parameters"]
-    fieldNames = info["map_data"]
-
-    # Header metadata (line 2) + atlas parameters (line 3), minus the script/config
-    # sources, plus the first map's data field names.
-    print(atlasHeaderInfo(atlas, fieldNames))
-
-    if extract_script
-        if haskey(param, SCRIPT_KEY)
-            outName = extractName(string(get(param, SCRIPT_NAME_KEY, "")),
-                                  "extracted_script.jl")
-            writeExtracted(outName, param[SCRIPT_KEY], "script"; force = force)
-        else
-            msg = "--extract-script: this atlas has no \"$SCRIPT_KEY\" entry."
-            println(msg)          # stdout, so it shows in the normal output too
-            println(stderr, msg)  # stderr, for pipelines that only watch that stream
+function extractScripts(atlasPath::AbstractString, dir::AbstractString = pwd(); force::Bool = false)
+    param = atlasInfo(atlasPath)["parameters"]
+    written, skipped = String[], String[]
+    entries = Pair{String,String}[]
+    function extract!(name, body, entry)
+        path = joinpath(dir, name)
+        push!(entries, entry => path)
+        if isfile(path) && !force
+            push!(skipped, path)
+            return false
         end
+        open(f -> write(f, body), path, "w")
+        push!(written, path)
+        return true
+    end
 
-        if haskey(param, CONFIG_KEY)
-            outName = extractName(string(get(param, CONFIG_NAME_KEY, "")),
-                                  "extracted_config.toml")
-            writeExtracted(outName, param[CONFIG_KEY], "toml_config"; force = force)
-        end
-
-        # The script's includes, each under its own name. Two includes from
-        # different directories can share a basename, so a name already taken by
-        # one of them is disambiguated rather than silently overwritten.
-        written = Set{String}()
-        for (name, body) in includedSources(param)
-            outName = extractName(name, "extracted_include.jl")
-            if outName in written
-                outName = replace(replace(String(name), ".." => "_"), '/' => '_')
+    # Every entry gets a file name of its own: two entries can share a basename (two includes from different
+    # directories, or an include named like the script), so a name already taken by an earlier entry is
+    # disambiguated -- an include by its recorded path, flattened, then any entry by a numeric suffix -- rather
+    # than overwritten or reported as skipped. The names depend only on the header, not on the files in `dir`.
+    taken = Set{String}()
+    function claim(name, alt = name)
+        out = name in taken ? alt : name
+        if out in taken
+            stem, ext = splitext(out)
+            k = 2
+            while "$(stem)_$k$ext" in taken
+                k += 1
             end
-            writeExtracted(outName, body, "script_includes[$name]"; force = force) &&
-                push!(written, outName)
+            out = "$(stem)_$k$ext"
         end
+        push!(taken, out)
+        return out
     end
 
-    close(atlas)
-    return nothing
+    haskey(param, SCRIPT_KEY) &&
+        extract!(claim(extractName(string(get(param, SCRIPT_NAME_KEY, "")), "extracted_script.jl")),
+                 param[SCRIPT_KEY], "script")
+    haskey(param, CONFIG_KEY) &&
+        extract!(claim(extractName(string(get(param, CONFIG_NAME_KEY, "")), "extracted_config.toml")),
+                 param[CONFIG_KEY], "toml_config")
+    for (name, body) in includedSources(param)
+        outName = claim(extractName(name, "extracted_include.jl"),
+                        replace(replace(String(name), ".." => "_"), '/' => '_'))
+        extract!(outName, body, "script_includes[$name]")
+    end
+    return (written = written, skipped = skipped, entries = entries)
 end
 
 """
@@ -310,22 +297,4 @@ function listMapData(atlasPath::AbstractString)
     fieldNames = firstMapFieldNames(atlas)
     close(atlas)
     return fieldNames
-end
-
-"""
-    run_list_map_data(atlasPath)
-
-Print the names of the data fields (e.g. `log_spanning_trees`) contained in the
-first map of the atlas at `atlasPath`, one per line, sorted.
-"""
-function run_list_map_data(atlasPath::AbstractString)
-    fieldNames = listMapData(atlasPath)
-    if fieldNames === nothing
-        println("atlas list-map-data: $atlasPath has no maps; nothing to list.")
-    elseif isempty(fieldNames)
-        println("atlas list-map-data: $atlasPath's first map has no data fields.")
-    else
-        foreach(println, fieldNames)
-    end
-    return nothing
 end

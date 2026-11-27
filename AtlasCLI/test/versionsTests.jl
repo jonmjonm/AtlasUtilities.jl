@@ -1,19 +1,19 @@
 # Every subcommand gives the same results on a format v1 atlas and on its v2 conversion, and atlases with Float64
-# weights keep them. Runs the subcommands through `command_main`, like test/cliTests.jl.
-import JSON
-using AtlasUtilities: command_main, stripAtlasExt, run_convert, atlasInfo
+# weights keep them. Runs the subcommands through `command_main`, like cliTests.jl.
+using AtlasCLI: command_main
+using AtlasUtilities: stripAtlasExt, atlasInfo
 
-const VEX = joinpath(@__DIR__, "..", "examples")
-const VDATA = joinpath(@__DIR__, "..", "Data")
+const VEX = joinpath(@__DIR__, "..", "..", "examples")
+const VDATA = joinpath(@__DIR__, "..", "..", "Data")
 
-"Run `atlas args...`; return what it printed (it must succeed)."
+"Run `mapatlas args...`; return what it printed (it must succeed)."
 function vcli(args...)
     path, io = mktemp()
     code = redirect_stdout(io) do
         command_main(collect(String, args))
     end
     close(io)
-    code == 0 || error("atlas $(join(args, ' ')) returned $code")
+    code == 0 || error("mapatlas $(join(args, ' ')) returned $code")
     return read(path, String)
 end
 
@@ -41,8 +41,8 @@ end
     ms1, ms2 = joinpath(d1, "ms.jsonl.gz"), joinpath(d2, "ms.jsonl.gz")
     cp(joinpath(VEX, "cycleWalk_ct_slice.jsonl.gz"), ct1)
     cp(joinpath(VEX, "demo_multiscale.jsonl.gz"), ms1)
-    run_convert(ct1, ct2; to = 2, quiet = true)
-    run_convert(ms1, ms2; to = 2, quiet = true)
+    convertAtlas(ct1, ct2; formatVersion = 2)
+    convertAtlas(ms1, ms2; formatVersion = 2)
     @test vmaps(ct1)[1].formatVersion == "1" && vmaps(ct2)[1].formatVersion == "2"
 
     @testset "info shows the format version" begin
@@ -100,15 +100,6 @@ end
             @test h1.formatVersion == "1" && h2.formatVersion == "2"
             @test sameMaps(m1, m2)
         end
-    end
-
-    @testset "render: same image" begin
-        p1, p2 = joinpath(d1, "ct.png"), joinpath(d2, "ct.png")
-        for (a, p) in ((ct1, p1), (ct2, p2))
-            vcli("render", a, joinpath(VDATA, "shapefile_CT.zip"), "--key", "NAME", "--map", "2", "--out", p,
-                 "--quiet")
-        end
-        @test read(p1) == read(p2)
     end
 
     @testset "extract-assignments on a multiscale atlas: same CSV for v1 and v2, with and without --graph" begin

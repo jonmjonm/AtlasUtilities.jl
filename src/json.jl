@@ -1,4 +1,4 @@
-# JSON helpers shared by the subcommands (and the render extension). AtlasUtilities uses JSON.jl only.
+# JSON helpers used by the library. AtlasUtilities uses JSON.jl only.
 
 """
     readJSONFile(path) -> Dict{String,Any}

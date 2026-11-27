@@ -1,4 +1,4 @@
-# Tests for the `atlas add` subcommand: function-name parsing, function
+# Tests for writer evaluation (the CycleWalk extension): function
 # resolution, graph-spec resolution (TOML + flag overrides), the header
 # provenance stamp, and an end-to-end oracle test that recomputes a real
 # CycleWalk atlas's map data and checks it reproduces CycleWalk's own values.
@@ -7,31 +7,20 @@ using Test
 using AtlasIO
 import JSON
 using CycleWalk: get_log_spanning_trees, get_isoperimetric_scores
-using AtlasUtilities: parseFunctionNames, resolveFunctions, resolveGraphSpec,
-                     writeHeaderWithProvenance, GraphSpec, run_add, buildGraph,
-                     evalWriters, evalWritersTreeless, evalWritersLCP, allTreeless,
-                     hasFastMethod, parseVotePairs, voteColumns,
-                     cycleWalkWriterNames, run_list_writers, PARTISAN_WRITERS,
-                     add, smokeTestPartition, writerWorks
+import CycleWalk
+using AtlasUtilities: addMapData, loadGraph, listWriterDetails
+# The writer internals live in the CycleWalk extension, loaded by `import CycleWalk` above.
+const CWExt = Base.get_extension(AtlasUtilities, :AtlasUtilitiesCycleWalkExt)
+using .CWExt: resolveFunctions, resolveGraphSpec, writeHeaderWithProvenance, GraphSpec, buildGraph,
+              evalWriters, evalWritersTreeless, evalWritersLCP, allTreeless, hasFastMethod, voteColumns,
+              cycleWalkWriterNames, PARTISAN_WRITERS, smokeTestPartition, writerWorks
 
 # capture_stdout is defined in infoTests.jl, included before this file (see runtests.jl).
 
-# resolveGraphSpec takes only keyword arguments; default them all to "".
-rgs(; kw...) = resolveGraphSpec(; config = "", graph = "", pop_col = "",
-                                node_col = "", area_col = "", border_col = "",
-                                edge_perimeter_col = "", node_data = "", kw...)
+# resolveGraphSpec's keywords are all optional.
+rgs(; kw...) = resolveGraphSpec("test"; kw...)
 
 @testset "add" begin
-
-    @testset "parseFunctionNames" begin
-        @test parseFunctionNames("get_log_spanning_trees") == ["get_log_spanning_trees"]
-        @test parseFunctionNames("a,b,c") == ["a", "b", "c"]
-        @test parseFunctionNames("[a, b]") == ["a", "b"]           # bracketed list
-        @test parseFunctionNames("[\"a\", \"b\"]") == ["a", "b"]   # quoted, bracketed
-        @test parseFunctionNames("  a , b ,") == ["a", "b"]        # trailing comma / spaces
-        @test_throws ErrorException parseFunctionNames("")
-        @test_throws ErrorException parseFunctionNames("[]")
-    end
 
     @testset "resolveFunctions" begin
         fns = resolveFunctions(["get_log_spanning_trees", "get_isoperimetric_scores"])
@@ -65,15 +54,15 @@ rgs(; kw...) = resolveGraphSpec(; config = "", graph = "", pop_col = "",
         # when called -- an upstream CycleWalk bug, not reachable via hasmethod).
         writerNames = cycleWalkWriterNames()
 
-        graph = joinpath(@__DIR__, "..", "Data", "CT_pct20.json")
-        oracle = joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_slice.jsonl.gz")
+        graph = joinpath(@__DIR__, "..", "..", "Data", "CT_pct20.json")
+        oracle = joinpath(@__DIR__, "..", "..", "examples", "cycleWalk_ct_slice.jsonl.gz")
         Atlas2 = joinpath(mktempdir(), "listed_writers_smoke.jsonl.gz")
-        run_add(join(writerNames, ","), oracle, Atlas2;
-                graph = graph, pop_col = "POP20", node_col = "NAME",
-                area_col = "area", border_col = "border_length",
-                edge_perimeter_col = "length",
-                node_data = "COUNTY,NAME,POP20,area,border_length",
-                overwrite = true, quiet = true)   # must not throw
+        addMapData(oracle, Atlas2, writerNames;
+                   graph = graph, pop_col = "POP20", node_col = "NAME",
+                   area_col = "area", border_col = "border_length",
+                   edge_perimeter_col = "length",
+                   node_data = ["COUNTY", "NAME", "POP20", "area", "border_length"],
+                   overwrite = true)   # must not throw
 
         a = openAtlas(smartOpen(Atlas2, "r"))
         m = nextMap(a)
@@ -89,25 +78,11 @@ rgs(; kw...) = resolveGraphSpec(; config = "", graph = "", pop_col = "",
         @test !writerWorks((_p) -> error("boom"), p)
     end
 
-    @testset "run_list_writers: prints plain + partisan writers" begin
-        out = capture_stdout() do
-            run_list_writers()
-        end
-        @test occursin("get_log_spanning_trees", out)
-        @test occursin("get_partisan_margins", out)
-        @test occursin("get_partisan_seats", out)
-        @test occursin("--vote-cols", out)
-    end
-
-    @testset "atlas add --list-writers: short-circuits without functions/atlas1/atlas2" begin
-        out = capture_stdout() do
-            add(; list_writers = true)
-        end
-        @test occursin("get_log_spanning_trees", out)
-    end
-
-    @testset "atlas add: missing functions/atlas1/atlas2 errors clearly (without --list-writers)" begin
-        @test_throws ErrorException add()
+    @testset "listWriterDetails: plain + partisan writers" begin
+        d = listWriterDetails()
+        @test first.(d.plain) == cycleWalkWriterNames()
+        @test all(fast == hasFastMethod(getfield(CycleWalk, Symbol(n))) for (n, fast) in d.plain)
+        @test d.partisan == ["get_partisan_margins", "get_partisan_seats"]
     end
 
     @testset "resolveGraphSpec: flags only" begin
@@ -126,7 +101,9 @@ rgs(; kw...) = resolveGraphSpec(; config = "", graph = "", pop_col = "",
     end
 
     @testset "resolveGraphSpec: missing required pieces error" begin
-        @test_throws ErrorException rgs(pop_col = "POP20", node_col = "NAME")   # no graph
+        err = try rgs(pop_col = "POP20", node_col = "NAME"); nothing catch e; e end     # no graph
+        @test err isa ErrorException && startswith(err.msg, "test: no graph given") && occursin("graph =", err.msg)
+        @test_throws ErrorException rgs(graph = "", pop_col = "POP20", node_col = "NAME")   # "" is not given
         @test_throws ErrorException rgs(graph = "g.json", node_col = "NAME")    # no pop col
         @test_throws ErrorException rgs(graph = "g.json", pop_col = "POP20")    # no node col
     end
@@ -170,7 +147,7 @@ rgs(; kw...) = resolveGraphSpec(; config = "", graph = "", pop_col = "",
                  Dict{String,Any}("districts" => 3))
         close(io)
 
-        spec = rgs(graph = "g.json", pop_col = "POP20", node_col = "NAME")
+        spec = rgs(graph = "g.json", pop_col = "POP20", node_col = "NAME").path
         writeHeaderWithProvenance(Atlas1, Atlas2, ["get_log_spanning_trees"], spec)
 
         atlas = openAtlas(smartOpen(Atlas2, "r"))
@@ -179,6 +156,8 @@ rgs(; kw...) = resolveGraphSpec(; config = "", graph = "", pop_col = "",
         @test length(prov) == 1
         @test prov[1]["fields"] == ["get_log_spanning_trees"]
         @test prov[1]["graph"] == "g.json"
+        @test prov[1]["by"] == "addMapData"
+        @test prov[1]["version"] == string(pkgversion(AtlasUtilities))
         @test haskey(prov[1], "date")
         close(atlas)
 
@@ -201,7 +180,7 @@ rgs(; kw...) = resolveGraphSpec(; config = "", graph = "", pop_col = "",
         A5 = joinpath(dir, "A5.jsonl")
         writeHeaderWithProvenance(A4, A5, ["get_log_spanning_trees"], spec)
         line3 = readlines(A5)[3]
-        @test startswith(line3, params[1:end-1] * ",\"added map data\":[{\"by\":\"atlas add\",")
+        @test startswith(line3, params[1:end-1] * ",\"added map data\":[{\"by\":\"addMapData\",")
         atlas = openAtlas(smartOpen(A5, "r"))
         @test atlas.atlasParam["gamma"] === 0.0
         @test atlas.atlasParam["seed"] === -7375463094308724563
@@ -219,7 +198,7 @@ rgs(; kw...) = resolveGraphSpec(; config = "", graph = "", pop_col = "",
     # back onto the districting's labels) -- against ground truth. The multi-map
     # slice is what makes the re-alignment observable: several of its maps
     # reconstruct with a non-identity district permutation.
-    graph = joinpath(@__DIR__, "..", "Data", "CT_pct20.json")
+    graph = joinpath(@__DIR__, "..", "..", "Data", "CT_pct20.json")
     fields = ["get_log_spanning_trees", "get_log_spanning_forests",
               "get_isoperimetric_scores"]
     readall(p) = (a = openAtlas(smartOpen(p, "r")); ms = Map[];
@@ -232,14 +211,15 @@ rgs(; kw...) = resolveGraphSpec(; config = "", graph = "", pop_col = "",
 
     for (fixture, minmaps) in fixtures
         @testset "oracle: $fixture" begin
-            oracle = joinpath(@__DIR__, "..", "examples", fixture)
+            oracle = joinpath(@__DIR__, "..", "..", "examples", fixture)
             Atlas2 = joinpath(mktempdir(), "ct_recomputed.jsonl.gz")
-            run_add(join(fields, ","), oracle, Atlas2;
-                    graph = graph, pop_col = "POP20", node_col = "NAME",
-                    area_col = "area", border_col = "border_length",
-                    edge_perimeter_col = "length",
-                    node_data = "COUNTY,NAME,POP20,area,border_length",
-                    overwrite = true, quiet = true)
+            n = addMapData(oracle, Atlas2, fields;
+                           graph = graph, pop_col = "POP20", node_col = "NAME",
+                           area_col = "area", border_col = "border_length",
+                           edge_perimeter_col = "length",
+                           node_data = ["COUNTY", "NAME", "POP20", "area", "border_length"],
+                           overwrite = true)
+            @test n == length(readall(oracle))
 
             orig, recomp = readall(oracle), readall(Atlas2)
             @test length(orig) == length(recomp)
@@ -292,11 +272,11 @@ rgs(; kw...) = resolveGraphSpec(; config = "", graph = "", pop_col = "",
             @info "CycleWalk lacks the partition-free writer methods; skipping " *
                   "fast==LCP value checks (all writers route to the LinkCutPartition path)."
         else
-            g = buildGraph(rgs(graph = graph, pop_col = "POP20", node_col = "NAME",
-                               area_col = "area", border_col = "border_length",
-                               edge_perimeter_col = "length",
-                               node_data = "COUNTY,NAME,POP20,area,border_length"))
-            maps = readall(joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_slice.jsonl.gz"))
+            g = loadGraph(graph = graph, pop_col = "POP20", node_col = "NAME",
+                          area_col = "area", border_col = "border_length",
+                          edge_perimeter_col = "length",
+                          node_data = ["COUNTY", "NAME", "POP20", "area", "border_length"])
+            maps = readall(joinpath(@__DIR__, "..", "..", "examples", "cycleWalk_ct_slice.jsonl.gz"))
             @test length(maps) >= 40
             for m in maps
                 fast = evalWritersTreeless(g, m, treelessFns)
@@ -320,15 +300,8 @@ rgs(; kw...) = resolveGraphSpec(; config = "", graph = "", pop_col = "",
         end
     end
 
-    @testset "parseVotePairs / voteColumns" begin
-        @test parseVotePairs("") == Tuple{String,String}[]
-        @test parseVotePairs("A,B") == [("A", "B")]
-        @test parseVotePairs("A,B;C,D") == [("A", "B"), ("C", "D")]
-        @test parseVotePairs(" A , B ; C , D ") == [("A", "B"), ("C", "D")]  # spaces trimmed
-        @test parseVotePairs("A,B;") == [("A", "B")]                         # trailing ; ignored
-        @test_throws ErrorException parseVotePairs("A")                      # not a pair
-        @test_throws ErrorException parseVotePairs("A,B,C")                  # too many cols
-        @test voteColumns([("A", "B"), ("C", "A")]) == ["A", "B", "C"]       # distinct, in order
+    @testset "voteColumns: distinct, in order" begin
+        @test voteColumns([("A", "B"), ("C", "A")]) == ["A", "B", "C"]
     end
 
     @testset "resolveFunctions: partisan writers expand per vote pair" begin
@@ -351,19 +324,20 @@ rgs(; kw...) = resolveGraphSpec(; config = "", graph = "", pop_col = "",
 
         # a partisan writer without vote columns is an error
         @test_throws ErrorException resolveFunctions(["get_partisan_margins"])
+        @test_throws "vote_cols = [(\"votes1\", \"votes2\"), ...]" resolveFunctions(["get_partisan_margins"])
     end
 
     # End-to-end: add per-district vote shares and check them against an independent
     # aggregation of the graph's vote columns over each map's own districting.
-    @testset "run_add: partisan margins == independent tally" begin
-        graphPath = joinpath(@__DIR__, "..", "Data", "CT_pct20.json")
-        src = joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_slice.jsonl.gz")
+    @testset "addMapData: partisan margins == independent tally" begin
+        graphPath = joinpath(@__DIR__, "..", "..", "Data", "CT_pct20.json")
+        src = joinpath(@__DIR__, "..", "..", "examples", "cycleWalk_ct_slice.jsonl.gz")
         v1, v2 = "G20PREDEM", "G20PREREP"
         field = "get_partisan_margins_$(v1)_$(v2)"
 
         Atlas2 = joinpath(mktempdir(), "votes.jsonl.gz")
-        run_add("get_partisan_margins", src, Atlas2; graph = graphPath, pop_col = "POP20",
-                node_col = "NAME", vote_cols = "$v1,$v2", overwrite = true, quiet = true)
+        addMapData(src, Atlas2, ["get_partisan_margins"]; graph = graphPath, pop_col = "POP20",
+                   node_col = "NAME", vote_cols = [(v1, v2)], overwrite = true)
 
         # graph vote data keyed by NAME
         graph = JSON.parse(read(graphPath, String))
@@ -388,6 +362,41 @@ rgs(; kw...) = resolveGraphSpec(; config = "", graph = "", pop_col = "",
         close(a)
         @test nmaps >= 40
         @test maxerr < 1e-9        # exact per-district vote-share aggregation
+    end
+
+    @testset "addMapData: a failed run leaves dst as it was" begin
+        ct = joinpath(@__DIR__, "..", "..", "examples", "cycleWalk_ct_slice.jsonl.gz")
+        g = joinpath(@__DIR__, "..", "..", "Data", "CT_pct20.json")
+        dir = mktempdir()
+        dst = joinpath(dir, "out.jsonl.gz")
+        kw = (graph = g, pop_col = "POP20", node_col = "NAME")
+        # the field is already there and overwrite is not set: an error at the first map
+        @test_throws ErrorException addMapData(ct, dst, ["get_log_spanning_trees"]; kw...)
+        @test !isfile(dst) && isempty(filter(f -> occursin(".tmp", f), readdir(dir)))
+        write(dst, "earlier output")
+        @test_throws ErrorException addMapData(ct, dst, ["get_log_spanning_trees"]; kw...)
+        @test read(dst, String) == "earlier output"
+        # dst may be src
+        a = joinpath(dir, "a.jsonl.gz")
+        cp(ct, a)
+        @test addMapData(a, a, ["get_cut_edge_sum"]; kw...) == 41
+        @test "get_cut_edge_sum" in listMapData(a) && isempty(filter(f -> occursin(".tmp", f), readdir(dir)))
+    end
+
+    @testset "addMapData: a damaged map gives its line; keep_partial keeps every map before it" begin
+        g = joinpath(@__DIR__, "..", "..", "Data", "CT_pct20.json")
+        dir = mktempdir()
+        cut = damagedCT(dir)                                  # map 20 cut short (partialOutputTests.jl)
+        kw = (graph = g, pop_col = "POP20", node_col = "NAME", overwrite = true)
+        for cores in (1, 4)
+            e = errorOf(() -> addMapData(cut, joinpath(dir, "o.jsonl"), ["get_log_spanning_trees"]; cores, kw...))
+            @test e isa AtlasFormatError && startswith(e.msg, "$cut, line 23 (map 20): ")
+        end
+        dst = joinpath(dir, "o.jsonl.gz")
+        @test_logs (:warn, r"kept") match_mode = :any begin
+            @test_throws AtlasFormatError addMapData(cut, dst, ["get_log_spanning_trees"]; keep_partial = true, kw...)
+        end
+        @test !isfile(dst) && length(mapsIn(joinpath(dir, "o.incomplete.jsonl.gz"))) == 19
     end
 
 end

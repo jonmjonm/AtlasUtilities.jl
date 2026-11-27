@@ -1,7 +1,7 @@
 using Test
 using AtlasIO
 using AtlasUtilities
-using AtlasUtilities: findRelabeling, relabelMap, run_relabel, loadHierarchy, loadPopulation, expandLabels, BATCH,
+using AtlasUtilities: findRelabeling, relabelMap, relabelAtlas, loadHierarchy, loadPopulation, expandLabels, BATCH,
                        hammingDistance, confusionMatrix
 
 # Fixed node-key set shared by all test maps.
@@ -137,7 +137,7 @@ partition(labels) = Set(Set(i for i in eachindex(labels) if labels[i] == d)
         src = [[1, 1, 2, 2], [2, 2, 1, 1], [1, 2, 2, 1]]
         buildatlas(Atlas1, src)
 
-        run_relabel(Atlas1, Atlas2; quiet = true, cores = 1)
+        @test relabelAtlas(Atlas1, Atlas2; cores = 1) == 3
         out = readatlas(Atlas2)
 
         @test length(out) == 3
@@ -155,7 +155,7 @@ partition(labels) = Set(Set(i for i in eachindex(labels) if labels[i] == d)
         src = [[1, 1, 2, 2], [2, 2, 1, 1], [1, 2, 2, 1]]
         buildatlas(Atlas1, src)
 
-        run_relabel(Atlas1, Atlas2; firstMap = true, quiet = true, cores = 1)
+        relabelAtlas(Atlas1, Atlas2; first_map = true, cores = 1)
         out = readatlas(Atlas2)
 
         @test length(out) == 3
@@ -188,7 +188,7 @@ partition(labels) = Set(Set(i for i in eachindex(labels) if labels[i] == d)
         end
         close(io)
 
-        run_relabel(Atlas1, Atlas2, gpath; quiet = true, cores = 1)
+        relabelAtlas(Atlas1, Atlas2; graph = gpath, cores = 1)
         out = readatlas(Atlas2)
         h = loadHierarchy(gpath, ["county", "prec"])
 
@@ -224,11 +224,11 @@ partition(labels) = Set(Set(i for i in eachindex(labels) if labels[i] == d)
         @test findRelabeling(refMap, curMap, 2, h; pop) == [1, 2]       # heavy ("Y","1") flips the match
     end
 
-    @testset "progress bar path (no --quiet) runs and is correct" begin
+    @testset "progress bar path (progress = true) runs and is correct" begin
         dir = mktempdir()
         Atlas1, Atlas2 = joinpath(dir, "Atlas1.jsonl"), joinpath(dir, "Atlas2.jsonl")
         buildatlas(Atlas1, [[1, 1, 2, 2], [2, 2, 1, 1], [1, 2, 2, 1]])
-        run_relabel(Atlas1, Atlas2; cores = 1)       # progress enabled; must not error
+        relabelAtlas(Atlas1, Atlas2; progress = true, cores = 1)       # must not error
         out = readatlas(Atlas2)
         @test length(out) == 3
         @test labelsof(out[2]) == [1, 1, 2, 2]
@@ -254,8 +254,8 @@ partition(labels) = Set(Set(i for i in eachindex(labels) if labels[i] == d)
         # Compare an explicitly serial run against one using this process's full
         # thread count. Run the suite with `julia -t N` to exercise true parallelism.
         ser = joinpath(dir, "serial.jsonl"); par = joinpath(dir, "par.jsonl")
-        run_relabel(Atlas1, ser; quiet = true, cores = 1)
-        run_relabel(Atlas1, par; quiet = true, cores = Threads.nthreads())
+        relabelAtlas(Atlas1, ser; cores = 1)
+        relabelAtlas(Atlas1, par; cores = Threads.nthreads())
 
         os, op = readatlas(ser), readatlas(par)
         @test length(os) == nmaps && length(op) == nmaps
@@ -265,20 +265,32 @@ partition(labels) = Set(Set(i for i in eachindex(labels) if labels[i] == d)
 
 end
 
-include(joinpath(@__DIR__, "infoTests.jl"))
-include(joinpath(@__DIR__, "nodesTests.jl"))
-include(joinpath(@__DIR__, "assignmentsTests.jl"))
-include(joinpath(@__DIR__, "addTests.jl"))
-include(joinpath(@__DIR__, "writersTests.jl"))
-include(joinpath(@__DIR__, "extractTests.jl"))
-include(joinpath(@__DIR__, "extractHistogramTests.jl"))
-include(joinpath(@__DIR__, "summarizeTests.jl"))
-include(joinpath(@__DIR__, "weightsTests.jl"))
-include(joinpath(@__DIR__, "parallelTests.jl"))
-include(joinpath(@__DIR__, "pargzipTests.jl"))
-include(joinpath(@__DIR__, "pointgraphTests.jl"))
-include(joinpath(@__DIR__, "renderTests.jl"))
-include(joinpath(@__DIR__, "convertTests.jl"))
-include(joinpath(@__DIR__, "jsonTests.jl"))
-include(joinpath(@__DIR__, "cliTests.jl"))
-include(joinpath(@__DIR__, "versionsTests.jl"))
+# The library tests come first: they run without CycleWalk (checked below). The tests in process/ load it.
+include("apiTests.jl")
+include("testHelpers.jl")
+include("infoTests.jl")       # defines capture_stdout
+include("cycleWalkExtTests.jl")
+include("nodesTests.jl")
+include("assignmentsTests.jl")
+include("extractTests.jl")
+include("extractHistogramTests.jl")
+include("summarizeTests.jl")
+include("weightsTests.jl")
+include("parallelTests.jl")
+include("pargzipTests.jl")
+include("convertTests.jl")
+include("jsonTests.jl")
+include("partialOutputTests.jl")
+include("aquaTests.jl")
+
+@testset "the library tests ran without CycleWalk" begin
+    @test !haskey(Base.loaded_modules, Base.PkgId(Base.UUID("ac9cec89-1413-42d8-a7d6-c246d938c565"), "CycleWalk"))
+end
+
+# CycleWalk (the process extension). addTests.jl imports it and defines CWExt, which later files use.
+include("process/addTests.jl")
+include("process/writersTests.jl")
+include("process/extractWritersTests.jl")
+include("process/parallelWritersTests.jl")
+include("process/pargzipWritersTests.jl")
+include("process/convertWritersTests.jl")

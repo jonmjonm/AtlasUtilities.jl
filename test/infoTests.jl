@@ -1,8 +1,8 @@
-# Tests for the `atlas info` subcommand (src/info.jl).
+# Tests for reading an atlas header (src/info.jl).
 
 using Test
 using AtlasIO
-using AtlasUtilities: formatValue, printBlock, run_info, run_list_map_data,
+using AtlasUtilities: formatValue, printBlock, extractScripts, atlasHeaderInfo, listMapData,
                       firstMapFieldNames, atlasInfo, extractName
 
 """Run `f()` capturing everything it writes to stdout, returned as a String."""
@@ -95,56 +95,6 @@ end
         @test occursin("(none)", out)
     end
 
-    @testset "run_info: prints header + params, omits script, keys sorted" begin
-        dir = mktempdir()
-        path = joinpath(dir, "a.jsonl")
-        writeAtlas(path, Dict{String,Any}(
-            "districts"   => 5,
-            "energies"    => Any["iso", "sf"],
-            "zeta"        => 1,
-            "alpha"       => 2,
-            "script_name" => "run.jl",
-            "script"      => "print(\"hello\")\n",
-        ))
-
-        out = capture_stdout() do
-            run_info(path)
-        end
-
-        @test occursin("Atlas Header", out)
-        @test occursin("Atlas Parameters", out)
-        @test occursin("districts", out)
-        @test occursin("energies", out)
-        @test occursin("[\"iso\", \"sf\"]", out)        # scalar array formatting
-        @test occursin("script_name", out)              # script_name IS shown
-        @test !occursin("hello", out)                   # script BODY is never printed
-        @test !occursin("\nscript ", out) && !occursin("  script ", out)  # no "script" key row
-        # Params are alphabetized: alpha before zeta.
-        @test findfirst("alpha", out).start < findfirst("zeta", out).start
-    end
-
-    @testset "run_info extract_script: writes script to script_name file" begin
-        dir = mktempdir()
-        path = joinpath(dir, "a.jsonl")
-        body = "# extracted script\nprintln(42)\n"
-        writeAtlas(path, Dict{String,Any}(
-            "districts"   => 3,
-            "script_name" => "extracted.jl",
-            "script"      => body,
-        ))
-
-        out = cd(dir) do
-            capture_stdout() do
-                run_info(path; extract_script = true)
-            end
-        end
-
-        scriptOut = joinpath(dir, "extracted.jl")
-        @test isfile(scriptOut)
-        @test read(scriptOut, String) == body
-        @test occursin("Wrote script entry to: extracted.jl", out)
-    end
-
     @testset "extractName: keeps extraction inside the current directory" begin
         # A recorded path -- absolute, or climbing out with ".." -- is reduced to its
         # basename, so extraction can never write back over the original file.
@@ -157,216 +107,6 @@ end
         @test extractName("", "fallback.jl") == "fallback.jl"
         @test extractName("/", "fallback.jl") == "fallback.jl"
         @test extractName("..", "fallback.jl") == "fallback.jl"
-    end
-
-    @testset "run_info extract_script: never writes outside the current directory" begin
-        # CycleWalk records the TOML config under the path the run was invoked with,
-        # which is often the live config file itself; extraction must not write there.
-        dir = mktempdir()
-        elsewhereDir = mktempdir()
-        path = joinpath(dir, "a.jsonl")
-        original = joinpath(elsewhereDir, "param.toml")
-        write(original, "[plans]\nnum_dists = 9   # the live config\n")
-
-        writeAtlas(path, Dict{String,Any}(
-            "districts"        => 3,
-            "script_name"      => joinpath(elsewhereDir, "run.jl"),
-            "script"           => "println(1)\n",
-            "toml_config_file" => original,
-            "toml_config"      => "[plans]\nnum_dists = 3\n",
-        ))
-
-        cd(dir) do
-            capture_stdout() do
-                run_info(path; extract_script = true)
-            end
-        end
-
-        @test read(original, String) == "[plans]\nnum_dists = 9   # the live config\n"
-        @test !isfile(joinpath(elsewhereDir, "run.jl"))
-        @test read(joinpath(dir, "param.toml"), String) == "[plans]\nnum_dists = 3\n"
-        @test read(joinpath(dir, "run.jl"), String) == "println(1)\n"
-    end
-
-    @testset "run_info extract_script: existing file kept unless force" begin
-        dir = mktempdir()
-        path = joinpath(dir, "a.jsonl")
-        writeAtlas(path, Dict{String,Any}(
-            "districts"   => 3,
-            "script_name" => "run.jl",
-            "script"      => "println(1)\n",
-        ))
-        write(joinpath(dir, "run.jl"), "# mine, not the atlas's\n")
-
-        local out
-        err = cd(dir) do
-            capture_stderr() do
-                out = capture_stdout() do
-                    run_info(path; extract_script = true)
-                end
-            end
-        end
-        @test read(joinpath(dir, "run.jl"), String) == "# mine, not the atlas's\n"
-        @test occursin("already exists", out)
-        @test occursin("already exists", err)
-
-        cd(dir) do
-            capture_stdout() do
-                run_info(path; extract_script = true, force = true)
-            end
-        end
-        @test read(joinpath(dir, "run.jl"), String) == "println(1)\n"
-    end
-
-    @testset "run_info: omits the bulky script_includes, extracts each include" begin
-        # CycleWalk >= 0.2.2 embeds the source of every file the run script includes;
-        # printing them would bury the header under tens of kilobytes of Julia.
-        dir = mktempdir()
-        path = joinpath(dir, "a.jsonl")
-        incBody = "# an included file\nconst SECRET_MARKER = 1\n"
-        writeAtlas(path, Dict{String,Any}(
-            "districts"       => 3,
-            "script_name"     => "run.jl",
-            "script"          => "include(\"helpers.jl\")\n",
-            "script_includes" => Dict{String,Any}(
-                "helpers.jl"           => incBody,
-                "../src/deeper.jl"     => "# a deeper include\n",
-            ),
-            "script_includes_skipped" => Any["huge.jl"],   # short list: still printed
-        ))
-
-        out = cd(dir) do
-            capture_stdout() do
-                run_info(path)
-            end
-        end
-        @test occursin("script includes", out)            # presence noted
-        @test occursin("2 file(s) embedded", out)
-        @test !occursin("SECRET_MARKER", out)             # bodies never printed
-        @test !occursin("a deeper include", out)
-        @test occursin("script_includes_skipped", out)    # its short companions stay
-        @test occursin("huge.jl", out)
-        @test !isfile(joinpath(dir, "helpers.jl"))        # info alone does not extract
-
-        out2 = cd(dir) do
-            capture_stdout() do
-                run_info(path; extract_script = true)
-            end
-        end
-        @test read(joinpath(dir, "helpers.jl"), String) == incBody
-        # "../src/deeper.jl" lands in the current directory, under its basename.
-        @test read(joinpath(dir, "deeper.jl"), String) == "# a deeper include\n"
-        @test occursin("script_includes[helpers.jl]", out2)
-    end
-
-    @testset "run_info: no script_includes entry is not mentioned" begin
-        dir = mktempdir()
-        path = joinpath(dir, "a.jsonl")
-        writeAtlas(path, Dict{String,Any}("districts" => 2))
-
-        out = capture_stdout() do
-            run_info(path)
-        end
-        @test !occursin("script includes", out)
-        @test !occursin("script_includes", out)
-    end
-
-    @testset "run_info extract_script: no script entry warns, writes nothing" begin
-        dir = mktempdir()
-        path = joinpath(dir, "a.jsonl")
-        writeAtlas(path, Dict{String,Any}("districts" => 2))
-
-        local out
-        err = capture_stderr() do
-            out = capture_stdout() do
-                run_info(path; extract_script = true)
-            end
-        end
-
-        @test occursin("no \"script\" entry", err)      # warning on stderr
-        @test occursin("no \"script\" entry", out)      # and also on stdout
-        @test isempty(readdir(dir)) == false            # only the atlas file exists
-        @test !any(f -> endswith(f, ".jl"), readdir(dir))
-    end
-
-    @testset "run_info: lists first map's data field names" begin
-        dir = mktempdir()
-        path = joinpath(dir, "a.jsonl")
-        writeAtlas(path, Dict{String,Any}("districts" => 5);
-                  mapData = Dict{String,Any}("log_spanning_trees" => 1.2, "alpha" => 3))
-
-        out = capture_stdout() do
-            run_info(path)
-        end
-
-        @test occursin("Map Data Fields", out)
-        @test occursin("log_spanning_trees", out)
-        # Field names are listed, sorted.
-        @test findfirst("alpha", out).start < findfirst("log_spanning_trees", out).start
-    end
-
-    @testset "run_info: notes embedded run script and/or toml config, extracts both" begin
-        dir = mktempdir()
-        path = joinpath(dir, "a.jsonl")
-        scriptOut = joinpath(dir, "extracted.jl")
-        configOut = joinpath(dir, "extracted.toml")
-        scriptBody = "println(1)\n"
-        configBody = "[plans]\nnum_dists = 3\n"
-        writeAtlas(path, Dict{String,Any}(
-            "districts"         => 3,
-            "script_name"       => "extracted.jl",
-            "script"            => scriptBody,
-            "toml_config_file"  => "extracted.toml",
-            "toml_config"       => configBody,
-        ))
-
-        out = capture_stdout() do
-            run_info(path)
-        end
-        @test occursin("run script", out)
-        @test occursin("toml config", out)
-        @test !occursin(scriptBody, out)
-        @test !occursin(configBody, out)
-        @test !isfile(scriptOut)   # info alone does not extract
-        @test !isfile(configOut)
-
-        out2 = cd(dir) do
-            capture_stdout() do
-                run_info(path; extract_script = true)
-            end
-        end
-        @test isfile(scriptOut)
-        @test read(scriptOut, String) == scriptBody
-        @test isfile(configOut)
-        @test read(configOut, String) == configBody
-        @test occursin("Wrote script entry to: extracted.jl", out2)
-        @test occursin("Wrote toml_config entry to: extracted.toml", out2)
-    end
-
-    @testset "run_info: no toml config entry does not mention or extract one" begin
-        dir = mktempdir()
-        path = joinpath(dir, "a.jsonl")
-        writeAtlas(path, Dict{String,Any}("districts" => 2))
-
-        out = capture_stdout() do
-            run_info(path; extract_script = true)
-        end
-        @test !occursin("toml config", out)
-        @test !occursin("toml_config", out)
-        @test !any(f -> endswith(f, ".toml"), readdir(dir))
-    end
-
-    @testset "run_info: no maps prints (none) for Map Data Fields" begin
-        dir = mktempdir()
-        path = joinpath(dir, "a.jsonl")
-        writeEmptyAtlas(path, Dict{String,Any}("districts" => 1))
-
-        out = capture_stdout() do
-            run_info(path)
-        end
-
-        @test occursin("Map Data Fields", out)
-        @test occursin("(none)", out)
     end
 
     @testset "firstMapFieldNames: sorted names, nothing when no maps" begin
@@ -434,42 +174,48 @@ end
         @test info["map_data"] == ["zeta"]
     end
 
-    @testset "run_list_map_data: prints sorted field names, one per line" begin
-        dir = mktempdir()
+    @testset "extractScripts: writes script, config and includes into dir, never to their recorded paths" begin
+        dir, out, elsewhere = mktempdir(), mktempdir(), mktempdir()
         path = joinpath(dir, "a.jsonl")
-        writeAtlas(path, Dict{String,Any}();
-                  mapData = Dict{String,Any}("log_spanning_trees" => 1.0, "alpha" => 2))
-
-        out = capture_stdout() do
-            run_list_map_data(path)
-        end
-        lines = filter(!isempty, split(out, '\n'))
-
-        @test lines == ["alpha", "log_spanning_trees"]
+        original = joinpath(elsewhere, "param.toml")
+        write(original, "live")
+        writeAtlas(path, Dict{String,Any}(
+            "districts" => 3, "script_name" => joinpath(elsewhere, "run.jl"), "script" => "println(1)\n",
+            "toml_config_file" => original, "toml_config" => "[plans]\n",
+            "script_includes" => Dict{String,Any}("a/util.jl" => "# a\n", "b/util.jl" => "# b\n")))
+        r = extractScripts(path, out)
+        @test read(original, String) == "live" && !isfile(joinpath(elsewhere, "run.jl"))
+        @test isempty(r.skipped) && length(r.written) == 4 == length(unique(r.written))
+        @test all(p -> dirname(p) == out, r.written)       # two includes named util.jl get distinct files
+        @test sort(read.(filter(p -> occursin("util", p), r.written), String)) == ["# a\n", "# b\n"]
+        write(joinpath(out, "run.jl"), "# mine\n")
+        r2 = extractScripts(path, out)
+        @test isempty(r2.written) && joinpath(out, "run.jl") in r2.skipped
+        @test read(joinpath(out, "run.jl"), String) == "# mine\n"
+        @test extractScripts(path, out; force = true).written == r.written
+        @test read(joinpath(out, "run.jl"), String) == "println(1)\n"
     end
 
-    @testset "run_list_map_data: no maps prints a message, no field lines" begin
-        dir = mktempdir()
+    @testset "extractScripts: an include named like the script gets a file of its own" begin
+        dir, out = mktempdir(), mktempdir()
         path = joinpath(dir, "a.jsonl")
-        writeEmptyAtlas(path, Dict{String,Any}())
-
-        out = capture_stdout() do
-            run_list_map_data(path)
-        end
-
-        @test occursin("no maps", out)
-    end
-
-    @testset "run_info: gzip-compressed atlas reads fine" begin
-        dir = mktempdir()
-        path = joinpath(dir, "a.jsonl.gz")
-        writeAtlas(path, Dict{String,Any}("districts" => 4, "state" => "CT"))
-
-        out = capture_stdout() do
-            run_info(path)
-        end
-        @test occursin("state", out)
-        @test occursin("\"CT\"", out)
+        writeAtlas(path, Dict{String,Any}(
+            "districts" => 3, "script_name" => "run.jl", "script" => "# script\n",
+            "toml_config_file" => "run.jl", "toml_config" => "[plans]\n",          # also named like the script
+            "script_includes" => Dict{String,Any}("lib/run.jl" => "# lib\n", "run.jl" => "# top\n")))
+        r = extractScripts(path, out)
+        @test isempty(r.skipped) && length(r.written) == 4 == length(unique(r.written))
+        @test length(unique(last.(r.entries))) == 4                               # one path per entry
+        byEntry = Dict(r.entries)
+        @test read(byEntry["script"], String) == "# script\n"                     # never overwritten
+        @test read(byEntry["toml_config"], String) == "[plans]\n"
+        @test basename(byEntry["toml_config"]) == "run_2.jl"
+        @test read(byEntry["script_includes[lib/run.jl]"], String) == "# lib\n"
+        @test basename(byEntry["script_includes[lib/run.jl]"]) == "lib_run.jl"
+        @test read(byEntry["script_includes[run.jl]"], String) == "# top\n"
+        # The names depend on the header only: a rerun skips the very same files.
+        r2 = extractScripts(path, out)
+        @test isempty(r2.written) && sort(r2.skipped) == sort(r.written) && r2.entries == r.entries
     end
 
 end

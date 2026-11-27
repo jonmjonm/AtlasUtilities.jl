@@ -1,9 +1,9 @@
-# summarize.jl -- the `atlas summarize-map-data` subcommand.
+# summarize.jl -- summary statistics of the map data (`summarizeMapData`, `mapatlas summarize-map-data`).
 #
 # Like `extract-map-data-histogram`, builds a StreamingHistogram per map-data field (or a
 # StreamingHistogram per index for a vector field, sorted ascending so index j holds the
-# j-th order statistic), but instead of writing files, prints mean/std/quartiles
-# straight to stdout. No --add/graph/config support -- this only summarizes the
+# j-th order statistic), but instead of writing files, returns mean/std/quartiles
+# (a `MapDataSummary`, which prints as the command's text). No --add/graph/config support -- this only summarizes the
 # map data already present in the atlas. When the maps' weights vary, the weighted
 # mean/std/quartiles (each map counting its weight) are printed too.
 
@@ -74,9 +74,60 @@ function quartiles(oh::StreamingHistogram; weighted::Bool = false)
 end
 
 """
-    fieldSummaryLines(oh) -> Vector{String}
+    StatSummary
 
-`mean`/`std`/`[min, 25%, median, 75%, max]` lines for one `StreamingHistogram`, plus a
+One field's statistics for one weighting (each map counting once, or counting its weight): `mean`, `std`, the
+`quartiles` (25%, median, 75%), `worst_gap` (the largest disagreement of a quartile with the ASH density, or
+`nothing`; see [`quartiles`](@ref)), and `total` (the number of maps, or their total weight) with the part of it
+that fell below (`underflow`) and above (`overflow`) the histogram's range.
+"""
+struct StatSummary
+    mean::Real
+    std::Real
+    quartiles::NTuple{3,Float64}
+    worst_gap::Union{Nothing,Float64}
+    total::Real
+    underflow::Real
+    overflow::Real
+end
+
+"""
+    FieldSummary
+
+The summary of one field (or one index of a vector field) from its `StreamingHistogram`: `nobs` maps, the exact
+`min` and `max`, the `unweighted` statistics, and, when the maps' weights vary, the `weighted` ones (else
+`nothing`), with `effective_sample_size` and `total_weight`.
+"""
+struct FieldSummary
+    nobs::Int
+    min::Real
+    max::Real
+    unweighted::StatSummary
+    weighted::Union{Nothing,StatSummary}
+    effective_sample_size::Real
+    total_weight::Real
+end
+
+function StatSummary(oh::StreamingHistogram; weighted::Bool)
+    qs, worstGap = quartiles(oh; weighted = weighted)
+    μ, σ = weighted ? (weightedMean(oh), weightedStd(oh)) : (mean(oh), std(oh))
+    total = weighted ? totalweight(oh) : nobs(oh)
+    uf, of = weighted ? outofrangeweight(oh) : outofrange(oh)
+    return StatSummary(μ, σ, (qs[1], qs[2], qs[3]), worstGap, total, uf, of)
+end
+
+function FieldSummary(oh::StreamingHistogram)
+    mn, mx = datarange(oh)
+    tw = totalweight(oh)
+    weighted = tw != 0 && weightsVary(oh) ? StatSummary(oh; weighted = true) : nothing
+    return FieldSummary(nobs(oh), mn, mx, StatSummary(oh; weighted = false), weighted, effectivesamplesize(oh), tw)
+end
+
+"""
+    fieldSummaryLines(s::FieldSummary) -> Vector{String}
+    fieldSummaryLines(oh::StreamingHistogram) -> Vector{String}
+
+`mean`/`std`/`[min, 25%, median, 75%, max]` lines for one field (index), plus a
 warning line if too much of its data fell out of the histogram range
 (`OUTOFRANGE_WARN_FRAC`) and/or its worst quartile-vs-ASH disagreement exceeds
 `ASH_QUANTILE_WARN_TOL` (see `quartiles`/`ashQuantileGap`). When the maps'
@@ -84,21 +135,23 @@ weights vary (`weightsVary`), the same lines for the weighted data follow, with 
 effective sample size, and the same warnings for it; when every weight is 0, a line
 saying so.
 """
-function fieldSummaryLines(oh::StreamingHistogram)
-    n = nobs(oh)
-    mn, mx = datarange(oh)
+fieldSummaryLines(oh::StreamingHistogram) = fieldSummaryLines(FieldSummary(oh))
+
+function fieldSummaryLines(s::FieldSummary)
+    n = s.nobs
+    mn, mx = s.min, s.max
     lines = String[]
 
-    function summarize!(weighted)
-        qs, worstGap = quartiles(oh; weighted = weighted)
-        μ, σ = weighted ? (weightedMean(oh), weightedStd(oh)) : (mean(oh), std(oh))
+    function summarize!(st::StatSummary, weighted)
+        qs, worstGap = st.quartiles, st.worst_gap
+        μ, σ = st.mean, st.std
         label = weighted ? "weighted " : ""
         push!(lines, "$(label)mean: $μ   $(label)std: $σ" *
-                     (weighted ? "   (effective sample size: $(effectivesamplesize(oh)) of $n maps)" : ""))
+                     (weighted ? "   (effective sample size: $(s.effective_sample_size) of $n maps)" : ""))
         push!(lines, "$(label)[min, 25%, median, 75%, max]: [$mn, $(qs[1]), $(qs[2]), $(qs[3]), $mx]")
 
-        total = weighted ? totalweight(oh) : n
-        uf, of = weighted ? outofrangeweight(oh) : outofrange(oh)
+        total = st.total
+        uf, of = st.underflow, st.overflow
         oorFrac = total == 0 ? 0.0 : (uf + of) / total
         if oorFrac > OUTOFRANGE_WARN_FRAC
             what = weighted ? "of the weight" : "of points"
@@ -114,51 +167,69 @@ function fieldSummaryLines(oh::StreamingHistogram)
         end
     end
 
-    summarize!(false)
-    if totalweight(oh) == 0
+    summarize!(s.unweighted, false)
+    if s.total_weight == 0
         push!(lines, "weighted: every map has weight 0, so there are no weighted statistics")
-    elseif weightsVary(oh)
-        summarize!(true)
+    elseif s.weighted !== nothing
+        summarize!(s.weighted, true)
     end
     return lines
 end
 
 """
-    run_summarize_map_data(Atlas1; max_maps = 0, cores = Threads.nthreads(),
-                           quiet = false)
+    MapDataSummary
 
-Print the number of maps considered, then for every map-data field of atlas
-`Atlas1`: `mean`, `std`, and `[min, 25% quartile, median, 75% quartile, max]`, each
-computed from a `StreamingHistogram` (a `Vector{StreamingHistogram}` per index for a vector
-field, with each map's vector sorted ascending first -- see `mapDataHistograms`).
-When the maps' weights vary, the weighted mean, std and quartiles (each map counting
-its weight) and the effective sample size follow (see `fieldSummaryLines`).
-`max_maps` (0 = unlimited, the default) considers only the atlas's first `n` maps.
+What [`summarizeMapData`](@ref) returns: `nmaps`, the number of maps considered, and `fields`, each field's
+[`FieldSummary`](@ref) (a `Vector{FieldSummary}`, one per index, for a vector field). Displayed (at the REPL, or
+`show(io, MIME"text/plain"(), s)`) it gives the text `mapatlas summarize-map-data` prints; `print` and string
+interpolation give one line, `MapDataSummary(<n> maps, <k> fields)`.
 """
-function run_summarize_map_data(Atlas1::AbstractString; max_maps::Int = 0,
-                                cores::Int = Threads.nthreads(), quiet::Bool = false)
-    max_maps < 0 && error("atlas summarize-map-data: --max-maps must be ≥ 0, got $max_maps.")
+struct MapDataSummary
+    nmaps::Int
+    fields::Dict{String,Union{FieldSummary,Vector{FieldSummary}}}
+end
 
-    hists, nMaps = mapDataHistograms(Atlas1; max_maps = max_maps, sortVals = true,
-                                     cores = cores, quiet = quiet)
+Base.show(io::IO, s::MapDataSummary) =
+    print(io, "MapDataSummary(", s.nmaps, s.nmaps == 1 ? " map, " : " maps, ", length(s.fields),
+          length(s.fields) == 1 ? " field)" : " fields)")
 
-    println("Maps considered: ", nMaps)
-    for field in sort(collect(keys(hists)))
-        entry = hists[field]
-        println()
-        println(field, ":")
-        if entry isa StreamingHistogram
+function Base.show(io::IO, ::MIME"text/plain", s::MapDataSummary)
+    println(io, "Maps considered: ", s.nmaps)
+    for field in sort(collect(keys(s.fields)))
+        entry = s.fields[field]
+        println(io)
+        println(io, field, ":")
+        if entry isa FieldSummary
             for line in fieldSummaryLines(entry)
-                println("  ", line)
+                println(io, "  ", line)
             end
         else
-            for (j, oh) in enumerate(entry)
-                println("  [", j, "]")
-                for line in fieldSummaryLines(oh)
-                    println("    ", line)
+            for (j, fs) in enumerate(entry)
+                println(io, "  [", j, "]")
+                for line in fieldSummaryLines(fs)
+                    println(io, "    ", line)
                 end
             end
         end
     end
-    return nothing
+end
+
+"""
+    summarizeMapData(atlas; max_maps = 0, cores = Threads.nthreads(), progress = false) -> MapDataSummary
+
+For every map-data field of the atlas at `atlas`: `mean`, `std`, and `[min, 25% quartile, median, 75% quartile,
+max]`, each computed from a `StreamingHistogram` (one per index for a vector field, with each map's vector
+sorted ascending first -- see `mapDataHistograms`). When the maps' weights vary, the weighted mean, std and
+quartiles (each map counting its weight) and the effective sample size too (see `fieldSummaryLines`).
+`max_maps` (0 = unlimited, the default) considers only the atlas's first `max_maps` maps. `progress` shows a
+progress bar. Display the result (`show(io, MIME"text/plain"(), s)`) for the text `mapatlas summarize-map-data` prints.
+"""
+function summarizeMapData(atlas::AbstractString; max_maps::Int = 0, cores::Int = Threads.nthreads(),
+                          progress::Bool = false)
+    max_maps < 0 && error("summarizeMapData: max_maps = $max_maps must be ≥ 0.")
+    hists, nMaps = mapDataHistograms(atlas; max_maps = max_maps, sort_values = true, cores = cores,
+                                     progress = progress)
+    fields = Dict{String,Union{FieldSummary,Vector{FieldSummary}}}(
+        field => (h isa StreamingHistogram ? FieldSummary(h) : FieldSummary.(h)) for (field, h) in hists)
+    return MapDataSummary(nMaps, fields)
 end

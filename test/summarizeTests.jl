@@ -7,7 +7,7 @@
 using Test
 using AtlasIO
 using StreamHistogram: StreamingHistogram, add!, finalize!, nobs, datarange, outofrange, mean, std, quantile
-using AtlasUtilities: run_summarize_map_data, quartiles, ashQuantileGap, fieldSummaryLines,
+using AtlasUtilities: summarizeMapData, MapDataSummary, FieldSummary, quartiles, ashQuantileGap, fieldSummaryLines,
                       mapDataHistograms
 
 @testset "summarize-map-data" begin
@@ -62,19 +62,27 @@ using AtlasUtilities: run_summarize_map_data, quartiles, ashQuantileGap, fieldSu
         @test !any(occursin("WARNING", l) for l in lines)
     end
 
-    @testset "run_summarize_map_data: end-to-end against the atlas own field data" begin
+    @testset "summarizeMapData: end-to-end against the atlas own field data" begin
         src = joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_slice.jsonl.gz")
 
         a = openAtlas(smartOpen(src, "r"))
         total = 0; while !eof(a); nextMap(a); total += 1; end; close(a)
 
-        hists, nMaps = mapDataHistograms(src; sortVals = true, quiet = true)
+        hists, nMaps = mapDataHistograms(src; sort_values = true)
         @test nMaps == total
 
         out = capture_stdout() do
-            run_summarize_map_data(src; quiet = true)
+            show(stdout, MIME"text/plain"(), summarizeMapData(src))
         end
         @test occursin("Maps considered: $total", out)
+        s = summarizeMapData(src)                                    # the result, as data
+        @test s isa MapDataSummary && s.nmaps == total && Set(keys(s.fields)) == Set(keys(hists))
+        @test s.fields["get_log_spanning_forests"] isa FieldSummary
+        @test s.fields["get_log_spanning_forests"].unweighted.mean == mean(hists["get_log_spanning_forests"])
+        @test length(s.fields["get_isoperimetric_scores"]) == length(hists["get_isoperimetric_scores"])
+        @test sprint(show, MIME"text/plain"(), s) == out
+        @test sprint(print, s) == "MapDataSummary($total maps, $(length(hists)) fields)"   # one line
+        @test repr([s]) == "MapDataSummary[MapDataSummary($total maps, $(length(hists)) fields)]"   # not the report
         for field in keys(hists)
             @test occursin(field * ":", out)
         end
@@ -88,26 +96,26 @@ using AtlasUtilities: run_summarize_map_data, quartiles, ashQuantileGap, fieldSu
     @testset "--max-maps limits the maps considered" begin
         src = joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_slice.jsonl.gz")
         out = capture_stdout() do
-            run_summarize_map_data(src; max_maps = 5, quiet = true)
+            show(stdout, MIME"text/plain"(), summarizeMapData(src; max_maps = 5))
         end
         @test occursin("Maps considered: 5", out)
 
-        @test_throws ErrorException run_summarize_map_data(src; max_maps = -1, quiet = true)
+        @test_throws ErrorException summarizeMapData(src; max_maps = -1)
     end
 
     @testset "vector field indices are printed sorted (order-statistic order)" begin
         src = joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_slice.jsonl.gz")
-        hists, _ = mapDataHistograms(src; sortVals = true, quiet = true)
+        hists, _ = mapDataHistograms(src; sort_values = true)
         field = "get_isoperimetric_scores"
         w = length(hists[field])
 
         out = capture_stdout() do
-            run_summarize_map_data(src; quiet = true)
+            show(stdout, MIME"text/plain"(), summarizeMapData(src))
         end
         for j in 1:w
             @test occursin("[$j]", out)
         end
-        # sortVals means the per-index minimums are nondecreasing across the width.
+        # sort_values means the per-index minimums are nondecreasing across the width.
         mins = [datarange(hists[field][j])[1] for j in 1:w]
         @test issorted(mins)
     end

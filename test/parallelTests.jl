@@ -13,7 +13,7 @@
 
 using Test
 using AtlasIO
-using AtlasUtilities: run_add, run_extract, run_extract_assignments
+using AtlasUtilities: extractMapData, extractAssignments
 
 const RTOL = 1e-10   # observed threading/serial nondeterminism is ~1e-15
 
@@ -28,7 +28,7 @@ asvec(x) = x isa AbstractVector ? Float64.(x) : [Float64(x)]
     src = joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_slice.jsonl.gz")
     gargs = (graph = graph, pop_col = "POP20", node_col = "NAME", area_col = "area",
              border_col = "border_length", edge_perimeter_col = "length")
-    funcs = "get_log_spanning_trees,get_isoperimetric_scores"
+    funcs = ["get_log_spanning_trees", "get_isoperimetric_scores"]
 
     readmaps(p) = (a = openAtlas(smartOpen(p, "r")); ms = Map[];
                    while !eof(a); push!(ms, nextMap(a)); end; close(a); ms)
@@ -45,63 +45,22 @@ asvec(x) = x isa AbstractVector ? Float64.(x) : [Float64(x)]
         return names, vals
     end
 
-    @testset "add: cores=1 vs cores=4" begin
-        d = mktempdir()
-        atlas1 = joinpath(d, "s1.jsonl.gz"); a4 = joinpath(d, "s4.jsonl.gz")
-        run_add(funcs, src, atlas1; gargs..., overwrite = true, quiet = true, cores = 1)
-        run_add(funcs, src, a4; gargs..., overwrite = true, quiet = true, cores = 4)
-
-        m1, m4 = readmaps(atlas1), readmaps(a4)
-        @test length(m1) == length(m4)
-        @test [m.name for m in m1] == [m.name for m in m4]       # order preserved (exact)
-        for (x, y) in zip(m1, m4)
-            @test x.districting == y.districting                  # exact (integer labels)
-            @test Set(keys(x.data)) == Set(keys(y.data))
-            for k in keys(x.data)
-                @test approxvals(asvec(x.data[k]), asvec(y.data[k]))
-            end
-        end
-    end
-
-    @testset "extract: cores=1 vs cores=4" begin
-        d1 = mktempdir(); d4 = mktempdir()
-        s1 = joinpath(d1, "run.jsonl.gz"); cp(src, s1)
-        s4 = joinpath(d4, "run.jsonl.gz"); cp(src, s4)
-        run_extract(s1; add = "get_isoperimetric_scores", gargs...,
-                    force = true, quiet = true, cores = 1)
-        run_extract(s4; add = "get_isoperimetric_scores", gargs...,
-                    force = true, quiet = true, cores = 4)
-
-        for f in ("get_log_spanning_trees", "get_log_spanning_forests",
-                  "get_isoperimetric_scores")
-            n1, v1 = readcsv(joinpath(d1, "run", f * ".csv.gz"))
-            n4, v4 = readcsv(joinpath(d4, "run", f * ".csv.gz"))
-            @test n1 == n4                                        # same maps, same order
-            @test length(v1) == length(v4)
-            for (r1, r4) in zip(v1, v4)
-                @test approxvals(r1, r4)
-            end
-        end
-    end
-
     @testset "extract-assignments: cores=1 vs cores=4" begin
         outs = map((1, 4)) do cores
             d = mktempdir()
             p = joinpath(d, "run.jsonl.gz"); cp(src, p)
-            run_extract_assignments(p; compress = false, quiet = true, cores = cores)
+            extractAssignments(p; compress = false, cores = cores)
             read(joinpath(d, "run-assignments.csv"), String)
         end
         @test outs[1] == outs[2] && count('\n', outs[1]) == length(readmaps(src)) + 1
     end
 
-    @testset "a malformed map line stops add and extract at that map (cores=$cores)" for cores in (1, 4)
+    @testset "a malformed map line stops extract at that map (cores=$cores)" for cores in (1, 4)
         lines = readlines(smartOpen(src, "r"))
         lines[3 + 4] = "{\"name\": broken"                  # map 4 of the slice
         d = mktempdir()
         bad = joinpath(d, "bad.jsonl")
         write(bad, join(lines, "\n") * "\n")
-        @test_throws AtlasFormatError run_add(funcs, bad, joinpath(d, "out.jsonl"); gargs..., overwrite = true,
-                                              quiet = true, cores = cores)
-        @test_throws AtlasFormatError run_extract(bad; force = true, quiet = true, cores = cores)
+        @test_throws AtlasFormatError extractMapData(bad; force = true, cores = cores)
     end
 end

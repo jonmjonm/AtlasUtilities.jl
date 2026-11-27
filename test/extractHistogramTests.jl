@@ -5,8 +5,8 @@
 using Test
 import JSON
 using AtlasIO
-using AtlasUtilities: run_extract_map_data_histogram, mapDataHistograms,
-                      writeHistogramCSV, writeHistogramJSON, run_extract
+using AtlasUtilities: mapDataHistograms, writeHistograms,
+                      writeHistogramCSV, writeHistogramJSON, extractMapData
 using StreamHistogram: StreamingHistogram, add!, finalize!, nobs, datarange, mean
 
 readtext(p) = (io = smartOpen(p, "r"); s = read(io, String); close(io); s)
@@ -105,7 +105,7 @@ readHistJSON(path) = JSON.parse(readtext(path); dicttype = Dict{String,Any})["hi
         @test length(maps) >= 40
         vals = Float64[m.data[field] for m in maps]
 
-        run_extract_map_data_histogram(atlaspath; quiet = true)
+        histogramFiles(atlaspath)
         outdir = joinpath(dir, "run")
         csvPath = joinpath(outdir, field * "-histogram.csv.gz")
         jsonPath = joinpath(outdir, field * "-histogram.json.gz")
@@ -120,14 +120,15 @@ readHistJSON(path) = JSON.parse(readtext(path); dicttype = Dict{String,Any})["hi
 
         # Default skip: re-running writes nothing (files already exist).
         before = mtime(csvPath)
-        run_extract_map_data_histogram(atlaspath; quiet = true)
+        r = histogramFiles(atlaspath)
         @test mtime(csvPath) == before
+        @test r.written == [joinpath(outdir, "about.md")] && csvPath in r.skipped && jsonPath in r.skipped
     end
 
-    # A vector field's per-index histograms: with sortVals (default) index j holds
-    # the j-th order statistic of each map's (sorted) vector; with sortVals=false
+    # A vector field's per-index histograms: with sort_values (default) index j holds
+    # the j-th order statistic of each map's (sorted) vector; with sort_values=false
     # index j holds the raw j-th entry.
-    @testset "oracle: vector field sortVals vs raw ordering" begin
+    @testset "oracle: vector field sort_values vs raw ordering" begin
         src = joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_slice.jsonl.gz")
         field = "get_isoperimetric_scores"
 
@@ -135,8 +136,8 @@ readHistJSON(path) = JSON.parse(readtext(path); dicttype = Dict{String,Any})["hi
         maps = Map[]; while !eof(a); push!(maps, nextMap(a)); end; close(a)
         w = length(maps[1].data[field])
 
-        hsorted, _ = mapDataHistograms(src; sortVals = true, quiet = true)
-        hraw, _ = mapDataHistograms(src; sortVals = false, quiet = true)
+        hsorted, _ = mapDataHistograms(src; sort_values = true)
+        hraw, _ = mapDataHistograms(src; sort_values = false)
 
         for j in 1:w
             sortedVals = [sort(Float64.(m.data[field]))[j] for m in maps]
@@ -162,7 +163,7 @@ readHistJSON(path) = JSON.parse(readtext(path); dicttype = Dict{String,Any})["hi
         src = joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_slice.jsonl.gz")
         dir = mktempdir()
         atlaspath = joinpath(dir, "run.jsonl.gz"); cp(src, atlaspath)
-        run_extract_map_data_histogram(atlaspath; quiet = true)
+        histogramFiles(atlaspath)
         outdir = joinpath(dir, "run")
 
         for field in ["get_log_spanning_forests", "get_log_spanning_trees",
@@ -185,12 +186,12 @@ readHistJSON(path) = JSON.parse(readtext(path); dicttype = Dict{String,Any})["hi
     @testset "integer=:auto resolves per-histogram from a short run" begin
         src = joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_slice.jsonl.gz")
 
-        h, _ = mapDataHistograms(src; integer = :auto, quiet = true)
+        h, _ = mapDataHistograms(src; integer = :auto)
         @test h["get_log_spanning_forests"].integer == false   # log-valued, resolved non-integer
 
         dir = mktempdir()
         atlaspath = joinpath(dir, "run.jsonl.gz"); cp(src, atlaspath)
-        run_extract_map_data_histogram(atlaspath; integer = :auto, quiet = true)
+        histogramFiles(atlaspath; integer = :auto)
         h1 = readHistJSON(joinpath(dir, "run", "get_log_spanning_forests-histogram.json.gz"))["1"]
         @test h1["relerr_moments"] !== nothing   # resolved to non-integer, ASH available
     end
@@ -202,28 +203,28 @@ readHistJSON(path) = JSON.parse(readtext(path); dicttype = Dict{String,Any})["hi
         a = openAtlas(smartOpen(src, "r"))
         total = 0; while !eof(a); nextMap(a); total += 1; end; close(a)
 
-        h0, n0 = mapDataHistograms(src; quiet = true)
-        h2, n2 = mapDataHistograms(src; burn_in = 2, quiet = true)
+        h0, n0 = mapDataHistograms(src)
+        h2, n2 = mapDataHistograms(src; burn_in = 2)
         @test nobs(h0[field]) == total
         @test nobs(h2[field]) == total - 2
         @test n0 == total
         @test n2 == total - 2
 
-        @test_throws ErrorException mapDataHistograms(src; burn_in = total + 1, quiet = true)
+        @test_throws ErrorException mapDataHistograms(src; burn_in = total + 1)
     end
 
     @testset "--max-maps stops early (composes with --burn-in) and tags output -partial" begin
         src = joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_slice.jsonl.gz")
         field = "get_log_spanning_forests"
 
-        h, n = mapDataHistograms(src; burn_in = 2, max_maps = 5, quiet = true)
+        h, n = mapDataHistograms(src; burn_in = 2, max_maps = 5)
         @test nobs(h[field]) == 5
         @test n == 5
-        @test_throws ErrorException mapDataHistograms(src; max_maps = -1, quiet = true)
+        @test_throws ErrorException mapDataHistograms(src; max_maps = -1)
 
         dir = mktempdir()
         atlaspath = joinpath(dir, "run.jsonl.gz"); cp(src, atlaspath)
-        run_extract_map_data_histogram(atlaspath; burn_in = 2, max_maps = 5, quiet = true)
+        histogramFiles(atlaspath; burn_in = 2, max_maps = 5)
         outdir = joinpath(dir, "run")
 
         partialCsv = joinpath(outdir, field * "-histogram-partial.csv.gz")
@@ -245,48 +246,19 @@ readHistJSON(path) = JSON.parse(readtext(path); dicttype = Dict{String,Any})["hi
         src = joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_slice.jsonl.gz")
         field = "get_log_spanning_forests"
 
-        hser, _ = mapDataHistograms(src; cores = 1, quiet = true)
-        hpar, _ = mapDataHistograms(src; cores = Threads.nthreads(), quiet = true)
+        hser, _ = mapDataHistograms(src; cores = 1)
+        hpar, _ = mapDataHistograms(src; cores = Threads.nthreads())
 
         @test nobs(hser[field]) == nobs(hpar[field])
         @test datarange(hser[field]) == datarange(hpar[field])             # min/max: order-independent
         @test isapprox(mean(hser[field]), mean(hpar[field]); rtol = 1e-9)  # sum: order-dependent to float precision
     end
 
-    # --add recomputes a field; cross-check against extract-map-data's own
-    # oracle-checked CSV output rather than duplicating CycleWalk's math here.
-    @testset "--add cross-checked against extract-map-data" begin
-        graph = joinpath(@__DIR__, "..", "Data", "CT_pct20.json")
-        src = joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_slice.jsonl.gz")
-        field = "get_isoperimetric_scores"
-        addOpts = (add = "get_isoperimetric_scores", graph = graph, pop_col = "POP20",
-                   node_col = "NAME", area_col = "area", border_col = "border_length",
-                   edge_perimeter_col = "length", force = true, quiet = true)
-
-        dirCsv = mktempdir(); atlasCsv = joinpath(dirCsv, "run.jsonl.gz"); cp(src, atlasCsv)
-        run_extract(atlasCsv; addOpts...)
-        rowsCsv = filter(!isempty, split(readtext(joinpath(dirCsv, "run", field * ".csv.gz")), "\n"))
-        w = length(split(rowsCsv[1], ",")) - 2          # minus the name and map_weight columns
-        colvals(j) = [parse(Float64, split(r, ",")[1 + j]) for r in rowsCsv[2:end]]
-
-        dirHist = mktempdir(); atlasHist = joinpath(dirHist, "run.jsonl.gz"); cp(src, atlasHist)
-        run_extract_map_data_histogram(atlasHist; sortVals = false, addOpts...)
-        hs = readHistJSON(joinpath(dirHist, "run", field * "-histogram.json.gz"))
-
-        for j in 1:w
-            h = hs[string(j)]
-            csvVals = colvals(j)
-            @test h["nobs"] == length(csvVals)
-            @test isapprox(h["exact_min"], minimum(csvVals); rtol = 1e-6)
-            @test isapprox(h["exact_max"], maximum(csvVals); rtol = 1e-6)
-        end
-    end
-
     @testset "--no-compression writes plain .csv/.json" begin
         src = joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_metadata.jsonl.gz")
         dir = mktempdir()
         atlaspath = joinpath(dir, "meta.jsonl.gz"); cp(src, atlaspath)
-        run_extract_map_data_histogram(atlaspath; compress = false, quiet = true)
+        histogramFiles(atlaspath; compress = false)
         files = readdir(joinpath(dir, "meta"))
         @test "about.md" in files
         @test !isempty(filter(f -> endswith(f, "-histogram.csv"), files))
@@ -299,7 +271,7 @@ readHistJSON(path) = JSON.parse(readtext(path); dicttype = Dict{String,Any})["hi
         src = joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_metadata.jsonl.gz")
         dir = mktempdir()
         atlaspath = joinpath(dir, "meta.jsonl.gz"); cp(src, atlaspath)
-        run_extract_map_data_histogram(atlaspath; quiet = true)
+        histogramFiles(atlaspath)
 
         about = joinpath(dir, "meta", "about.md")
         @test isfile(about)

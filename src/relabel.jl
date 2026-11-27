@@ -1,4 +1,4 @@
-# relabel.jl -- the `atlas relabel` subcommand.
+# relabel.jl -- relabeling an atlas's districts (`relabelAtlas`, `mapatlas relabel`).
 #
 # Walk every map in an input atlas Atlas1, relabel district numbers so consecutive
 # maps are as similar as possible, and write the relabeled maps to a new atlas Atlas2.
@@ -230,127 +230,147 @@ end
 # ---------------------------------------------------------------------------
 
 """
-    run_relabel(Atlas1, Atlas2, jsonPath = nothing; firstMap = false, quiet = false,
-                cores = Threads.nthreads(), popJsonPath = nothing, popAttr = nothing)
+    relabelAtlas(src, dst; graph = nothing, first_map = false, population_file = nothing,
+                 population_attr = nothing, cores = Threads.nthreads(), progress = false, keep_partial = false)
+        -> Int
 
-Relabel atlas `Atlas1` into `Atlas2`. `jsonPath` is an optional dual-graph JSON, required
-for multiscale/hierarchical atlases whose per-map node sets vary. `firstMap`
-aligns every map to map 1 (anchor) instead of to its predecessor; `quiet`
-suppresses the progress bar. `cores` is the parse/serialize worker count; it
-defaults to the threads Julia was started with, so a single thread runs serially.
+Relabel the district numbers of every map of atlas `src` so consecutive maps are as similar as possible, writing
+the relabeled atlas to `dst`, and return the number of maps written. `graph` is an optional dual-graph JSON,
+required for multiscale/hierarchical atlases whose per-map node sets vary. `first_map` aligns every map to map 1
+(the anchor) instead of to its predecessor. `cores` is the parse/serialize worker count; it defaults to the
+threads Julia was started with, so a single thread runs serially. `dst` is written in `src`'s format version.
 
-`popJsonPath`/`popAttr`, if given, weight the alignment by population instead of
-raw node counts: `popJsonPath` is a node-link JSON (often the same file as
-`jsonPath`) whose nodes carry a population attribute named `popAttr`
-(e.g. `"pop2020cen"`), keyed by the atlas's `"levels in graph"` param.
+`population_file`/`population_attr`, if given, weight the alignment by population instead of raw node counts:
+`population_file` is a node-link JSON (often the same file as `graph`) whose nodes carry a population attribute
+named `population_attr` (e.g. `"pop2020cen"`), keyed by the atlas's `"levels in graph"` param.
 
-The progress bar (when not `--quiet`) also shows the running mean achieved
-Hamming distance — the distance between each map and the reference it was just
-aligned to, after relabeling — as a diagnostic on alignment quality. It is
-computed from the same confusion matrix used to find `σ`, so it adds no extra
-pass over map nodes.
+`progress` shows a progress bar with the running mean achieved Hamming distance -- the distance between each map
+and the reference it was just aligned to, after relabeling -- as a diagnostic on alignment quality. It is
+computed from the same confusion matrix used to find `σ`, so it adds no extra pass over map nodes.
+
+`dst` is written under a temporary name and moved into place when complete, so a run that fails (a damaged map
+in `src`, whose error gives its line) leaves an existing `dst` as it was; `dst` may be `src`. With
+`keep_partial`, what a failed run wrote is kept as `<dst>.incomplete...` (e.g. `out.incomplete.jsonl.gz`).
 """
-function run_relabel(Atlas1::AbstractString, Atlas2::AbstractString,
-                     jsonPath::Union{AbstractString,Nothing} = nothing;
-                     firstMap::Bool = false, quiet::Bool = false,
-                     cores::Int = Threads.nthreads(),
-                     popJsonPath::Union{AbstractString,Nothing} = nothing,
-                     popAttr::Union{AbstractString,Nothing} = nothing)
-    # Start Atlas2 by cloning Atlas1's header (lines 1-3), then append maps to it. For .gz
-    # output, `AtlasOutput` compresses the map body as byte-targeted gzip members in
-    # parallel (the serial write is only raw I/O); plain/.bz2 stream as before.
-    outIO = openAtlasOutput(String(Atlas2), atlasHeaderBytes(String(Atlas1)), cores)
+function relabelAtlas(src::AbstractString, dst::AbstractString;
+                      graph::Union{AbstractString,Nothing} = nothing, first_map::Bool = false,
+                      population_file::Union{AbstractString,Nothing} = nothing,
+                      population_attr::Union{AbstractString,Nothing} = nothing,
+                      cores::Int = Threads.nthreads(), progress::Bool = false, keep_partial::Bool = false)
+    # dst is written under a temporary name and moved into place only once every map is written (see
+    # `writeReplacing`), so a failed run leaves no partial atlas; and dst may be src.
+    return writeReplacing(String(dst); keep_partial) do tmp
+        # Start by cloning src's header (lines 1-3), then append maps to it. For .gz output, `AtlasOutput`
+        # compresses the map body as byte-targeted gzip members in parallel (the serial write is only raw
+        # I/O); plain/.bz2 stream as before.
+        outIO = openAtlasOutput(tmp, atlasHeaderBytes(String(src)), cores)
+        atlas = openAtlas(smartOpen(String(src), "r"))
+        try
+            mpt = atlas.mapParamType
+            wt = atlas.weightType
+            fv = atlas.formatVersion    # dst copies src's header, so its maps must be in the same version
+            d = Int(atlas.atlasParam["districts"])
 
-    inIO = smartOpen(String(Atlas1), "r")
-    atlas = openAtlas(inIO)
-    mpt = atlas.mapParamType
-    wt = atlas.weightType
-    fv = atlas.formatVersion    # Atlas2 copies Atlas1's header, so its maps must be in the same version
-    d = Int(atlas.atlasParam["districts"])
+            # Build the hierarchy only when a dual-graph JSON was supplied.
+            h = nothing
+            if graph !== nothing
+                levels = get(atlas.atlasParam, "levels in graph", nothing)
+                levels === nothing && error("relabelAtlas: a dual-graph JSON was given but the atlas has no " *
+                                            "\"levels in graph\" param to interpret it.")
+                h = loadHierarchy(graph, levels)
+            end
 
-    # Build the hierarchy only when a dual-graph JSON was supplied.
-    h = nothing
-    if jsonPath !== nothing
-        levels = get(atlas.atlasParam, "levels in graph", nothing)
-        levels === nothing && error("a dual-graph JSON was given but the atlas has no " *
-                                    "\"levels in graph\" param to interpret it.")
-        h = loadHierarchy(jsonPath, levels)
-    end
+            # Load population weights only when requested.
+            pop = nothing
+            if population_file !== nothing
+                population_attr === nothing &&
+                    error("relabelAtlas: population_file = needs population_attr = <name>, the population attribute.")
+                levels = get(atlas.atlasParam, "levels in graph", nothing)
+                levels === nothing && error("relabelAtlas: population_file = was given but the atlas has no " *
+                                            "\"levels in graph\" param to interpret its node keys.")
+                pop = loadPopulation(population_file, levels, population_attr)
+            end
 
-    # Load population weights only when requested.
-    pop = nothing
-    if popJsonPath !== nothing
-        popAttr === nothing && error("--weight-population requires a population attribute name.")
-        levels = get(atlas.atlasParam, "levels in graph", nothing)
-        levels === nothing && error("--weight-population was given but the atlas has no " *
-                                    "\"levels in graph\" param to interpret its node keys.")
-        pop = loadPopulation(popJsonPath, levels, popAttr)
-    end
+            # The atlas has no map count in its header, so the total is unknown; show a
+            # live count of maps written and the running mean chained-alignment Hamming
+            # distance (with `progress`).
+            bar = progress ? ProgressUnknown(desc = "Relabeling maps:", spinner = true) : nothing
+            written = 0
+            totalDistance = 0
+            aligned = 0     # maps that went through findRelabeling (excludes the anchor)
+            function tick()
+                bar === nothing && return
+                meanDistance = aligned == 0 ? 0.0 : totalDistance / aligned
+                next!(bar; showvalues = [("maps written", written),
+                                          ("mean Hamming distance", round(meanDistance; digits = 2))])
+            end
 
-    # The atlas has no map count in its header, so the total is unknown; show a
-    # live count of maps written and the running mean chained-alignment Hamming
-    # distance (unless suppressed with --quiet).
-    progress = quiet ? nothing : ProgressUnknown(desc = "Relabeling maps:", spinner = true)
-    written = 0
-    totalDistance = 0
-    aligned = 0     # maps that went through findRelabeling (excludes the anchor)
-    function tick()
-        progress === nothing && return
-        meanDistance = aligned == 0 ? 0.0 : totalDistance / aligned
-        next!(progress; showvalues = [("maps written", written),
-                                       ("mean Hamming distance", round(meanDistance; digits = 2))])
-    end
+            # Map 1 is the anchor: written verbatim and used as the initial reference.
+            ref = locatingErrors(() -> nextMap(atlas), String(src), () -> 1)
+            let buf = IOBuffer()
+                addMap(buf, ref; formatVersion = fv)
+                writeMaps!(outIO, [take!(buf)])
+            end
+            written += 1
+            tick()
 
-    # Map 1 is the anchor: written verbatim and used as the initial reference.
-    ref = nextMap(atlas)
-    let buf = IOBuffer()
-        addMap(buf, ref; formatVersion = fv)
-        writeMaps!(outIO, [take!(buf)])
-    end
-    written += 1
-    tick()
+            # Process the remaining maps in batches: parse and serialize in parallel,
+            # relabel serially (the chain `ref` carries across batches), write in order.
+            while !eof(atlas)
+                lines = String[]
+                while length(lines) < BATCH && !eof(atlas)
+                    push!(lines, readline(atlas.io))
+                end
+                n = length(lines)
+                n == 0 && break
 
-    # Process the remaining maps in batches: parse and serialize in parallel,
-    # relabel serially (the chain `ref` carries across batches), write in order.
-    while !eof(atlas)
-        lines = String[]
-        while length(lines) < BATCH && !eof(atlas)
-            push!(lines, readline(atlas.io))
+                maps = Vector{Map{mpt,wt}}(undef, n)                     # parse (parallel)
+                bad = Vector{Any}(nothing, n)                            # a line that does not parse
+                parallelDo!(n, cores) do i
+                    try
+                        maps[i] = parseMap(lines[i], mpt, wt)
+                    catch e
+                        bad[i] = e
+                    end
+                end
+                # The first such line is reported, after the maps before it are written (so a kept incomplete
+                # output, `keep_partial`, holds every map before the damaged one).
+                j = findfirst(!isnothing, bad)
+                failed = j === nothing ? nothing : locateMapError(bad[j], String(src), written + j)
+                n = j === nothing ? n : j - 1
+
+                relabeled = Vector{Map{mpt,wt}}(undef, n)                # relabel (serial chain)
+                for i in 1:n
+                    O = h === nothing ? confusionMatrix(ref, maps[i], d; pop) : confusionMatrix(ref, maps[i], d, h; pop)
+                    σ = permutationFromConfusion(O, d)
+                    totalDistance += achievedHammingDistance(O, σ)
+                    aligned += 1
+                    relabeled[i] = relabelMap(maps[i], σ)
+                    first_map || (ref = relabeled[i])
+                end
+
+                bytes = Vector{Vector{UInt8}}(undef, n)                 # serialize (parallel)
+                parallelDo!(n, cores) do i
+                    buf = IOBuffer()
+                    addMap(buf, relabeled[i]; formatVersion = fv)
+                    bytes[i] = take!(buf)
+                end
+
+                writeMaps!(outIO, bytes)                                # write (parallel gzip / serial raw)
+                written += n
+                tick()
+                failed === nothing || throw(failed)
+            end
+
+            if bar !== nothing
+                meanDistance = aligned == 0 ? 0.0 : totalDistance / aligned
+                finish!(bar; showvalues = [("maps written", written),
+                                            ("mean Hamming distance", round(meanDistance; digits = 2))])
+            end
+            written
+        finally
+            close(atlas)
+            close(outIO)
         end
-        n = length(lines)
-        n == 0 && break
-
-        maps = Vector{Map{mpt,wt}}(undef, n)                     # parse (parallel)
-        parallelDo!(i -> (maps[i] = parseMap(lines[i], mpt, wt)), n, cores)
-
-        relabeled = Vector{Map{mpt,wt}}(undef, n)                # relabel (serial chain)
-        for i in 1:n
-            O = h === nothing ? confusionMatrix(ref, maps[i], d; pop) : confusionMatrix(ref, maps[i], d, h; pop)
-            σ = permutationFromConfusion(O, d)
-            totalDistance += achievedHammingDistance(O, σ)
-            aligned += 1
-            relabeled[i] = relabelMap(maps[i], σ)
-            firstMap || (ref = relabeled[i])
-        end
-
-        bytes = Vector{Vector{UInt8}}(undef, n)                 # serialize (parallel)
-        parallelDo!(n, cores) do i
-            buf = IOBuffer()
-            addMap(buf, relabeled[i]; formatVersion = fv)
-            bytes[i] = take!(buf)
-        end
-
-        writeMaps!(outIO, bytes)                                # write (parallel gzip / serial raw)
-        written += n
-        tick()
     end
-
-    if progress !== nothing
-        meanDistance = aligned == 0 ? 0.0 : totalDistance / aligned
-        finish!(progress; showvalues = [("maps written", written),
-                                         ("mean Hamming distance", round(meanDistance; digits = 2))])
-    end
-    close(atlas)
-    close(outIO)
-    return nothing
 end

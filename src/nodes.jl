@@ -1,10 +1,7 @@
-# nodes.jl -- the `atlas list-nodes` subcommand.
+# nodes.jl -- the node ids of one map (`mapatlas list-nodes`).
 #
-# Read an Atlas file with AtlasIO.jl and print the node ids found in the
-# districting of its k-th map (k=1 by default), as a JSON array of strings on
-# stdout. A node id is a Tuple{Vararg{String}} (multiple components for
-# multiscale/hierarchical atlases); components are joined with ":" into a
-# single string per array element.
+# A node id is a Tuple{Vararg{String}} (multiple components for multiscale/hierarchical atlases); `nodeIdString`
+# joins its components with ":" into a single string.
 
 """
     nodeIdString(node) -> String
@@ -16,25 +13,20 @@ components with `:`.
 nodeIdString(node::Tuple{Vararg{String}}) = join(node, ":")
 
 """
-    run_list_nodes(atlasPath; map = 1)
+    listNodes(atlasPath; map = 1) -> Vector{String}
 
-Print the node ids in the `map`-th map's districting of the atlas at
-`atlasPath`, as a JSON array of strings (sorted), to stdout. Errors if the
-atlas has fewer than `map` maps.
+The node ids of the `map`-th map (1-based) of the atlas at `atlasPath`, each rendered with
+[`nodeIdString`](@ref), sorted. Errors if the atlas has fewer than `map` maps.
 """
-function run_list_nodes(atlasPath::AbstractString; map::Integer = 1)
-    map >= 1 || error("atlas list-nodes: --map must be >= 1 (got $map).")
-    io = smartOpen(String(atlasPath), "r")
-    atlas = openAtlas(io)
-
-    map > 1 && skipMap(atlas; numSkip = map - 1)
-    eof(atlas) &&
-        error("atlas list-nodes: $atlasPath does not have a map $map.")
-    m = nextMap(atlas)
-    close(atlas)
-
-    nodeStrings = sort!([nodeIdString(node) for node in keys(m.districting)])
-    JSON.json(stdout, nodeStrings)
-    println()
-    return nothing
+function listNodes(atlasPath::AbstractString; map::Integer = 1)
+    map >= 1 || error("listNodes: map = $map must be >= 1.")
+    atlas = openAtlas(smartOpen(String(atlasPath), "r"))
+    try
+        map > 1 && skipMap(atlas; numSkip = map - 1)
+        eof(atlas) && error("listNodes: $atlasPath does not have a map $map.")
+        m = nextMap(atlas)
+        return sort!([nodeIdString(node) for node in keys(m.districting)])
+    finally
+        close(atlas)
+    end
 end
