@@ -39,8 +39,8 @@ export findRelabeling, relabelMap, relabelAtlas, confusionMatrix, permutationFro
 export mapDataHistograms, writeHistograms, summarizeMapData, assignmentMatrix, extractMapData, extractAssignments
 # Process (CycleWalk writers)
 export addMapData, WriterSet, computeWriters, writerFields, listWriters
-# Public but not exported (marked `public` once [compat] requires Julia 1.11): nodeIdString, atlasHeaderInfo,
-# listWriterDetails, loadGraph.
+# Public but not exported, for advanced use.
+public nodeIdString, atlasHeaderInfo, listWriterDetails, loadGraph
 
 function __init__()
     # Calling a CycleWalk function (`addMapData`, `WriterSet(...)`, ...) without CycleWalk says to load it.

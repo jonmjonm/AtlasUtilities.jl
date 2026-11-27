@@ -265,6 +265,7 @@ partition(labels) = Set(Set(i for i in eachindex(labels) if labels[i] == d)
 
 end
 
+include(joinpath(@__DIR__, "apiTests.jl"))
 include(joinpath(@__DIR__, "testHelpers.jl"))
 include(joinpath(@__DIR__, "infoTests.jl"))       # defines capture_stdout
 include(joinpath(@__DIR__, "cycleWalkExtTests.jl"))   # before any `import CycleWalk`
