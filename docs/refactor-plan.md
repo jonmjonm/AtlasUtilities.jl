@@ -98,7 +98,7 @@ relabelAtlas("in.jsonl.gz", "out.jsonl.gz"; graph = "nc.json")
 summarizeMapData("in.jsonl.gz")
 
 using CycleWalk                     # switches on the process extension
-addMapData("in.jsonl.gz", "out.jsonl.gz", ["get_cut_edges"]; graph = "nc.json", progress = true)
+addMapData("in.jsonl.gz", "out.jsonl.gz", ["get_cut_edge_sum"]; graph = "nc.json", progress = true)
 ```
 
 | Group | Exported | Public (not exported) | Source |
@@ -207,7 +207,7 @@ Design for the Opus work, written 2026-11-26 from the code on `main` (`bbd2466`)
 | `summarize-map-data` | `run_summarize_map_data` (prints) | `summarizeMapData(atlas; max_maps = 0, cores, progress)` | a `MapDataSummary` holding per-field statistics, with a `show` method that prints exactly today's text, so the CLI just prints it |
 | `extract-assignments` | `run_extract_assignments` | `extractAssignments(atlas, outpath = <default>; graph = nothing, compress = true, force = false, cores, progress)` | `(path, nmaps, units, scale)`, or `nothing` if skipped |
 
-**Writers as an object (decided).** Today `extract-map-data` and `extract-map-data-histogram` each take the writer names as a string plus nine graph keywords (`config`, `graph`, `pop_col`, `node_col`, `area_col`, `border_col`, `edge_perimeter_col`, `node_data`, `vote_cols`), and set them up through their own path (`setupAddComputation`). They take a `WriterSet` instead (`writers = WriterSet(["get_cut_edges"]; graph = "nc.json")`). The graph keywords then live in one place, the `WriterSet` constructor, and all three users share one evaluation path. The risk: that path must give the same values as `setupAddComputation` does today. Check by comparing outputs with `rtol` (threaded results agree only to about 1e-15).
+**Writers as an object (decided).** Today `extract-map-data` and `extract-map-data-histogram` each take the writer names as a string plus nine graph keywords (`config`, `graph`, `pop_col`, `node_col`, `area_col`, `border_col`, `edge_perimeter_col`, `node_data`, `vote_cols`), and set them up through their own path (`setupAddComputation`). They take a `WriterSet` instead (`writers = WriterSet(["get_cut_edge_sum"]; graph = "nc.json")`). The graph keywords then live in one place, the `WriterSet` constructor, and all three users share one evaluation path. The risk: that path must give the same values as `setupAddComputation` does today. Check by comparing outputs with `rtol` (threaded results agree only to about 1e-15).
 
 During step 2 the `@cast` commands stay in `src/AtlasUtilities.jl` but call the new functions, and their printing moves into the commands. The whole test suite keeps passing as the check; tests that called `run_*` are switched to the library functions plus CLI-output tests.
 
@@ -258,14 +258,14 @@ Simplifying outlines matters more than the choice of library, so outline simplif
   Deferred: decide after the plotting branch.
 - [ ] Can county outlines be computed without LibGEOS on our NC and OH shapefiles (shared edges cancelling out)? If yes, the LibGEOS extension disappears.
 - [x] Which Julia versions does DCC offer? A 1.11 minimum must be installable there.
-- [ ] Are the package and tool names final before the first General registration (AtlasUtilities, AtlasCLI; `atlas`, `atlas-plot`, `atlas-gui`)?
+- [x] Are the package and tool names final before the first General registration (AtlasUtilities, AtlasCLI; `atlas`, `atlas-plot`, `atlas-gui`)?
 
   Candidates (packages keep the Atlas prefix, matching the registered AtlasIO):
   - Library: `AtlasUtilities` (current), `AtlasTools`, `AtlasAnalysis`, `AtlasEnsembles`
   - CLI package: `AtlasCLI` (current), `AtlasCommands`, or `<library name>CLI`
   - Commands (avoid a clash with MongoDB's `atlas`): `atlas` (current), `atl`, `atlasjl`, `ratlas`, `mapatlas`; the plot and GUI tools take the same prefix (`atl-plot`, `atl-gui`)
 
-  Decided: the commands are `mapatlas`, `mapatlas-plot` and `mapatlas-gui` (a shell alias can still give `atlas`). Package names are still open.
+  Decided: the commands are `mapatlas`, `mapatlas-plot` and `mapatlas-gui` (a shell alias can still give `atlas`). Package names, decided: `AtlasUtilities` and `AtlasCLI`.
 - [x] Should AtlasCLI run a PrecompileTools workload, so `info` and `summarize-map-data` start close to `--help`'s 1.5 s?
 
   Decided: yes, added to AtlasCLI after the first branch.
