@@ -36,7 +36,8 @@ export atlasInfo, listMapData, listNodes, extractScripts
 export findRelabeling, relabelMap, relabelAtlas, confusionMatrix, permutationFromConfusion, hammingDistance,
        Hierarchy, loadHierarchy, loadPopulation
 # Analysis
-export mapDataHistograms, writeHistograms, summarizeMapData, assignmentMatrix, extractMapData, extractAssignments
+export mapDataHistograms, writeHistograms, summarizeMapData, assignmentMatrix, extractMapData, extractAssignments,
+       MapDataSummary, FieldSummary
 # Process (CycleWalk writers)
 export addMapData, WriterSet, computeWriters, writerFields, listWriters
 # Public but not exported, for advanced use.

@@ -20,7 +20,8 @@
 
 - The `run_*` drivers are gone. In their place are exported functions that print nothing and return what they did:
   `relabelAtlas`, `listNodes`, `extractScripts`, `addMapData`, `extractMapData`, `writeHistograms`,
-  `summarizeMapData` (a `MapDataSummary` that prints as the command's text) and `extractAssignments`.
+  `summarizeMapData` (a `MapDataSummary` of `FieldSummary`s, both
+  exported, that prints as the command's text) and `extractAssignments`.
   `convert` is AtlasIO's `convertAtlas`. See library.md.
 - **Changed keywords:** `quiet = false` is now `progress = false` (silent by default), `sortVals` is `sort_values`,
   and the `add` and graph keywords of `extractMapData`/`mapDataHistograms` are now `writers = WriterSet(...)`.

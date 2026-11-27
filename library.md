@@ -166,7 +166,8 @@ summarizeMapData(atlasPath; max_maps = 0, cores, progress = false) -> MapDataSum
 
 For every map-data field, the mean, standard deviation and min, quartiles and max (one entry per index for a
 vector field, each map's vector sorted first), with weighted versions when the map weights vary. Printing the
-result gives the text of `mapatlas summarize-map-data`. As data: `s.nmaps`, and `s.fields[name]`, a summary with
+result gives the text of `mapatlas summarize-map-data`. Both types, `MapDataSummary` and `FieldSummary`, are
+exported. As data: `s.nmaps`, and `s.fields[name]`, a summary with
 `nobs`, `min`, `max`, `unweighted` (`mean`, `std`, `quartiles`, ...), `weighted` (or `nothing`),
 `effective_sample_size` and `total_weight`, or a vector of them for a vector field.
 

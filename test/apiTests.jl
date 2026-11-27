@@ -7,7 +7,7 @@ using AtlasUtilities
                 :findRelabeling, :relabelMap, :relabelAtlas, :confusionMatrix, :permutationFromConfusion,
                 :hammingDistance, :Hierarchy, :loadHierarchy, :loadPopulation,
                 :mapDataHistograms, :writeHistograms, :summarizeMapData, :assignmentMatrix, :extractMapData,
-                :extractAssignments,
+                :extractAssignments, :MapDataSummary, :FieldSummary,
                 :addMapData, :WriterSet, :computeWriters, :writerFields, :listWriters]
     public_only = [:nodeIdString, :atlasHeaderInfo, :listWriterDetails, :loadGraph]
 
