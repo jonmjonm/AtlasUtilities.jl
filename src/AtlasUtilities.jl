@@ -52,14 +52,12 @@ Run `atlas --help` or `atlas <subcommand> --help` for details.
 module AtlasUtilities
 
 using AtlasIO
-using CycleWalk
 using Dates
 using Hungarian
 import JSON     # all JSON reading and writing (graphs, node lists, histograms, the atlas params line)
 using LinearAlgebra: BLAS
 using ProgressMeter
 using StreamHistogram
-using TOML
 using Comonicon
 
 # Byte-targeted parallel gzip atlas output (`AtlasOutput`/`openAtlasOutput`/
@@ -69,8 +67,7 @@ include("threading.jl")
 include("info.jl")
 include("nodes.jl")
 include("relabel.jl")
-include("writers.jl")
-include("add.jl")
+include("writers.jl")       # CycleWalk writers: declared here, defined in ext/AtlasUtilitiesCycleWalkExt
 include("extract.jl")
 include("extractHistogram.jl")
 include("summarize.jl")
@@ -94,6 +91,11 @@ export render_map, run_render, districtColors
 # listWriterDetails, loadGraph.
 
 include("cli.jl")
+
+function __init__()
+    # Calling a CycleWalk function (`addMapData`, `WriterSet(...)`, ...) without CycleWalk says to load it.
+    Base.Experimental.register_error_hint(cycleWalkHint, MethodError)
+end
 
 """
 Print the header of an Atlas file (metadata and atlas parameters); the bulky embedded generating `script`, its `script_includes`, and the TOML config are never printed, though their presence is noted (use `--extract-script` to write them out).
@@ -277,7 +279,7 @@ Add CycleWalk pushable writer function(s) (e.g. `get_log_spanning_trees`) to eve
                    edge_perimeter_col::String = "", node_data::String = "",
                    vote_cols::String = "",
                    overwrite::Bool = false, quiet::Bool = false)
-    cli("add") do
+    cli("add"; cyclewalk = true) do
         list_writers && return printWriterList()
         (isempty(functions) || isempty(atlas1) || isempty(atlas2)) &&
             error("atlas add: <functions> <atlas1> <atlas2> are required (unless --list-writers).")
@@ -328,7 +330,7 @@ Write each map-data field of atlas Atlas1 to its own CSV (one row per map: the m
                                 node_data::String = "", vote_cols::String = "",
                                 max_maps::Int = 0,
                                 quiet::Bool = false)
-    cli("extract-map-data") do
+    cli("extract-map-data"; cyclewalk = !isempty(add)) do
         max_maps < 0 && error("atlas extract-map-data: --max-maps must be ≥ 0, got $max_maps.")
         ws = isempty(add) ? nothing :
              cliWriterSet(add; config, graph, pop_col, node_col, area_col, border_col, edge_perimeter_col,
@@ -411,7 +413,7 @@ Like `extract-map-data`, but instead of writing per-map CSV rows, accumulate the
                                           integer::String = "false",
                                           no_compression::Bool = false, force::Bool = false,
                                           quiet::Bool = false)
-    cli("extract-map-data-histogram") do
+    cli("extract-map-data-histogram"; cyclewalk = !isempty(add)) do
         parsedBinRange = isempty(bin_range) ? nothing : Tuple(parse.(Float64, split(bin_range, ",")))
         parsedBins = isempty(bins) ? nothing : parse.(Float64, split(bins, ","))
         parsedPowers = parse.(Int, split(moment_powers, ","))

@@ -1,5 +1,6 @@
-# add.jl -- evaluating CycleWalk writer functions on maps: building a `WriterSet`, `computeWriters`,
-# `addMapData` (`atlas add`), and the hook `extractMapData` and `mapDataHistograms` use.
+# writers.jl (AtlasUtilitiesCycleWalkExt) -- evaluating CycleWalk writer functions on maps: building a
+# `WriterSet`, `computeWriters`, `addMapData` (`atlas add`), and the hook `extractMapData` and `mapDataHistograms`
+# use. The functions are declared, with their docstrings, in AtlasUtilities' src/writers.jl.
 #
 # `addMapData` reads every map in an input atlas Atlas1, reconstructs each map's LinkCutPartition on
 # a supplied dual graph, evaluate one or more CycleWalk "pushable writer"
@@ -150,22 +151,8 @@ function cycleWalkWriterNames()
     return sort!(writerNames)
 end
 
-"""
-    listWriters() -> Vector{String}
-
-The writer names `WriterSet` (and `addMapData`) accept, sorted: every CycleWalk `get_*` writer that runs on a
-partition (see [`cycleWalkWriterNames`](@ref)), and the partisan writers `get_partisan_margins` and
-`get_partisan_seats`, which need `vote_cols`.
-"""
 listWriters() = sort!(vcat(cycleWalkWriterNames(), collect(PARTISAN_WRITERS)))
 
-"""
-    listWriterDetails() -> (plain = Vector{Tuple{String,Bool}}, partisan = Vector{String})
-
-The writers of [`listWriters`](@ref), in two groups, each sorted: `plain`, each writer's name and whether it is
-fast (it offers the partition-free method `allTreeless`/`evalWritersTreeless` use, so no partition is rebuilt),
-and `partisan`, the writers that also need `vote_cols`.
-"""
 listWriterDetails() =
     (plain = [(n, hasFastMethod(getfield(CycleWalk, Symbol(n)))) for n in cycleWalkWriterNames()],
      partisan = sort(collect(PARTISAN_WRITERS)))
@@ -265,14 +252,6 @@ function buildGraph(spec::GraphSpec)
                  edge_perimeter_col = spec.edge_perimeter_col)
 end
 
-"""
-    loadGraph(; config = nothing, graph = nothing, pop_col = nothing, node_col = nothing, area_col = nothing,
-              border_col = nothing, edge_perimeter_col = nothing, node_data = String[])
-
-The CycleWalk dual graph (a `MultiLevelGraph`) described as for [`WriterSet`](@ref): a CycleWalk TOML `config`
-(its `[plans]` table) and/or the keywords, which override it. The graph keeps the node attributes in `node_data`
-plus the columns named by the other keywords.
-"""
 loadGraph(; kw...) = buildGraph(resolveGraphSpec("loadGraph"; kw...))
 
 # ---------------------------------------------------------------------------
@@ -519,29 +498,6 @@ function WriterSet(functions::AbstractVector{<:AbstractString};
     return WriterSet(buildGraph(spec), writers, allTreeless(writers), spec.path)
 end
 
-"""
-    computeWriters(ws::WriterSet, m::Map) -> Dict{String,Any}
-    computeWriters(ws::WriterSet, maps::AbstractVector{<:Map}; cores = Threads.nthreads())
-        -> Vector{Dict{String,Any}}
-
-Evaluate the writers of `ws` on map `m`: each field (see `writerFields`) => its value, a per-district vector
-indexed by the map's own district numbers (entry `i` describes district `i` of `m.districting`) or a scalar,
-exactly the values `addMapData` writes into the map's data. The map's partition is rebuilt on the graph as
-CycleWalk does at startup (or skipped, for writers with a partition-free method); the statistics depend only on
-the districting.
-
-The vector form evaluates the maps in parallel across `cores` threads and returns the results in order.
-
-    computeWriters(ws::WriterSet, path::AbstractString; cores = Threads.nthreads(), skip = 0, max = typemax(Int))
-    computeWriters(ws::WriterSet, atlas::Atlas; ...)
-
-The writers on every map of an atlas file (or an open `Atlas`), streamed: an iterator giving
-`(name = m.name, weight = m.weight, values = computeWriters(ws, m))` for each map, in file order, with the maps
-read and evaluated in parallel across `cores` tasks (AtlasIO's `eachMap(f, ...)`), so the whole atlas is never
-in memory. `skip` maps are skipped first (a burn-in) and at most `max` are read; from a `path` the file is
-closed when the last map has been read. With several threads, run it with BLAS on one thread
-(`BLAS.set_num_threads(1)`; the vector form does this for you), or BLAS's threads compete with the tasks.
-"""
 computeWriters(ws::WriterSet, m::Map) = evalWriters(ws.graph, m, ws.writers; treeless = ws.treeless)
 
 function computeWriters(ws::WriterSet, maps::AbstractVector{<:Map}; cores::Int = Threads.nthreads())
@@ -559,13 +515,6 @@ computeWriters(ws::WriterSet, source::Union{AbstractString,Atlas}; cores::Int = 
     eachMap(m -> (name = m.name, weight = m.weight, values = computeWriters(ws, m)), source;
             ntasks = cores, skip = skip, max = max)
 
-"""
-    evalWriterSet(ws::WriterSet, m, fields = nothing) -> Dict{String,Any}
-
-The hook `extractMapData` and `mapDataHistograms` evaluate their `writers` with: [`computeWriters`](@ref)`(ws, m)`,
-or with `fields` (a collection of field names), only the writers giving those fields, so a field whose output
-file is kept is not computed. The fast path is chosen for the writers actually evaluated, as `addMapData` does.
-"""
 function evalWriterSet(ws::WriterSet, m, fields = nothing)
     fields === nothing && return computeWriters(ws, m)
     fns = [(n, f) for (n, f) in ws.writers if n in fields]
@@ -577,23 +526,6 @@ end
 # addMapData
 # ---------------------------------------------------------------------------
 
-"""
-    addMapData(src, dst, ws::WriterSet; overwrite = false, cores = Threads.nthreads(), progress = false) -> Int
-    addMapData(src, dst, functions; config, graph, pop_col, node_col, area_col, border_col, edge_perimeter_col,
-               node_data, vote_cols, overwrite = false, cores = Threads.nthreads(), progress = false) -> Int
-
-Add the values of the writers in `ws` (see [`WriterSet`](@ref)) to the data of every map in atlas `src`, writing
-the augmented atlas to `dst`, and return the number of maps written. The second form builds the `WriterSet` from
-the writer names `functions` and the graph keywords first. `dst`'s header is `src`'s, in the same format version,
-with an `"added map data"` entry recording the fields, the graph and the date. By default it is an error for a
-requested field to already exist on a map; pass `overwrite = true` to recompute it instead. `progress` shows a
-progress bar.
-
-The per-map work (parse -> reconstruct partition -> evaluate writers -> serialize)
-is independent across maps and is threaded across `cores` tasks; maps are written
-to `dst` serially in order. `cores` defaults to the threads Julia was started with,
-so a single thread runs serially.
-"""
 function addMapData(src::AbstractString, dst::AbstractString, ws::WriterSet;
                     overwrite::Bool = false, progress::Bool = false, cores::Int = Threads.nthreads())
     fns = ws.writers

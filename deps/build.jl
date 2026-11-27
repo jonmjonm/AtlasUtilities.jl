@@ -1,7 +1,8 @@
 # Installs the `atlas` command: run `julia --project deps/build.jl` from a clone (or `Pkg.build("AtlasUtilities")`).
 #
 #   1. The command's own environment, ~/.julia/scratchspaces/<AtlasUtilities uuid>/env, with this checkout of
-#      AtlasUtilities developed into it and everything precompiled. `atlas install-render` later adds the plotting
+#      AtlasUtilities developed into it, CycleWalk added (a weak dependency of AtlasUtilities, which `atlas add` and
+#      `--add` load), and everything precompiled. `atlas install-render` later adds the plotting
 #      packages to this environment, never to the checkout's Project.toml. It is rebuilt in a new directory and
 #      swapped in only on success, and resolves afresh, ignoring the checkout's own Manifest.toml.
 #   2. The launcher ~/.julia/bin/atlas, which runs Julia in that environment (and only it, plus the standard
@@ -37,6 +38,7 @@ aside(f) = joinpath(PKG_DIR, f * ".aside-during-atlas-build")
 setup = """
     import Pkg
     Pkg.develop(path = $(repr(PKG_DIR)))
+    Pkg.add("CycleWalk")    # AtlasUtilities' weak dependency, which `atlas add` and `--add` load
     isempty($(repr(render))) || Pkg.add($(repr(render)))
     Pkg.precompile()
     """

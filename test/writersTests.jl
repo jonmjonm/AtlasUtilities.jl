@@ -3,8 +3,9 @@
 
 using Test
 using AtlasIO
-using AtlasUtilities: WriterSet, computeWriters, writerFields, listWriters, addMapData, hasFastMethod
+using AtlasUtilities: WriterSet, computeWriters, writerFields, listWriters, addMapData
 import CycleWalk
+using .CWExt: hasFastMethod          # CWExt: the CycleWalk extension (addTests.jl)
 
 const WCT_GRAPH = joinpath(@__DIR__, "..", "Data", "CT_pct20.json")
 const WCT_ATLAS = joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_slice.jsonl.gz")

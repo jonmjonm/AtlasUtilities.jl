@@ -8,12 +8,13 @@ using AtlasIO
 import JSON
 using CycleWalk: get_log_spanning_trees, get_isoperimetric_scores
 import CycleWalk
-using AtlasUtilities: parseFunctionNames, resolveFunctions, resolveGraphSpec,
-                     writeHeaderWithProvenance, GraphSpec, addMapData, buildGraph, loadGraph,
-                     evalWriters, evalWritersTreeless, evalWritersLCP, allTreeless,
-                     hasFastMethod, parseVotePairs, parseNodeData, voteColumns,
-                     cycleWalkWriterNames, listWriterDetails, PARTISAN_WRITERS,
-                     add, smokeTestPartition, writerWorks
+using AtlasUtilities: parseFunctionNames, addMapData, loadGraph, parseVotePairs, parseNodeData,
+                     listWriterDetails, add
+# The writer internals live in the CycleWalk extension, loaded by `import CycleWalk` above.
+const CWExt = Base.get_extension(AtlasUtilities, :AtlasUtilitiesCycleWalkExt)
+using .CWExt: resolveFunctions, resolveGraphSpec, writeHeaderWithProvenance, GraphSpec, buildGraph,
+              evalWriters, evalWritersTreeless, evalWritersLCP, allTreeless, hasFastMethod, voteColumns,
+              cycleWalkWriterNames, PARTISAN_WRITERS, smokeTestPartition, writerWorks
 
 # capture_stdout is defined in infoTests.jl, included before this file (see runtests.jl).
 
