@@ -265,19 +265,31 @@ partition(labels) = Set(Set(i for i in eachindex(labels) if labels[i] == d)
 
 end
 
-include(joinpath(@__DIR__, "apiTests.jl"))
-include(joinpath(@__DIR__, "testHelpers.jl"))
-include(joinpath(@__DIR__, "infoTests.jl"))       # defines capture_stdout
-include(joinpath(@__DIR__, "cycleWalkExtTests.jl"))   # before any `import CycleWalk`
-include(joinpath(@__DIR__, "nodesTests.jl"))
-include(joinpath(@__DIR__, "assignmentsTests.jl"))
-include(joinpath(@__DIR__, "addTests.jl"))
-include(joinpath(@__DIR__, "writersTests.jl"))
-include(joinpath(@__DIR__, "extractTests.jl"))
-include(joinpath(@__DIR__, "extractHistogramTests.jl"))
-include(joinpath(@__DIR__, "summarizeTests.jl"))
-include(joinpath(@__DIR__, "weightsTests.jl"))
-include(joinpath(@__DIR__, "parallelTests.jl"))
-include(joinpath(@__DIR__, "pargzipTests.jl"))
-include(joinpath(@__DIR__, "convertTests.jl"))
-include(joinpath(@__DIR__, "jsonTests.jl"))
+# The library tests come first: they run without CycleWalk (checked below). The tests in process/ load it.
+include("apiTests.jl")
+include("testHelpers.jl")
+include("infoTests.jl")       # defines capture_stdout
+include("cycleWalkExtTests.jl")
+include("nodesTests.jl")
+include("assignmentsTests.jl")
+include("extractTests.jl")
+include("extractHistogramTests.jl")
+include("summarizeTests.jl")
+include("weightsTests.jl")
+include("parallelTests.jl")
+include("pargzipTests.jl")
+include("convertTests.jl")
+include("jsonTests.jl")
+include("aquaTests.jl")
+
+@testset "the library tests ran without CycleWalk" begin
+    @test !haskey(Base.loaded_modules, Base.PkgId(Base.UUID("ac9cec89-1413-42d8-a7d6-c246d938c565"), "CycleWalk"))
+end
+
+# CycleWalk (the process extension). addTests.jl imports it and defines CWExt, which later files use.
+include("process/addTests.jl")
+include("process/writersTests.jl")
+include("process/extractWritersTests.jl")
+include("process/parallelWritersTests.jl")
+include("process/pargzipWritersTests.jl")
+include("process/convertWritersTests.jl")

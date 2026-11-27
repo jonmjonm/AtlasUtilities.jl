@@ -5,7 +5,7 @@
 using Test
 import JSON
 using AtlasIO
-using AtlasUtilities: mapDataHistograms, writeHistograms, WriterSet,
+using AtlasUtilities: mapDataHistograms, writeHistograms,
                       writeHistogramCSV, writeHistogramJSON, extractMapData
 using StreamHistogram: StreamingHistogram, add!, finalize!, nobs, datarange, mean
 
@@ -252,36 +252,6 @@ readHistJSON(path) = JSON.parse(readtext(path); dicttype = Dict{String,Any})["hi
         @test nobs(hser[field]) == nobs(hpar[field])
         @test datarange(hser[field]) == datarange(hpar[field])             # min/max: order-independent
         @test isapprox(mean(hser[field]), mean(hpar[field]); rtol = 1e-9)  # sum: order-dependent to float precision
-    end
-
-    # --add recomputes a field; cross-check against extract-map-data's own
-    # oracle-checked CSV output rather than duplicating CycleWalk's math here.
-    @testset "--add cross-checked against extract-map-data" begin
-        graph = joinpath(@__DIR__, "..", "Data", "CT_pct20.json")
-        src = joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_slice.jsonl.gz")
-        field = "get_isoperimetric_scores"
-        ws = WriterSet(["get_isoperimetric_scores"]; graph = graph, pop_col = "POP20",
-                       node_col = "NAME", area_col = "area", border_col = "border_length",
-                       edge_perimeter_col = "length")
-        addOpts = (writers = ws, force = true)
-
-        dirCsv = mktempdir(); atlasCsv = joinpath(dirCsv, "run.jsonl.gz"); cp(src, atlasCsv)
-        extractMapData(atlasCsv; addOpts...)
-        rowsCsv = filter(!isempty, split(readtext(joinpath(dirCsv, "run", field * ".csv.gz")), "\n"))
-        w = length(split(rowsCsv[1], ",")) - 2          # minus the name and map_weight columns
-        colvals(j) = [parse(Float64, split(r, ",")[1 + j]) for r in rowsCsv[2:end]]
-
-        dirHist = mktempdir(); atlasHist = joinpath(dirHist, "run.jsonl.gz"); cp(src, atlasHist)
-        histogramFiles(atlasHist; sort_values = false, addOpts...)
-        hs = readHistJSON(joinpath(dirHist, "run", field * "-histogram.json.gz"))
-
-        for j in 1:w
-            h = hs[string(j)]
-            csvVals = colvals(j)
-            @test h["nobs"] == length(csvVals)
-            @test isapprox(h["exact_min"], minimum(csvVals); rtol = 1e-6)
-            @test isapprox(h["exact_max"], maximum(csvVals); rtol = 1e-6)
-        end
     end
 
     @testset "--no-compression writes plain .csv/.json" begin

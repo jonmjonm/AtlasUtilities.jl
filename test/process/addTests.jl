@@ -54,8 +54,8 @@ rgs(; kw...) = resolveGraphSpec("test"; kw...)
         # when called -- an upstream CycleWalk bug, not reachable via hasmethod).
         writerNames = cycleWalkWriterNames()
 
-        graph = joinpath(@__DIR__, "..", "Data", "CT_pct20.json")
-        oracle = joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_slice.jsonl.gz")
+        graph = joinpath(@__DIR__, "..", "..", "Data", "CT_pct20.json")
+        oracle = joinpath(@__DIR__, "..", "..", "examples", "cycleWalk_ct_slice.jsonl.gz")
         Atlas2 = joinpath(mktempdir(), "listed_writers_smoke.jsonl.gz")
         addMapData(oracle, Atlas2, writerNames;
                    graph = graph, pop_col = "POP20", node_col = "NAME",
@@ -196,7 +196,7 @@ rgs(; kw...) = resolveGraphSpec("test"; kw...)
     # back onto the districting's labels) -- against ground truth. The multi-map
     # slice is what makes the re-alignment observable: several of its maps
     # reconstruct with a non-identity district permutation.
-    graph = joinpath(@__DIR__, "..", "Data", "CT_pct20.json")
+    graph = joinpath(@__DIR__, "..", "..", "Data", "CT_pct20.json")
     fields = ["get_log_spanning_trees", "get_log_spanning_forests",
               "get_isoperimetric_scores"]
     readall(p) = (a = openAtlas(smartOpen(p, "r")); ms = Map[];
@@ -209,7 +209,7 @@ rgs(; kw...) = resolveGraphSpec("test"; kw...)
 
     for (fixture, minmaps) in fixtures
         @testset "oracle: $fixture" begin
-            oracle = joinpath(@__DIR__, "..", "examples", fixture)
+            oracle = joinpath(@__DIR__, "..", "..", "examples", fixture)
             Atlas2 = joinpath(mktempdir(), "ct_recomputed.jsonl.gz")
             n = addMapData(oracle, Atlas2, fields;
                            graph = graph, pop_col = "POP20", node_col = "NAME",
@@ -274,7 +274,7 @@ rgs(; kw...) = resolveGraphSpec("test"; kw...)
                           area_col = "area", border_col = "border_length",
                           edge_perimeter_col = "length",
                           node_data = ["COUNTY", "NAME", "POP20", "area", "border_length"])
-            maps = readall(joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_slice.jsonl.gz"))
+            maps = readall(joinpath(@__DIR__, "..", "..", "examples", "cycleWalk_ct_slice.jsonl.gz"))
             @test length(maps) >= 40
             for m in maps
                 fast = evalWritersTreeless(g, m, treelessFns)
@@ -327,8 +327,8 @@ rgs(; kw...) = resolveGraphSpec("test"; kw...)
     # End-to-end: add per-district vote shares and check them against an independent
     # aggregation of the graph's vote columns over each map's own districting.
     @testset "addMapData: partisan margins == independent tally" begin
-        graphPath = joinpath(@__DIR__, "..", "Data", "CT_pct20.json")
-        src = joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_slice.jsonl.gz")
+        graphPath = joinpath(@__DIR__, "..", "..", "Data", "CT_pct20.json")
+        src = joinpath(@__DIR__, "..", "..", "examples", "cycleWalk_ct_slice.jsonl.gz")
         v1, v2 = "G20PREDEM", "G20PREREP"
         field = "get_partisan_margins_$(v1)_$(v2)"
 

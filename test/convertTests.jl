@@ -1,6 +1,6 @@
-# `convertAtlas`, and `relabelAtlas`/`addMapData` on format v2 atlases (AtlasIO 0.2.2). Uses NODES/mkmap/labelsof from
+# `convertAtlas`, and `relabelAtlas` on format v2 atlases (AtlasIO 0.2.2). Uses NODES/mkmap/labelsof from
 # runtests.jl.
-using AtlasUtilities: relabelAtlas, addMapData
+using AtlasUtilities: relabelAtlas
 
 "Every map of the atlas at `path`, and the atlas itself (for its header fields)."
 function readall(path)
@@ -53,19 +53,4 @@ end
         @test labelsof(m2[2]) == [1, 1, 2, 2]    # the label swap was undone
     end
 
-    @testset "add keeps a v2 atlas in v2 (not a mixed file)" begin
-        graph = joinpath(@__DIR__, "..", "Data", "CT_pct20.json")
-        ct2 = joinpath(dir, "ct2.jsonl.gz")
-        convertAtlas(ct, ct2; formatVersion = 2)
-        kw = (graph = graph, pop_col = "POP20", node_col = "NAME", vote_cols = [("G20PREDEM", "G20PREREP")],
-              overwrite = true)
-        out1, out2 = joinpath(dir, "add_v1.jsonl.gz"), joinpath(dir, "add_v2.jsonl.gz")
-        addMapData(ct, out1, ["get_partisan_margins"]; kw...)
-        addMapData(ct2, out2, ["get_partisan_margins"]; kw...)
-        a2, m2 = readall(out2)
-        _, m1 = readall(out1)
-        @test a2.formatVersion == "2"
-        @test [m.districting for m in m2] == [m.districting for m in m1]
-        @test [m.data for m in m2] == [m.data for m in m1]
-    end
 end
