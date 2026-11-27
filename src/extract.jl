@@ -92,7 +92,7 @@ function writeAboutFile(outdir::AbstractString, Atlas1::AbstractString, atlas,
                               " (`--max-maps ", maxMaps, "`); output files are ",
                               "suffixed `-partial`.")
         println(io)
-        println(io, "Atlas header below (the same information `atlas info` prints; the ",
+        println(io, "Atlas header below (the same information `mapatlas info` prints; the ",
                     "embedded generating script is omitted):")
         println(io)
         println(io, "```")

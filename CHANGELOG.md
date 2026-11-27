@@ -4,6 +4,12 @@
 
 **Breaking.** AtlasUtilities is now a library, and the command is a separate package, AtlasCLI (in `AtlasCLI/`).
 
+### Atlas output
+
+- The `"added map data"` header entry now reads `"by": "addMapData"` (was `"atlas add"`) and records the
+  AtlasUtilities `version`. Entries already in an atlas are left as they are.
+- The `about.md` of `extract-map-data` names `mapatlas info`.
+
 ### The command
 
 - **Renamed from `atlas` to `mapatlas`** (`atlas` collides with MongoDB's command). Its subcommands, options and

@@ -53,7 +53,8 @@ end
 Add the values of the writers in `ws` (see [`WriterSet`](@ref)) to the data of every map in atlas `src`, writing
 the augmented atlas to `dst`, and return the number of maps written. The second form builds the `WriterSet` from
 the writer names `functions` and the graph keywords first. `dst`'s header is `src`'s, in the same format version,
-with an `"added map data"` entry recording the fields, the graph and the date. By default it is an error for a
+with an `"added map data"` entry recording `"by": "addMapData"`, the AtlasUtilities version, the fields, the
+graph and the date. By default it is an error for a
 requested field to already exist on a map; pass `overwrite = true` to recompute it instead. `progress` shows a
 progress bar.
 

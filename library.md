@@ -280,7 +280,8 @@ addMapData(src, dst, functions; <WriterSet's keywords>, overwrite = false, cores
 ```
 
 Adds the writers' values to every map's data, writes `dst` and returns the number of maps. A field that already
-exists is an error unless `overwrite = true`. The header of `dst` records an `"added map data"` entry.
+exists is an error unless `overwrite = true`. The header of `dst` records an `"added map data"` entry
+(`"by": "addMapData"`, the AtlasUtilities `version`, `fields`, `graph`, `date`).
 
 ```julia
 using AtlasUtilities, CycleWalk

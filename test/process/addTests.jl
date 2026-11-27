@@ -156,6 +156,8 @@ rgs(; kw...) = resolveGraphSpec("test"; kw...)
         @test length(prov) == 1
         @test prov[1]["fields"] == ["get_log_spanning_trees"]
         @test prov[1]["graph"] == "g.json"
+        @test prov[1]["by"] == "addMapData"
+        @test prov[1]["version"] == string(pkgversion(AtlasUtilities))
         @test haskey(prov[1], "date")
         close(atlas)
 
@@ -178,7 +180,7 @@ rgs(; kw...) = resolveGraphSpec("test"; kw...)
         A5 = joinpath(dir, "A5.jsonl")
         writeHeaderWithProvenance(A4, A5, ["get_log_spanning_trees"], spec)
         line3 = readlines(A5)[3]
-        @test startswith(line3, params[1:end-1] * ",\"added map data\":[{\"by\":\"atlas add\",")
+        @test startswith(line3, params[1:end-1] * ",\"added map data\":[{\"by\":\"addMapData\",")
         atlas = openAtlas(smartOpen(A5, "r"))
         @test atlas.atlasParam["gamma"] === 0.0
         @test atlas.atlasParam["seed"] === -7375463094308724563

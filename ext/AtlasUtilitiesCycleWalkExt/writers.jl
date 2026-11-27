@@ -262,8 +262,8 @@ loadGraph(; kw...) = buildGraph(resolveGraphSpec("loadGraph"; kw...))
     provenanceHeaderBytes(Atlas1, names, graphPath) -> Vector{UInt8}
 
 Atlas1's header (its three lines) with an `"added map data"` provenance entry appended
-to line 3 (the atlas params) -- recording which fields were added, from which graph,
-and when -- returned as raw bytes ready to emit through an `AtlasOutput`. Lines 1-2
+to line 3 (the atlas params) -- recording the function and AtlasUtilities version that added
+the fields, which fields, from which graph, and when -- returned as raw bytes ready to emit through an `AtlasOutput`. Lines 1-2
 are copied verbatim. The entry is purely additive to the params dict, so older
 readers ignore it while `mapatlas info` surfaces it; the declared `mapParamType`
 (`Dict{String,Any}`) is unchanged, since adding keys to each map's data does not
@@ -280,8 +280,8 @@ function provenanceHeaderBytes(Atlas1::AbstractString, names::Vector{String}, gr
     # written back unchanged: same key order, and exact numbers. (JSON3 into a Dict
     # scrambled the key order, read 0.0 back as 0, and corrupted integers beyond 2^53.)
     atlasParam = JSON.parse(line3)
-    # "by" stays "atlas add" (what earlier versions wrote), whether from the command or `addMapData`.
-    entry = (by = "atlas add", fields = names, graph = String(graphPath), date = string(Dates.now()))
+    entry = (by = "addMapData", version = string(pkgversion(AtlasUtilities)), fields = names,
+             graph = String(graphPath), date = string(Dates.now()))
     prior = get(atlasParam, "added map data", nothing)
     log = prior === nothing ? Any[] : collect(Any, prior)
     push!(log, entry)
