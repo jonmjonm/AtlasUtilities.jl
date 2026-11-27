@@ -36,6 +36,34 @@ mapsof(path) = (io = smartOpen(path, "r"); a = openAtlas(io); ms = Map[]; while 
         end
     end
 
+    @testset "a damaged map: located in the error; --keep-partial keeps what was written" begin
+        dir = mktempdir()
+        io = smartOpen(joinpath(EX, "cycleWalk_ct_slice.jsonl.gz"), "r")
+        lines = readlines(io)
+        close(io)
+        lines[4 + 19] = lines[4 + 19][1:100]                     # map 20, on line 23
+        cut = joinpath(dir, "cut.jsonl")
+        write(cut, join(lines, "\n") * "\n")
+        err(args...) = try atlascli(args...); nothing catch e; e end
+        for cmd in (["relabel", cut, joinpath(dir, "r.jsonl.gz")], ["extract-map-data", cut],
+                    ["extract-map-data-histogram", cut], ["summarize-map-data", cut], ["extract-assignments", cut])
+            e = err(cmd..., "--quiet")
+            @test e isa AtlasFormatError && startswith(e.msg, "$cut, line 23 (map 20): ")
+        end
+        @test !isfile(joinpath(dir, "r.jsonl.gz")) && !isfile(joinpath(dir, "r.incomplete.jsonl.gz"))
+        @test_logs (:warn, r"kept") match_mode = :any begin
+            @test err("relabel", cut, joinpath(dir, "r.jsonl.gz"), "--keep-partial", "--quiet") isa AtlasFormatError
+        end
+        @test !isfile(joinpath(dir, "r.jsonl.gz")) && isfile(joinpath(dir, "r.incomplete.jsonl.gz"))
+        @test_logs (:warn, r"kept") match_mode = :any begin
+            err("extract-map-data", cut, "--keep-partial", "--quiet")
+            err("extract-assignments", cut, "--keep-partial", "--quiet")
+        end
+        @test isfile(joinpath(dir, "cut", "get_log_spanning_trees.incomplete.csv.gz"))
+        @test isfile(joinpath(dir, "cut-assignments.incomplete.csv.gz"))
+        @test isempty(filter(f -> occursin(".tmp", f), vcat(readdir(dir), readdir(joinpath(dir, "cut")))))
+    end
+
     @testset "error messages in the terms of the command" begin
         ct = joinpath(EX, "cycleWalk_ct_slice.jsonl.gz")
         err(args...) = try atlascli(args...); nothing catch e; e.msg end

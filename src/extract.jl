@@ -108,8 +108,8 @@ end
 
 """
     extractMapData(atlas, outdir = <atlas path minus its extension>; writers = nothing, compress = true,
-                   force = false, max_maps = 0, cores = Threads.nthreads(), progress = false)
-        -> (outdir, written, skipped, nmaps)
+                   force = false, max_maps = 0, cores = Threads.nthreads(), progress = false,
+                   keep_partial = false) -> (outdir, written, skipped, nmaps)
 
 Extract the map data of the atlas at `atlas` to per-field CSV files in `outdir` (by default a directory named
 after the atlas: its path minus the atlas extension), plus an `about.md` describing the atlas. Every existing
@@ -123,11 +123,15 @@ with a full one's output, and `about.md` notes the limit. `progress` shows a pro
 Returns the output directory, the paths `written` (`about.md` first, then a CSV per field), the paths `skipped`
 (files that already existed), and the number of maps extracted. An atlas with no maps writes nothing (`written`
 is empty); when every CSV already exists, `written` holds only `about.md` and no map is read past the first.
+
+Each CSV is written under a temporary name and moved into place when every map is written, so a run that fails
+(a damaged map, whose error gives its line, or a writer error) leaves no CSV that a rerun would skip as already
+extracted. With `keep_partial`, what a failed run wrote is kept as `<field>.incomplete.csv[.gz]`.
 """
 function extractMapData(atlas::AbstractString, outdir::AbstractString = stripAtlasExt(String(atlas));
                         writers::Union{Nothing,WriterSet} = nothing, compress::Bool = true,
                         force::Bool = false, max_maps::Int = 0,
-                        cores::Int = Threads.nthreads(), progress::Bool = false)
+                        cores::Int = Threads.nthreads(), progress::Bool = false, keep_partial::Bool = false)
     max_maps < 0 && error("extractMapData: max_maps = $max_maps must be ≥ 0.")
     Atlas1 = String(atlas)
     outdir = String(outdir)
@@ -147,7 +151,12 @@ function extractMapData(atlas::AbstractString, outdir::AbstractString = stripAtl
     end
 
     # --- set up output streams from the first map ------------------------------
-    first = nextMap(a)
+    first = try
+        locatingErrors(() -> nextMap(a), Atlas1, () -> 1)
+    catch
+        close(a)
+        rethrow()
+    end
 
     # Always (re)write about.md, regardless of which CSV fields are actually
     # written below -- it should describe the atlas even on a re-run where every
@@ -171,59 +180,70 @@ function extractMapData(atlas::AbstractString, outdir::AbstractString = stripAtl
 
     skipped = [joinpath(outdir, f * ext) for f in vcat(existingFields, addFields) if !shouldWrite(f)]
 
-    firstAdded = computeAdded(first)
-    # (field, io, width), in output order.
-    streams = Tuple{String,IO,Int}[]
-    for field in vcat(activeExisting, activeAddedNames)
-        val = valueOf(first, field, firstAdded)
-        width = length(flattenVal(val))
-        # smartOpen selects gzip vs. plain from the filename extension, matching
-        # `ext` (.csv.gz vs. .csv), so no codec import is needed here.
-        path = joinpath(outdir, field * ext)
-        io = smartOpen(path, "w")
-        write(io, headerRow(field, width))
-        write(io, valueRow(first.name, val, width, first.weight))
-        push!(streams, (field, io, width))
-        push!(written, path)
-    end
-
-    if isempty(streams)
-        close(a)
-        return (outdir = outdir, written = written, skipped = skipped, nmaps = 0)
-    end
-
-    # --- stream the remaining maps --------------------------------------------
-    # Per map, parse + compute (writers) + render each field's row in parallel (AtlasIO's
-    # `eachMap(f, ...)`), then write the rows to their streams serially in map order.
-    #
-    # No active writer field means no writer will actually be evaluated this run (either
-    # no `writers` were given, or every writer field was skipped as already
-    # existing), so `computeAdded` never touches `m.districting` -- read a
-    # `MapData` instead of a full `Map` to skip reconstructing it, which otherwise
-    # dominates the parse cost (see AtlasIO's `MapData`).
-    rowsOf(m) = begin
-        added = computeAdded(m)
-        [valueRow(m.name, valueOf(m, field, added), width, m.weight) for (field, _, width) in streams]
-    end
-    each = isempty(activeAddedSet) ? eachMapData : eachMap
-    bar = progress ? ProgressUnknown(desc = "Extracting map data:", spinner = true) : nothing
-    nmaps = 1
+    # Each CSV is written under a temporary name (see `tempPath`) and moved into place only once every map is
+    # written, so a failed run leaves no partial CSV (which a rerun would skip as already extracted).
+    streams = Tuple{String,IO,Int}[]        # (field, io, width), in output order
+    tmps = String[]                         # their temporary names
+    nmaps = 0
     try
-        with_serial_blas() do
-            for rows in each(rowsOf, a; max = max_maps == 0 ? typemax(Int) : max_maps - 1, ntasks = cores)
-                for k in eachindex(streams)
-                    write(streams[k][2], rows[k])
-                end
-                nmaps += 1
-                bar === nothing || next!(bar; showvalues = [("maps written", nmaps)])
-            end
+        firstAdded = computeAdded(first)
+        for field in vcat(activeExisting, activeAddedNames)
+            val = valueOf(first, field, firstAdded)
+            width = length(flattenVal(val))
+            # smartOpen selects gzip vs. plain from the filename extension, matching
+            # `ext` (.csv.gz vs. .csv), which the temporary name keeps.
+            tmp = tempPath(joinpath(outdir, field * ext))
+            io = smartOpen(tmp, "w")
+            push!(tmps, tmp)
+            push!(streams, (field, io, width))
+            write(io, headerRow(field, width))
+            write(io, valueRow(first.name, val, width, first.weight))
         end
-        bar === nothing || finish!(bar; showvalues = [("maps written", nmaps)])
+
+        if !isempty(streams)
+            # --- stream the remaining maps ------------------------------------
+            # Per map, parse + compute (writers) + render each field's row in parallel (AtlasIO's
+            # `eachMap(f, ...)`), then write the rows to their streams serially in map order.
+            #
+            # No active writer field means no writer will actually be evaluated this run (either
+            # no `writers` were given, or every writer field was skipped as already
+            # existing), so `computeAdded` never touches `m.districting` -- read a
+            # `MapData` instead of a full `Map` to skip reconstructing it, which otherwise
+            # dominates the parse cost (see AtlasIO's `MapData`).
+            rowsOf(m) = begin
+                added = computeAdded(m)
+                [valueRow(m.name, valueOf(m, field, added), width, m.weight) for (field, _, width) in streams]
+            end
+            each = isempty(activeAddedSet) ? eachMapData : eachMap
+            bar = progress ? ProgressUnknown(desc = "Extracting map data:", spinner = true) : nothing
+            nmaps = 1
+            # A map that does not parse is reported with its line: the next one after those written.
+            locatingErrors(Atlas1, () -> nmaps + 1) do
+                with_serial_blas() do
+                    for rows in each(rowsOf, a; max = max_maps == 0 ? typemax(Int) : max_maps - 1,
+                                     ntasks = cores)
+                        for k in eachindex(streams)
+                            write(streams[k][2], rows[k])
+                        end
+                        nmaps += 1
+                        bar === nothing || next!(bar; showvalues = [("maps written", nmaps)])
+                    end
+                end
+            end
+            bar === nothing || finish!(bar; showvalues = [("maps written", nmaps)])
+        end
+    catch
+        foreach(((_, io, _),) -> close(io), streams)
+        keepOrRemove(tmps, [joinpath(outdir, field * ext) for (field, _, _) in streams], keep_partial)
+        rethrow()
     finally
         close(a)
-        for (_, io, _) in streams
-            close(io)
-        end
+    end
+    foreach(((_, io, _),) -> close(io), streams)
+    for ((field, _, _), tmp) in zip(streams, tmps)
+        path = joinpath(outdir, field * ext)
+        mv(tmp, path; force = true)
+        push!(written, path)
     end
     return (outdir = outdir, written = written, skipped = skipped, nmaps = nmaps)
 end

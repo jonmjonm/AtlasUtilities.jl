@@ -35,6 +35,14 @@
 - **CycleWalk is a weak dependency.** `using AtlasUtilities` no longer loads it; `using CycleWalk` switches on
   the extension holding `addMapData`, `computeWriters`, `listWriters` and the `WriterSet` constructor, and calling
   them without it says so. `WriterSet`, `writerFields` and their types stay in the library.
+- **No partial output on failure.** `relabelAtlas`, `addMapData`, `extractMapData`, `writeHistograms` and
+  `extractAssignments` write each file under a temporary name and move it into place only when it is complete:
+  a run that fails (a damaged map, a writer error) leaves an existing output as it was and no truncated file that
+  a rerun would skip as done. An output atlas may now be its input (`mapatlas relabel a.jsonl.gz a.jsonl.gz`).
+  `keep_partial = true` (`--keep-partial`) keeps what a failed run wrote, as `out.incomplete.jsonl.gz`, for
+  debugging: every map before the one that failed.
+- **A damaged map is located.** Its `AtlasFormatError` names the file, line and map
+  (`cut.jsonl, line 23 (map 20): not a valid Atlas map line ...`); before, it said neither.
 - New `public` (not exported) names: `nodeIdString`, `atlasHeaderInfo`, `listWriterDetails`, `loadGraph`.
 - Comonicon and Pkg are no longer dependencies.
 - **Julia 1.11 or later** (was 1.10).

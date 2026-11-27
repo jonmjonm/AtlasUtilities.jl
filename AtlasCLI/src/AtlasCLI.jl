@@ -174,15 +174,18 @@ Relabel district numbers across atlas Atlas1 so consecutive maps stay as similar
 
 - `--first-map`: align every map to map 1 (anchor) instead of to its predecessor.
 - `--quiet`: suppress the progress bar.
+- `--keep-partial`: if the command fails partway, keep what it wrote, as OUT.incomplete.EXT, for debugging
+  (otherwise nothing is left; an existing output is never replaced by an incomplete one).
 """
 @cast function relabel(atlas1::String, atlas2::String, graph::String = "";
                        first_map::Bool = false, quiet::Bool = false,
-                       weight_population::String = "", population_attr::String = "")
+                       weight_population::String = "", population_attr::String = "",
+                       keep_partial::Bool = false)
     cli("relabel") do
         relabelAtlas(atlas1, atlas2; graph = isempty(graph) ? nothing : graph, first_map = first_map,
                      population_file = isempty(weight_population) ? nothing : weight_population,
                      population_attr = isempty(population_attr) ? nothing : population_attr,
-                     progress = !quiet)
+                     progress = !quiet, keep_partial = keep_partial)
     end
 end
 
@@ -220,6 +223,8 @@ Add CycleWalk pushable writer function(s) (e.g. `get_log_spanning_trees`) to eve
 - `--overwrite`: recompute a field even if a map already has it (otherwise it is
   an error for a requested field to already exist).
 - `--quiet`: suppress the progress bar.
+- `--keep-partial`: if the command fails partway, keep what it wrote, as OUT.incomplete.EXT, for debugging
+  (otherwise nothing is left; an existing output is never replaced by an incomplete one).
 """
 @cast function add(functions::String = "", atlas1::String = "", atlas2::String = "";
                    list_writers::Bool = false,
@@ -228,14 +233,14 @@ Add CycleWalk pushable writer function(s) (e.g. `get_log_spanning_trees`) to eve
                    area_col::String = "", border_col::String = "",
                    edge_perimeter_col::String = "", node_data::String = "",
                    vote_cols::String = "",
-                   overwrite::Bool = false, quiet::Bool = false)
+                   overwrite::Bool = false, quiet::Bool = false, keep_partial::Bool = false)
     cli("add") do
         list_writers && return printWriterList()
         (isempty(functions) || isempty(atlas1) || isempty(atlas2)) &&
             error("mapatlas add: <functions> <atlas1> <atlas2> are required (unless --list-writers).")
         ws = cliWriterSet(functions; config, graph, pop_col, node_col, area_col, border_col,
                           edge_perimeter_col, node_data, vote_cols)
-        addMapData(atlas1, atlas2, ws; overwrite = overwrite, progress = !quiet)
+        addMapData(atlas1, atlas2, ws; overwrite = overwrite, progress = !quiet, keep_partial = keep_partial)
     end
 end
 
@@ -270,6 +275,8 @@ Write each map-data field of atlas Atlas1 to its own CSV (one row per map: the m
 - `--no-compression`: write plain `.csv` instead of gzip-compressed `.csv.gz`.
 - `--force`: overwrite an output file that already exists (otherwise it is skipped).
 - `--quiet`: suppress the progress bar.
+- `--keep-partial`: if the command fails partway, keep what it wrote, as FIELD.incomplete.csv.gz, for debugging
+  (otherwise nothing is left; an existing output is never replaced by an incomplete one).
 """
 @cast function extract_map_data(atlas1::String; add::String = "",
                                 no_compression::Bool = false, force::Bool = false,
@@ -279,14 +286,14 @@ Write each map-data field of atlas Atlas1 to its own CSV (one row per map: the m
                                 edge_perimeter_col::String = "",
                                 node_data::String = "", vote_cols::String = "",
                                 max_maps::Int = 0,
-                                quiet::Bool = false)
+                                quiet::Bool = false, keep_partial::Bool = false)
     cli("extract-map-data") do
         max_maps < 0 && error("mapatlas extract-map-data: --max-maps must be ≥ 0, got $max_maps.")
         ws = isempty(add) ? nothing :
              cliWriterSet(add; config, graph, pop_col, node_col, area_col, border_col, edge_perimeter_col,
                           node_data, vote_cols)
         r = extractMapData(atlas1; writers = ws, compress = !no_compression, force = force, max_maps = max_maps,
-                           progress = !quiet)
+                           progress = !quiet, keep_partial = keep_partial)
         if isempty(r.written)
             println("mapatlas extract-map-data: $atlas1 has no maps; nothing written.")
             return
@@ -433,14 +440,16 @@ Write atlas Atlas1 per-map district assignments to a single wide CSV, named from
 - `--no-compression`: write plain `.csv` instead of gzip-compressed `.csv.gz`.
 - `--force`: overwrite the output file if it already exists (otherwise it is skipped).
 - `--quiet`: suppress the progress bar and messages.
+- `--keep-partial`: if the command fails partway, keep what it wrote, as OUT.incomplete.EXT, for debugging
+  (otherwise nothing is left; an existing output is never replaced by an incomplete one).
 """
 @cast function extract_assignments(atlas1::String; graph::String = "",
                                    no_compression::Bool = false, force::Bool = false,
-                                   quiet::Bool = false)
+                                   quiet::Bool = false, keep_partial::Bool = false)
     cli("extract-assignments") do
         outpath = stripAtlasExt(atlas1) * "-assignments" * (no_compression ? ".csv" : ".csv.gz")
         r = extractAssignments(atlas1, outpath; graph = isempty(graph) ? nothing : graph, force = force,
-                               progress = !quiet)
+                               progress = !quiet, keep_partial = keep_partial)
         if r === nothing
             println("mapatlas extract-assignments: $outpath already exists; pass --force to overwrite.")
         elseif r.nmaps == 0

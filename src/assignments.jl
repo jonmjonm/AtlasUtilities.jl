@@ -64,15 +64,18 @@ end
 
 """
     extractAssignments(atlas, outpath = nothing; graph = nothing, compress = true, force = false,
-                       cores = Threads.nthreads(), progress = false)
+                       cores = Threads.nthreads(), progress = false, keep_partial = false)
         -> (path, nmaps, units, scale) or nothing
 
 Write one wide CSV of the district assignments of every map of the atlas at `atlas`: one row per map (the map
 name, then each unit's district number in that map), with the units of [`assignmentMatrix`](@ref) as columns.
 `outpath` defaults to the atlas path minus its extension plus `-assignments.csv.gz` (`.csv` with
-`compress = false`); a given `outpath` is compressed or not by its own extension. The file is written to a
-temporary file next to it and moved into place only on success, so an error never leaves a partial file behind.
-An existing file is kept, and `nothing` returned, unless `force = true`. `progress` shows a progress bar.
+`compress = false`); a given `outpath` is compressed or not by its own extension. An existing file is kept, and
+`nothing` returned, unless `force = true`. `progress` shows a progress bar.
+
+The file is written under a temporary name next to it and moved into place only on success, so an error (a
+damaged map gives its line) never leaves a partial file behind. With `keep_partial`, what was written is kept as
+`<outpath>.incomplete...` (e.g. `a-assignments.incomplete.csv.gz`).
 
 Returns the `path` written, the number of maps, the `units` (node keys) and `scale`, a description of the
 columns (`nothing` when they are simply the maps' nodes). An atlas with no maps writes nothing and gives
@@ -81,17 +84,15 @@ columns (`nothing` when they are simply the maps' nodes). An atlas with no maps 
 function extractAssignments(atlas::AbstractString, outpath::Union{Nothing,AbstractString} = nothing;
                             graph::Union{AbstractString,Nothing} = nothing,
                             compress::Bool = true, force::Bool = false,
-                            cores::Int = Threads.nthreads(), progress::Bool = false)
+                            cores::Int = Threads.nthreads(), progress::Bool = false, keep_partial::Bool = false)
     Atlas1 = String(atlas)
     outpath = outpath === nothing ? stripAtlasExt(Atlas1) * "-assignments" * (compress ? ".csv.gz" : ".csv") :
               String(outpath)
     isfile(outpath) && !force && return nothing
 
     # Written to a temporary file, moved into place only on success. A multiscale restart starts it over. The
-    # temporary name keeps the extensions (`out.tmp.csv.gz`, `out.tmp.csv.bz2`, `out.tmp.gz`), and with them
-    # whether it is compressed.
-    m = match(r"(\.csv)?(\.gz|\.bz2)?$", outpath)
-    tmppath = outpath[1:(end - length(m.match))] * ".tmp" * m.match
+    # temporary name keeps the extensions, and with them whether it is compressed (see `tempPath`).
+    tmppath = tempPath(outpath)
     io = nothing
     function start(units)
         io === nothing || close(io)
@@ -108,7 +109,7 @@ function extractAssignments(atlas::AbstractString, outpath::Union{Nothing,Abstra
         result === nothing || mv(tmppath, outpath; force = true)
     catch
         io === nothing || close(io)
-        rm(tmppath; force = true)
+        keepOrRemove([tmppath], [outpath], keep_partial)
         rethrow()
     end
     result === nothing && return (path = outpath, nmaps = 0, units = Tuple{Vararg{String}}[], scale = nothing)
@@ -136,8 +137,11 @@ function eachAssignmentRow(Atlas1::String; caller::String, graph::Union{Abstract
         return nothing
     end
     params = atlas.atlasParam
-    first = nextMap(atlas)
-    close(atlas)
+    first = try
+        locatingErrors(() -> nextMap(atlas), Atlas1, () -> 1)
+    finally
+        close(atlas)
+    end
     pass(districtsOf, units) = (start(units); readAssignmentRows(districtsOf, render, consume, Atlas1, progress, cores))
 
     if graph !== nothing
@@ -178,14 +182,17 @@ end
 function readAssignmentRows(districtsOf, render, consume, Atlas1::String, progress::Bool, cores::Int)
     count = 0
     bar = progress ? ProgressUnknown(desc = "Reading district assignments:", spinner = true) : nothing
-    openAtlas(Atlas1) do atlas
-        rows = eachMap(captureErrors(m -> render(m.name, Float64(m.weight), districtsOf(m))), atlas;
-                       ntasks = cores)
-        for r in rows
-            raiseCaptured(r)
-            consume(r)
-            count += 1
-            bar === nothing || next!(bar; showvalues = [("maps read", count)])
+    # A map that does not parse is reported with its line: the next one after those read.
+    locatingErrors(Atlas1, () -> count + 1) do
+        openAtlas(Atlas1) do atlas
+            rows = eachMap(captureErrors(m -> render(m.name, Float64(m.weight), districtsOf(m))), atlas;
+                           ntasks = cores)
+            for r in rows
+                raiseCaptured(r)
+                consume(r)
+                count += 1
+                bar === nothing || next!(bar; showvalues = [("maps read", count)])
+            end
         end
     end
     bar === nothing || finish!(bar; showvalues = [("maps read", count)])
@@ -225,8 +232,12 @@ end
 "Every node key used by any map of `Atlas1`."
 function atlasKeys(Atlas1::String, cores::Int)
     allKeys = Set{Tuple{Vararg{String}}}()
-    for ks in eachMap(m -> collect(keys(m.districting)), Atlas1; ntasks = cores)
-        union!(allKeys, ks)
+    count = 0
+    locatingErrors(Atlas1, () -> count + 1) do
+        for ks in eachMap(m -> collect(keys(m.districting)), Atlas1; ntasks = cores)
+            union!(allKeys, ks)
+            count += 1
+        end
     end
     return allKeys
 end

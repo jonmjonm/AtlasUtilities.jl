@@ -12,7 +12,7 @@ const LIBRARY_FUNCTIONS = Set(["atlasInfo", "listMapData", "listNodes", "extract
 const KEYWORD_FLAGS = Dict(k => "--" * replace(k, '_' => '-') for k in
     ["graph", "config", "pop_col", "node_col", "area_col", "border_col", "edge_perimeter_col", "node_data",
      "vote_cols", "overwrite", "force", "max_maps", "burn_in", "map", "first_map", "population_attr", "bin_range",
-     "bin_num", "bins", "moment_powers", "integer"])
+     "bin_num", "bins", "moment_powers", "integer", "keep_partial"])
 KEYWORD_FLAGS["population_file"] = "--weight-population"
 KEYWORD_FLAGS["writers"] = "--add"
 

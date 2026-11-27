@@ -364,4 +364,39 @@ rgs(; kw...) = resolveGraphSpec("test"; kw...)
         @test maxerr < 1e-9        # exact per-district vote-share aggregation
     end
 
+    @testset "addMapData: a failed run leaves dst as it was" begin
+        ct = joinpath(@__DIR__, "..", "..", "examples", "cycleWalk_ct_slice.jsonl.gz")
+        g = joinpath(@__DIR__, "..", "..", "Data", "CT_pct20.json")
+        dir = mktempdir()
+        dst = joinpath(dir, "out.jsonl.gz")
+        kw = (graph = g, pop_col = "POP20", node_col = "NAME")
+        # the field is already there and overwrite is not set: an error at the first map
+        @test_throws ErrorException addMapData(ct, dst, ["get_log_spanning_trees"]; kw...)
+        @test !isfile(dst) && isempty(filter(f -> occursin(".tmp", f), readdir(dir)))
+        write(dst, "earlier output")
+        @test_throws ErrorException addMapData(ct, dst, ["get_log_spanning_trees"]; kw...)
+        @test read(dst, String) == "earlier output"
+        # dst may be src
+        a = joinpath(dir, "a.jsonl.gz")
+        cp(ct, a)
+        @test addMapData(a, a, ["get_cut_edge_sum"]; kw...) == 41
+        @test "get_cut_edge_sum" in listMapData(a) && isempty(filter(f -> occursin(".tmp", f), readdir(dir)))
+    end
+
+    @testset "addMapData: a damaged map gives its line; keep_partial keeps every map before it" begin
+        g = joinpath(@__DIR__, "..", "..", "Data", "CT_pct20.json")
+        dir = mktempdir()
+        cut = damagedCT(dir)                                  # map 20 cut short (partialOutputTests.jl)
+        kw = (graph = g, pop_col = "POP20", node_col = "NAME", overwrite = true)
+        for cores in (1, 4)
+            e = errorOf(() -> addMapData(cut, joinpath(dir, "o.jsonl"), ["get_log_spanning_trees"]; cores, kw...))
+            @test e isa AtlasFormatError && startswith(e.msg, "$cut, line 23 (map 20): ")
+        end
+        dst = joinpath(dir, "o.jsonl.gz")
+        @test_logs (:warn, r"kept") match_mode = :any begin
+            @test_throws AtlasFormatError addMapData(cut, dst, ["get_log_spanning_trees"]; keep_partial = true, kw...)
+        end
+        @test !isfile(dst) && length(mapsIn(joinpath(dir, "o.incomplete.jsonl.gz"))) == 19
+    end
+
 end

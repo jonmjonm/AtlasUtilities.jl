@@ -280,6 +280,7 @@ include("parallelTests.jl")
 include("pargzipTests.jl")
 include("convertTests.jl")
 include("jsonTests.jl")
+include("partialOutputTests.jl")
 include("aquaTests.jl")
 
 @testset "the library tests ran without CycleWalk" begin

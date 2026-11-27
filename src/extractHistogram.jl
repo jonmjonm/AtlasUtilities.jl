@@ -75,126 +75,129 @@ function mapDataHistograms(atlas::AbstractString;
     valueOf(m, field, added) = field in addedSet ? added[field] : get(m.data, field, nothing)
 
     atlas = openAtlas(smartOpen(String(Atlas1), "r"))
-
-    n_burned = 0
     try
-        skipMap(atlas; numSkip = burn_in)
-        n_burned = burn_in
-    catch e
-        e isa EOFError || rethrow()
-    end
-    if eof(atlas)
-        close(atlas)
-        error("mapDataHistograms: $Atlas1 has no maps left after burn_in = $burn_in.")
-    end
-
-    first = nextMap(atlas)
-    firstAdded = computeAdded(first)
-    fieldNames = vcat(sort([k for k in keys(first.data) if !(k in addedSet)]), addFields)
-    widths = [length(flattenVal(valueOf(first, f, firstAdded))) for f in fieldNames]
-
-    mkHist() = StreamingHistogram(; integer = integer, momentPowers = moment_powers,
-                                 binRange = bin_range, binNum = bin_num, bins = bins)
-    hists = Vector{Union{StreamingHistogram,Vector{StreamingHistogram}}}(undef, length(fieldNames))
-    for k in eachindex(fieldNames)
-        hists[k] = widths[k] == 1 ? mkHist() : [mkHist() for _ in 1:widths[k]]
-    end
-
-    """Flatten `val` to `Float64`s, sorted ascending when `sort_values` (a no-op for a
-    single value); `nothing` (a missing field on this map) becomes an empty vector."""
-    function extractVals(val)
-        val === nothing && return Float64[]
-        vals = Float64.(flattenVal(val))
-        sort_values && length(vals) > 1 && sort!(vals)
-        return vals
-    end
-
-    """Feed one map's already-extracted per-field value vectors into `hists`, with
-    the map's weight `w`."""
-    function feedRow!(rr, w)
-        for k in eachindex(fieldNames)
-            vals = rr[k]
-            isempty(vals) && continue
-            if widths[k] == 1
-                add!(hists[k]::StreamingHistogram, vals[1], w)
-            else
-                hv = hists[k]::Vector{StreamingHistogram}
-                for j in 1:min(widths[k], length(vals))
-                    add!(hv[j], vals[j], w)
-                end
-            end
-        end
-    end
-
-    feedRow!([extractVals(valueOf(first, f, firstAdded)) for f in fieldNames], mapWeight(first))
-
-    # Per map, parse + compute (--add) + extract the values in parallel (AtlasIO's
-    # `eachMap(f, ...)`). No `writers` means `computeAdded` never touches
-    # `m.districting` (it short-circuits to an empty dict), so read a `MapData`
-    # instead of a full `Map` to skip reconstructing districting, which otherwise
-    # dominates the parse cost (see AtlasIO's `MapData`).
-    # A map with a bad weight is an error meant for the user: returned as a
-    # `CapturedError` and raised in the loop below, without AtlasIO's error log.
-    valuesOf(m) = begin
-        w = try
-            mapWeight(m)
+        n_burned = 0
+        try
+            skipMap(atlas; numSkip = burn_in)
+            n_burned = burn_in
         catch e
-            return CapturedError(e)
+            e isa EOFError || rethrow()
         end
-        added = computeAdded(m)
-        ([extractVals(valueOf(m, field, added)) for field in fieldNames], w)
-    end
-    each = writers === nothing ? eachMapData : eachMap
-    bar = progress ? ProgressUnknown(desc = "Building histograms:", spinner = true) : nothing
-    written = 1                    # maps accumulated past burn-in (for --max-maps)
-    processed = 1 + n_burned       # total maps read from the start (for the progress bar)
+        if eof(atlas)
+            error("mapDataHistograms: $Atlas1 has no maps left after burn_in = $burn_in.")
+        end
 
-    # rows[i][k] is buffered map i's extracted (flattened, possibly sorted) value
-    # vector for field k; ws[i] is its weight. Order does not matter for histogram
-    # accumulation (unlike the CSV writer, which must preserve map order), so rather
-    # than feed map by map, transpose BATCH maps at a time to one batch `add!` per
-    # (field, index) -- far cheaper than one scalar `add!` per map.
-    rows = Vector{Vector{Float64}}[]
-    ws = Float64[]
-    function flush!()
-        n = length(rows)
+        first = locatingErrors(() -> nextMap(atlas), String(Atlas1), () -> n_burned + 1)
+        firstAdded = computeAdded(first)
+        fieldNames = vcat(sort([k for k in keys(first.data) if !(k in addedSet)]), addFields)
+        widths = [length(flattenVal(valueOf(first, f, firstAdded))) for f in fieldNames]
+
+        mkHist() = StreamingHistogram(; integer = integer, momentPowers = moment_powers,
+                                     binRange = bin_range, binNum = bin_num, bins = bins)
+        hists = Vector{Union{StreamingHistogram,Vector{StreamingHistogram}}}(undef, length(fieldNames))
         for k in eachindex(fieldNames)
-            if widths[k] == 1
-                has = [i for i in 1:n if !isempty(rows[i][k])]
-                isempty(has) || add!(hists[k]::StreamingHistogram, [rows[i][k][1] for i in has], ws[has])
-            else
-                hv = hists[k]::Vector{StreamingHistogram}
-                for j in 1:widths[k]
-                    has = [i for i in 1:n if length(rows[i][k]) >= j]
-                    isempty(has) || add!(hv[j], [rows[i][k][j] for i in has], ws[has])
+            hists[k] = widths[k] == 1 ? mkHist() : [mkHist() for _ in 1:widths[k]]
+        end
+
+        """Flatten `val` to `Float64`s, sorted ascending when `sort_values` (a no-op for a
+        single value); `nothing` (a missing field on this map) becomes an empty vector."""
+        function extractVals(val)
+            val === nothing && return Float64[]
+            vals = Float64.(flattenVal(val))
+            sort_values && length(vals) > 1 && sort!(vals)
+            return vals
+        end
+
+        """Feed one map's already-extracted per-field value vectors into `hists`, with
+        the map's weight `w`."""
+        function feedRow!(rr, w)
+            for k in eachindex(fieldNames)
+                vals = rr[k]
+                isempty(vals) && continue
+                if widths[k] == 1
+                    add!(hists[k]::StreamingHistogram, vals[1], w)
+                else
+                    hv = hists[k]::Vector{StreamingHistogram}
+                    for j in 1:min(widths[k], length(vals))
+                        add!(hv[j], vals[j], w)
+                    end
                 end
             end
         end
-        empty!(rows)
-        empty!(ws)
-    end
-    with_serial_blas() do
-        for r in each(valuesOf, atlas; max = max_maps == 0 ? typemax(Int) : max_maps - 1, ntasks = cores)
-            raiseCaptured(r)
-            rr, w = r
-            push!(rows, rr)
-            push!(ws, w)
-            length(rows) == BATCH && flush!()
-            written += 1
-            processed += 1
-            bar === nothing || next!(bar; showvalues = [("maps processed", processed)])
+
+        feedRow!([extractVals(valueOf(first, f, firstAdded)) for f in fieldNames], mapWeight(first))
+
+        # Per map, parse + compute (--add) + extract the values in parallel (AtlasIO's
+        # `eachMap(f, ...)`). No `writers` means `computeAdded` never touches
+        # `m.districting` (it short-circuits to an empty dict), so read a `MapData`
+        # instead of a full `Map` to skip reconstructing districting, which otherwise
+        # dominates the parse cost (see AtlasIO's `MapData`).
+        # A map with a bad weight is an error meant for the user: returned as a
+        # `CapturedError` and raised in the loop below, without AtlasIO's error log.
+        valuesOf(m) = begin
+            w = try
+                mapWeight(m)
+            catch e
+                return CapturedError(e)
+            end
+            added = computeAdded(m)
+            ([extractVals(valueOf(m, field, added)) for field in fieldNames], w)
         end
-        flush!()
-    end
-    bar === nothing || finish!(bar; showvalues = [("maps processed", processed)])
+        each = writers === nothing ? eachMapData : eachMap
+        bar = progress ? ProgressUnknown(desc = "Building histograms:", spinner = true) : nothing
+        written = 1                    # maps accumulated past burn-in (for --max-maps)
+        processed = 1 + n_burned       # total maps read from the start (for the progress bar)
 
-    close(atlas)
-    for h in hists
-        h isa StreamingHistogram ? finalize!(h) : foreach(finalize!, h)
-    end
+        # rows[i][k] is buffered map i's extracted (flattened, possibly sorted) value
+        # vector for field k; ws[i] is its weight. Order does not matter for histogram
+        # accumulation (unlike the CSV writer, which must preserve map order), so rather
+        # than feed map by map, transpose BATCH maps at a time to one batch `add!` per
+        # (field, index) -- far cheaper than one scalar `add!` per map.
+        rows = Vector{Vector{Float64}}[]
+        ws = Float64[]
+        function flush!()
+            n = length(rows)
+            for k in eachindex(fieldNames)
+                if widths[k] == 1
+                    has = [i for i in 1:n if !isempty(rows[i][k])]
+                    isempty(has) || add!(hists[k]::StreamingHistogram, [rows[i][k][1] for i in has], ws[has])
+                else
+                    hv = hists[k]::Vector{StreamingHistogram}
+                    for j in 1:widths[k]
+                        has = [i for i in 1:n if length(rows[i][k]) >= j]
+                        isempty(has) || add!(hv[j], [rows[i][k][j] for i in has], ws[has])
+                    end
+                end
+            end
+            empty!(rows)
+            empty!(ws)
+        end
+        # A map that does not parse is reported with its line: the next one after those read.
+        locatingErrors(String(Atlas1), () -> processed + 1) do
+            with_serial_blas() do
+                for r in each(valuesOf, atlas; max = max_maps == 0 ? typemax(Int) : max_maps - 1, ntasks = cores)
+                    raiseCaptured(r)
+                    rr, w = r
+                    push!(rows, rr)
+                    push!(ws, w)
+                    length(rows) == BATCH && flush!()
+                    written += 1
+                    processed += 1
+                    bar === nothing || next!(bar; showvalues = [("maps processed", processed)])
+                end
+                flush!()
+            end
+        end
+        bar === nothing || finish!(bar; showvalues = [("maps processed", processed)])
 
-    return Dict{String,Union{StreamingHistogram,Vector{StreamingHistogram}}}(
-        fieldNames[k] => hists[k] for k in eachindex(fieldNames)), written
+        for h in hists
+            h isa StreamingHistogram ? finalize!(h) : foreach(finalize!, h)
+        end
+        return Dict{String,Union{StreamingHistogram,Vector{StreamingHistogram}}}(
+            fieldNames[k] => hists[k] for k in eachindex(fieldNames)), written
+    finally
+        close(atlas)
+    end
 end
 
 """
@@ -347,8 +350,8 @@ function writeHistograms(outdir::AbstractString, hists::AbstractDict;
             append!(skipped, filter(isfile, [csvPath, jsonPath]))
             continue
         end
-        writeHistogramCSV(csvPath, hists[field])
-        writeHistogramJSON(jsonPath, hists[field])
+        writeReplacing(tmp -> writeHistogramCSV(tmp, hists[field]), csvPath)
+        writeReplacing(tmp -> writeHistogramJSON(tmp, hists[field]), jsonPath)
         append!(written, [csvPath, jsonPath])
     end
     return (written = written, skipped = skipped)

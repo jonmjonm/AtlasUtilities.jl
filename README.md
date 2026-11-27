@@ -113,6 +113,15 @@ now `mapatlas`, and `atlas render` and `atlas install-render` are gone for now. 
 > it off (e.g. for logs or non-interactive runs). `info` prints only a header, so
 > it has no progress bar and no `--quiet` flag.
 
+> **A failed run leaves no partial output.** `relabel`, `add`, `extract-map-data`,
+> `extract-map-data-histogram` and `extract-assignments` write each file under a
+> temporary name and move it into place only when it is complete, so an existing
+> output is never replaced by a truncated one. A damaged map in the input is reported
+> with its file, line and map number (`cut.jsonl, line 23 (map 20): not a valid Atlas
+> map line ...`); look at it with `gzip -dc atlas.jsonl.gz | sed -n 23p`. To debug,
+> `--keep-partial` (on `relabel`, `add`, `extract-map-data` and `extract-assignments`)
+> keeps what a failed run wrote, as `out.incomplete.jsonl.gz` (or `<field>.incomplete.csv.gz`).
+
 ### `mapatlas info`
 
 ```bash

@@ -525,7 +525,8 @@ end
 # ---------------------------------------------------------------------------
 
 function addMapData(src::AbstractString, dst::AbstractString, ws::WriterSet;
-                    overwrite::Bool = false, progress::Bool = false, cores::Int = Threads.nthreads())
+                    overwrite::Bool = false, progress::Bool = false, cores::Int = Threads.nthreads(),
+                    keep_partial::Bool = false)
     fns = ws.writers
     treeless = ws.treeless      # fast-path decision depends only on fns; resolved once
     g = ws.graph
@@ -535,60 +536,73 @@ function addMapData(src::AbstractString, dst::AbstractString, ws::WriterSet;
     # `AtlasOutput` compresses the map body as byte-targeted gzip members in parallel
     # (the serial write is only raw I/O); plain/.bz2 stream as before.
     header = provenanceHeaderBytes(String(src), writerFields(ws), ws.graphPath)
-    outIO = openAtlasOutput(String(dst), header, cores)
+    # dst is written under a temporary name and moved into place only once every map is written (see
+    # `writeReplacing`), so a failed run leaves no partial atlas; and dst may be src.
+    return writeReplacing(String(dst); keep_partial) do tmp
+        outIO = openAtlasOutput(tmp, header, cores)
 
-    inIO = smartOpen(String(src), "r")
-    atlas = openAtlas(inIO)
-    fv = atlas.formatVersion    # dst's header comes from src's, so its maps must be in the same version
+        inIO = smartOpen(String(src), "r")
+        atlas = openAtlas(inIO)
+        fv = atlas.formatVersion    # dst's header comes from src's, so its maps must be in the same version
 
-    bar = progress ? ProgressUnknown(desc = "Adding map data:", spinner = true) : nothing
-    written = 0
+        bar = progress ? ProgressUnknown(desc = "Adding map data:", spinner = true) : nothing
+        written = 0
 
-    # Per map, parse + reconstruct + evaluate + serialize in parallel (AtlasIO's
-    # `eachMap(f, ...)`), then write the serialized bytes to dst in map order,
-    # BATCH maps per `writeMaps!` (which gzips a batch in parallel). A field that is
-    # already there (without `overwrite`) is an error meant for the user: it is
-    # returned as a `CapturedError` and raised here, at the first such map.
-    function addTo(m)
-        if !overwrite
-            for (desc, _) in fns
-                haskey(m.data, desc) &&
-                    return CapturedError(ErrorException("addMapData: map \"$(m.name)\" already has field " *
-                                                        "\"$desc\"; pass overwrite = true to recompute it."))
-            end
-        end
-        for (desc, val) in evalWriters(g, m, fns; treeless = treeless)
-            m.data[desc] = val
-        end
-        buf = IOBuffer()
-        addMap(buf, m; formatVersion = fv)
-        return take!(buf)
-    end
-    bytes = Vector{UInt8}[]
-    try
-        with_serial_blas() do
-            for b in eachMap(addTo, atlas; ntasks = cores)
-                raiseCaptured(b)
-                push!(bytes, b)
-                if length(bytes) == BATCH
-                    writeMaps!(outIO, bytes)
-                    empty!(bytes)
+        # Per map, parse + reconstruct + evaluate + serialize in parallel (AtlasIO's
+        # `eachMap(f, ...)`), then write the serialized bytes to dst in map order,
+        # BATCH maps per `writeMaps!` (which gzips a batch in parallel). A field that is
+        # already there (without `overwrite`) is an error meant for the user: it is
+        # returned as a `CapturedError` and raised here, at the first such map.
+        function addTo(m)
+            if !overwrite
+                for (desc, _) in fns
+                    haskey(m.data, desc) &&
+                        return CapturedError(ErrorException("addMapData: map \"$(m.name)\" already has field " *
+                                                            "\"$desc\"; pass overwrite = true to recompute it."))
                 end
-                written += 1
-                bar === nothing || next!(bar; showvalues = [("maps written", written)])
             end
-            isempty(bytes) || writeMaps!(outIO, bytes)
+            for (desc, val) in evalWriters(g, m, fns; treeless = treeless)
+                m.data[desc] = val
+            end
+            buf = IOBuffer()
+            addMap(buf, m; formatVersion = fv)
+            return take!(buf)
         end
-        bar === nothing || finish!(bar; showvalues = [("maps written", written)])
-    finally
-        close(atlas)
-        close(outIO)
+        bytes = Vector{UInt8}[]
+        try
+            # A map that does not parse is reported with its line: the next one after those written.
+            locatingErrors(String(src), () -> written + 1) do
+                with_serial_blas() do
+                    try
+                        for b in eachMap(addTo, atlas; ntasks = cores)
+                            raiseCaptured(b)
+                            push!(bytes, b)
+                            if length(bytes) == BATCH
+                                writeMaps!(outIO, bytes)
+                                empty!(bytes)
+                            end
+                            written += 1
+                            bar === nothing || next!(bar; showvalues = [("maps written", written)])
+                        end
+                    finally
+                        # The maps finished before an error too, so a kept incomplete output (`keep_partial`)
+                        # holds every map before the one that failed.
+                        isempty(bytes) || writeMaps!(outIO, bytes)
+                    end
+                end
+            end
+            bar === nothing || finish!(bar; showvalues = [("maps written", written)])
+        finally
+            close(atlas)
+            close(outIO)
+        end
+        written
     end
-    return written
 end
 
 function addMapData(src::AbstractString, dst::AbstractString,
                     functions::Union{AbstractString,AbstractVector{<:AbstractString}};
-                    overwrite::Bool = false, progress::Bool = false, cores::Int = Threads.nthreads(), kw...)
-    return addMapData(src, dst, WriterSet(functions; kw...); overwrite, progress, cores)
+                    overwrite::Bool = false, progress::Bool = false, cores::Int = Threads.nthreads(),
+                    keep_partial::Bool = false, kw...)
+    return addMapData(src, dst, WriterSet(functions; kw...); overwrite, progress, cores, keep_partial)
 end

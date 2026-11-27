@@ -27,7 +27,12 @@ end
 ```
 
 Conventions: function names are camelCase and keywords snake_case. Functions print nothing and return what they
-did; `progress = true` shows a progress bar. Existing output files are kept unless `force = true`. `cores`
+did; `progress = true` shows a progress bar. Existing output files are kept unless `force = true`. An output
+file is written under a temporary name beside it (`out.tmp.jsonl.gz`) and moved into place only when complete, so
+a function that fails leaves no partial file (and an output atlas may be its input); `keep_partial = true`
+(`relabelAtlas`, `addMapData`, `extractMapData`, `extractAssignments`) keeps what it wrote as
+`out.incomplete.jsonl.gz`, with a warning. A damaged map is an `AtlasFormatError` naming the file, line and map
+(`"cut.jsonl, line 23 (map 20): ..."`). `cores`
 defaults to `Threads.nthreads()`. Atlases may be format v1 or v2 (see AtlasIO's
 [atlas_format.md](https://github.com/jonmjonm/AtlasIO.jl/blob/main/atlas_format.md)); an atlas written from
 another keeps its format version. To convert between versions use AtlasIO's `convertAtlas`.
@@ -100,7 +105,7 @@ each handled entry as `entry => path` in order, with `entry` one of `"script"`, 
 
 ```julia
 relabelAtlas(src, dst; graph = nothing, first_map = false, population_file = nothing,
-             population_attr = nothing, cores, progress = false) -> Int
+             population_attr = nothing, cores, progress = false, keep_partial = false) -> Int
 ```
 
 Relabels the district numbers of every map of `src` so consecutive maps are as similar as possible, writes `dst`
@@ -217,7 +222,8 @@ histograms were built with.
 
 ```julia
 extractMapData(atlasPath, outdir = <atlas path without its extension>; writers = nothing, compress = true,
-               force = false, max_maps = 0, cores, progress = false) -> (outdir, written, skipped, nmaps)
+               force = false, max_maps = 0, cores, progress = false, keep_partial = false)
+    -> (outdir, written, skipped, nmaps)
 ```
 
 One CSV per data field (a row per map: name, values, `map_weight`) and an `about.md`, which is first in
@@ -234,7 +240,7 @@ extractMapData("run.jsonl.gz"; writers = ws)
 
 ```julia
 extractAssignments(atlasPath, outpath = <default>; graph = nothing, compress = true, force = false,
-                   cores, progress = false) -> (path, nmaps, units, scale) or nothing
+                   cores, progress = false, keep_partial = false) -> (path, nmaps, units, scale) or nothing
 assignmentMatrix(atlasPath; graph = nothing, cores, progress = false)
     -> (names, weights, units, unitNames, districts)
 ```
@@ -275,8 +281,9 @@ geometry columns some writers need. The partisan writers `get_partisan_margins` 
 ### `addMapData`
 
 ```julia
-addMapData(src, dst, ws::WriterSet; overwrite = false, cores, progress = false) -> Int
-addMapData(src, dst, functions; <WriterSet's keywords>, overwrite = false, cores, progress = false) -> Int
+addMapData(src, dst, ws::WriterSet; overwrite = false, cores, progress = false, keep_partial = false) -> Int
+addMapData(src, dst, functions; <WriterSet's keywords>, overwrite = false, cores, progress = false,
+           keep_partial = false) -> Int
 ```
 
 Adds the writers' values to every map's data, writes `dst` and returns the number of maps. A field that already

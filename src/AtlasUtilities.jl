@@ -21,6 +21,7 @@ using StreamHistogram
 # `writeMaps!`/`atlasHeaderBytes`) is provided by AtlasIO (>= 0.1.3) and used below.
 include("json.jl")
 include("threading.jl")
+include("output.jl")         # writing outputs under a temporary name, moved into place on success
 include("info.jl")
 include("nodes.jl")
 include("relabel.jl")

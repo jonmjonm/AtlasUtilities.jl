@@ -11,7 +11,8 @@ module AtlasUtilitiesCycleWalkExt
 
 using AtlasUtilities
 using AtlasUtilities: OptString, isgiven, writerFields, coverLabel, CapturedError, raiseCaptured,
-                      with_serial_blas, parallelDo!, BATCH
+                      with_serial_blas, parallelDo!, BATCH, writeReplacing,
+                      locatingErrors
 import AtlasUtilities: WriterSet, computeWriters, writerSubset, addMapData, listWriters, listWriterDetails,
                        loadGraph
 using AtlasIO

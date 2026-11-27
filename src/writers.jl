@@ -46,9 +46,11 @@ end
 # ---------------------------------------------------------------------------
 
 """
-    addMapData(src, dst, ws::WriterSet; overwrite = false, cores = Threads.nthreads(), progress = false) -> Int
+    addMapData(src, dst, ws::WriterSet; overwrite = false, cores = Threads.nthreads(), progress = false,
+               keep_partial = false) -> Int
     addMapData(src, dst, functions; config, graph, pop_col, node_col, area_col, border_col, edge_perimeter_col,
-               node_data, vote_cols, overwrite = false, cores = Threads.nthreads(), progress = false) -> Int
+               node_data, vote_cols, overwrite = false, cores = Threads.nthreads(), progress = false,
+               keep_partial = false) -> Int
 
 Add the values of the writers in `ws` (see [`WriterSet`](@ref)) to the data of every map in atlas `src`, writing
 the augmented atlas to `dst`, and return the number of maps written. The second form builds the `WriterSet` from
@@ -62,6 +64,10 @@ The per-map work (parse -> reconstruct partition -> evaluate writers -> serializ
 is independent across maps and is threaded across `cores` tasks; maps are written
 to `dst` serially in order. `cores` defaults to the threads Julia was started with,
 so a single thread runs serially.
+
+`dst` is written under a temporary name and moved into place when complete, so a run that fails (a damaged map
+in `src`, whose error gives its line, or a writer error) leaves an existing `dst` as it was; `dst` may be `src`.
+With `keep_partial`, what a failed run wrote is kept as `<dst>.incomplete...` (e.g. `out.incomplete.jsonl.gz`).
 
 Needs CycleWalk (`using CycleWalk`), which provides it through the AtlasUtilitiesCycleWalkExt extension.
 """
