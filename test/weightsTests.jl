@@ -142,17 +142,17 @@ everyHist(hs) = [(f, j, oh) for f in sort(collect(keys(hs)))
     end
 
     @testset "summarize-map-data prints the weighted statistics when the weights vary" begin
-        out = capture_stdout(() -> print(summarizeMapData(src)))
+        out = capture_stdout(() -> show(stdout, MIME"text/plain"(), summarizeMapData(src)))
         f = "get_log_spanning_forests"
         @test occursin("weighted mean: $(weightedMean(hs[f]))", out)
         @test occursin("effective sample size: $(effectivesamplesize(hs[f])) of $(length(ms)) maps", out)
         @test occursin("weighted [min, 25%, median, 75%, max]:", out)
         @test occursin("mean: $(mean(hs[f]))", out)                  # the unweighted lines are still there
         # with every weight 1 the output is unweighted only
-        plain = capture_stdout(() -> print(summarizeMapData(WCT)))
+        plain = capture_stdout(() -> show(stdout, MIME"text/plain"(), summarizeMapData(WCT)))
         @test !occursin("weighted", plain)
         # with every weight 0 it says so
-        zero = capture_stdout(() -> print(summarizeMapData(reweighted(k -> 0.0))))
+        zero = capture_stdout(() -> show(stdout, MIME"text/plain"(), summarizeMapData(reweighted(k -> 0.0))))
         @test occursin("every map has weight 0", zero) && !occursin("NaN", zero)
     end
 

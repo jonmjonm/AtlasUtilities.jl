@@ -94,6 +94,37 @@ readlines_(path) = filter(!isempty, split(read(path, String), '\n'))
         @test readlines_(joinpath(dir, "a-assignments.csv")) == ["name,county:t2,county:tract", "m1,2,1", "m2,1,2"]
     end
 
+    @testset "extractAssignments: a given outpath is compressed by its own extension" begin
+        dir = mktempdir()
+        path = joinpath(dir, "a.jsonl")
+        writeAssignmentsAtlas(path, [Districting(("a",) => 1, ("b",) => 2), Districting(("a",) => 2, ("b",) => 1)])
+        expected = ["name,a,b", "m1,1,2", "m2,2,1"]
+        magic(p) = read(p, 3)
+        for (name, head) in [("out.csv.bz2", b"BZh"), ("out.tsv.gz", UInt8[0x1f, 0x8b]), ("out.gz", UInt8[0x1f, 0x8b]),
+                             ("out.csv", b"nam"), ("out.txt", b"nam")]
+            outpath = joinpath(dir, name)
+            r = extractAssignments(path, outpath)
+            @test r.path == outpath && isfile(outpath)
+            @test magic(outpath)[1:length(head)] == head                 # compressed (or not) as its name says
+            io = smartOpen(outpath, "r")
+            @test filter(!isempty, split(read(io, String), '\n')) == expected
+            close(io)
+        end
+        @test isempty(filter(f -> occursin("tmp", f), readdir(dir)))        # no temporary file left
+    end
+
+    @testset "assignments: a graph without \"levels in graph\" names the function" begin
+        dir = mktempdir()
+        path = joinpath(dir, "a.jsonl")
+        writeAssignmentsAtlas(path, [Districting(("a",) => 1, ("b",) => 2)])
+        g = joinpath(dir, "g.json")
+        write(g, """{"nodes":[{"id":0,"prec":"a"},{"id":1,"prec":"b"}],"adjacency":[[],[]]}""")
+        e1 = try extractAssignments(path; graph = g, compress = false); nothing catch e; e end
+        @test e1 isa ErrorException && startswith(e1.msg, "extractAssignments: a graph was given")
+        e2 = try assignmentMatrix(path; graph = g); nothing catch e; e end
+        @test e2 isa ErrorException && startswith(e2.msg, "assignmentMatrix: a graph was given")
+    end
+
     # A multiscale atlas: X split in m2 only, Y split in m1 only, Z never split.
     multiscale = [
         Districting(("X",) => 1, ("Y", "1") => 1, ("Y", "2") => 2, ("Z",) => 2),
@@ -115,6 +146,7 @@ readlines_(path) = filter(!isempty, split(read(path, String), '\n'))
             end
         end
         @test isempty(out) && occursin("finest regions seen in the atlas", r.scale)
+        @test occursin("pass graph = <graph.json>", r.scale) && !occursin("--graph", r.scale)   # library terms
         @test !any(l -> l.level >= Base.CoreLogging.Error, logs)    # the restart on a node-set change is silent
         # X:1 X:2 Y:1 Y:2 are finest; Z is never split, so it stays one column
         @test readlines_(joinpath(dir, "ms-assignments.csv")) ==

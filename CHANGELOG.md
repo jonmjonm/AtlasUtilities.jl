@@ -19,15 +19,14 @@
 - **`render` and `install-render` are removed** (plotting is being redesigned; the code is on the `pre-refactor`
   branch), with `render_map`, `run_render` and `districtColors`.
 - The zsh completion script no longer fails to parse (apostrophes in help text left it unbalanced).
-- The `get_partisan_*` hint when `--vote-cols` is missing no longer shows the `votes1,votes2` example, and some
-  error messages are reworded.
+- Some error messages are reworded: each names `mapatlas <command>` and its flags.
 
 ### The library
 
 - The `run_*` drivers are gone. In their place are exported functions that print nothing and return what they did:
   `relabelAtlas`, `listNodes`, `extractScripts`, `addMapData`, `extractMapData`, `writeHistograms`,
   `summarizeMapData` (a `MapDataSummary` of `FieldSummary`s, both
-  exported, that prints as the command's text) and `extractAssignments`.
+  exported; displayed, it gives the command's text, and printed, one line) and `extractAssignments`.
   `convert` is AtlasIO's `convertAtlas`. See library.md.
 - **Changed keywords:** `quiet = false` is now `progress = false` (silent by default), `sortVals` is `sort_values`,
   and the `add` and graph keywords of `extractMapData`/`mapDataHistograms` are now `writers = WriterSet(...)`.

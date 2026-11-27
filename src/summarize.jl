@@ -180,15 +180,20 @@ end
     MapDataSummary
 
 What [`summarizeMapData`](@ref) returns: `nmaps`, the number of maps considered, and `fields`, each field's
-[`FieldSummary`](@ref) (a `Vector{FieldSummary}`, one per index, for a vector field). Printing it gives the text
-`mapatlas summarize-map-data` prints.
+[`FieldSummary`](@ref) (a `Vector{FieldSummary}`, one per index, for a vector field). Displayed (at the REPL, or
+`show(io, MIME"text/plain"(), s)`) it gives the text `mapatlas summarize-map-data` prints; `print` and string
+interpolation give one line, `MapDataSummary(<n> maps, <k> fields)`.
 """
 struct MapDataSummary
     nmaps::Int
     fields::Dict{String,Union{FieldSummary,Vector{FieldSummary}}}
 end
 
-function Base.show(io::IO, s::MapDataSummary)
+Base.show(io::IO, s::MapDataSummary) =
+    print(io, "MapDataSummary(", s.nmaps, s.nmaps == 1 ? " map, " : " maps, ", length(s.fields),
+          length(s.fields) == 1 ? " field)" : " fields)")
+
+function Base.show(io::IO, ::MIME"text/plain", s::MapDataSummary)
     println(io, "Maps considered: ", s.nmaps)
     for field in sort(collect(keys(s.fields)))
         entry = s.fields[field]
@@ -217,7 +222,7 @@ max]`, each computed from a `StreamingHistogram` (one per index for a vector fie
 sorted ascending first -- see `mapDataHistograms`). When the maps' weights vary, the weighted mean, std and
 quartiles (each map counting its weight) and the effective sample size too (see `fieldSummaryLines`).
 `max_maps` (0 = unlimited, the default) considers only the atlas's first `max_maps` maps. `progress` shows a
-progress bar. Print the result for the text `mapatlas summarize-map-data` prints.
+progress bar. Display the result (`show(io, MIME"text/plain"(), s)`) for the text `mapatlas summarize-map-data` prints.
 """
 function summarizeMapData(atlas::AbstractString; max_maps::Int = 0, cores::Int = Threads.nthreads(),
                           progress::Bool = false)

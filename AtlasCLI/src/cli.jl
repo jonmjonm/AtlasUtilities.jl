@@ -27,6 +27,8 @@ function cliMessage(msg::AbstractString, command::AbstractString)
     m = match(r"^([A-Za-z]+): ", msg)
     (m === nothing || !(m.captures[1] in LIBRARY_FUNCTIONS)) && return String(msg)
     out = "mapatlas $command: " * msg[(length(m.match) + 1):end]
+    # The writer names are listed by the command's flag, not the library function.
+    out = replace(out, "(see `listWriters()`)" => "(see `mapatlas add --list-writers`)")
     # The command takes the vote pairs as one string, so its format differs from the library's.
     out = replace(out, "vote_cols = [(\"votes1\", \"votes2\"), ...]" =>
                        "--vote-cols \"votes1,votes2\" (one or more `;`-separated pairs)")

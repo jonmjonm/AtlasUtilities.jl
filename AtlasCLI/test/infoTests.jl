@@ -172,6 +172,22 @@ end
         @test occursin("script_includes[helpers.jl]", out2)
     end
 
+    @testset "mapatlas info --extract-script: an include named like the script is written, not reported skipped" begin
+        dir = mktempdir()
+        path = joinpath(dir, "a.jsonl")
+        writeAtlas(path, Dict{String,Any}(
+            "districts" => 3, "script_name" => "run.jl", "script" => "# script\n",
+            "script_includes" => Dict{String,Any}("lib/run.jl" => "# lib\n")))
+        out = cd(dir) do
+            capture_stdout(() -> cli_info(path; extract_script = true))
+        end
+        @test occursin("Wrote script entry to: run.jl", out)
+        @test occursin("Wrote script_includes[lib/run.jl] entry to: lib_run.jl", out)
+        @test !occursin("already exists", out)
+        @test read(joinpath(dir, "run.jl"), String) == "# script\n"
+        @test read(joinpath(dir, "lib_run.jl"), String) == "# lib\n"
+    end
+
     @testset "mapatlas info: no script_includes entry is not mentioned" begin
         dir = mktempdir()
         path = joinpath(dir, "a.jsonl")

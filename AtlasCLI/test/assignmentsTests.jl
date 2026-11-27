@@ -54,6 +54,8 @@ readlines_(path) = filter(!isempty, split(read(path, String), '\n'))
             end
         end
         @test occursin("multiscale", out) && occursin("finest regions seen in the atlas", out)
+        @test occursin("using the finest regions seen in the atlas as columns.", out)
+        @test occursin("pass --graph for the graph's finest units", out)     # the flag, not the keyword
         @test !any(l -> l.level >= Base.CoreLogging.Error, logs)    # the restart on a node-set change is silent
         # X:1 X:2 Y:1 Y:2 are finest; Z is never split, so it stays one column
         @test readlines_(joinpath(dir, "ms-assignments.csv")) ==

@@ -129,15 +129,15 @@ Needs CycleWalk (`using CycleWalk`), which provides it through the AtlasUtilitie
 function loadGraph end
 
 """
-    evalWriterSet(ws::WriterSet, m, fields = nothing) -> Dict{String,Any}
+    writerSubset(ws::WriterSet, fields) -> WriterSet
 
-The hook `extractMapData` and `mapDataHistograms` evaluate their `writers` with: [`computeWriters`](@ref)`(ws, m)`,
-or with `fields` (a collection of field names), only the writers giving those fields, so a field whose output
-file is kept is not computed. The fast path is chosen for the writers actually evaluated, as `addMapData` does.
+The writers of `ws` that give the fields in `fields` (a collection of field names), sharing its graph, with the
+fast path chosen for them alone, as `addMapData` does. `extractMapData` builds it once per run, so a field whose
+output file is kept is not computed.
 
-Its methods are in the CycleWalk extension; a `WriterSet` can only have been built with it loaded.
+Its method is in the CycleWalk extension; a `WriterSet` can only have been built with it loaded.
 """
-function evalWriterSet end
+function writerSubset end
 
 # The functions above, and `WriterSet`'s constructor, as their error hint names them.
 const CYCLEWALK_FUNCTIONS = (addMapData, computeWriters, listWriters, listWriterDetails, loadGraph, WriterSet)

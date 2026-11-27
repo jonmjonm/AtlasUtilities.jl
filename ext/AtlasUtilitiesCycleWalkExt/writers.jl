@@ -515,11 +515,9 @@ computeWriters(ws::WriterSet, source::Union{AbstractString,Atlas}; cores::Int = 
     eachMap(m -> (name = m.name, weight = m.weight, values = computeWriters(ws, m)), source;
             ntasks = cores, skip = skip, max = max)
 
-function evalWriterSet(ws::WriterSet, m, fields = nothing)
-    fields === nothing && return computeWriters(ws, m)
+function writerSubset(ws::WriterSet, fields)
     fns = [(n, f) for (n, f) in ws.writers if n in fields]
-    isempty(fns) && return Dict{String,Any}()
-    return evalWriters(ws.graph, m, fns)
+    return WriterSet(ws.graph, fns, allTreeless(fns), ws.graphPath)
 end
 
 # ---------------------------------------------------------------------------

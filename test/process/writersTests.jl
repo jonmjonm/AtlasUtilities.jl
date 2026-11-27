@@ -75,6 +75,13 @@ sameResults(a::Vector, b::Vector) = length(a) == length(b) && all(sameResults(x,
         @test sameResults(computeWriters(mixed, maps), computeWriters(mixed, maps; cores = 1))
         @test computeWriters(fast, maps) == [computeWriters(fast, m) for m in maps]     # the fast path: exactly
         @test computeWriters(mixed, Map[]) == Dict{String,Any}[]
+
+        # writerSubset (extractMapData's hook): only the writers asked for, with the fast path chosen for them.
+        sub = AtlasUtilities.writerSubset(mixed, Set(["get_isoperimetric_scores"]))
+        @test writerFields(sub) == ["get_isoperimetric_scores"] && sub.treeless && sub.graph === mixed.graph
+        @test computeWriters(sub, maps[1]) == computeWriters(fast, maps[1])        # the fast path: exactly
+        @test !AtlasUtilities.writerSubset(mixed, Set(writerFields(mixed))).treeless
+        @test isempty(writerFields(AtlasUtilities.writerSubset(mixed, Set{String}())))
     end
 
     @testset "a map's own district numbers: relabeling the map permutes the values" begin

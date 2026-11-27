@@ -71,7 +71,7 @@ function mapDataHistograms(atlas::AbstractString;
     Atlas1 = atlas
     addFields = writers === nothing ? String[] : writerFields(writers)
     addedSet = Set(addFields)
-    computeAdded(m) = writers === nothing ? Dict{String,Any}() : evalWriterSet(writers, m)
+    computeAdded(m) = writers === nothing ? Dict{String,Any}() : computeWriters(writers, m)
     valueOf(m, field, added) = field in addedSet ? added[field] : get(m.data, field, nothing)
 
     atlas = openAtlas(smartOpen(String(Atlas1), "r"))

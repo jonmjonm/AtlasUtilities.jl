@@ -48,7 +48,8 @@ progress bar. An atlas with no maps gives empty results.
 function assignmentMatrix(Atlas1::AbstractString; graph::Union{AbstractString,Nothing} = nothing,
                           progress::Bool = false, cores::Int = Threads.nthreads())
     names, weights, rows = String[], Float64[], Vector{Int}[]
-    result = eachAssignmentRow(String(Atlas1); graph = graph, progress = progress, cores = cores,
+    result = eachAssignmentRow(String(Atlas1); caller = "assignmentMatrix", graph = graph, progress = progress,
+                               cores = cores,
                                start = units -> (empty!(names); empty!(weights); empty!(rows)),
                                render = (name, weight, districts) -> (name, weight, districts),
                                consume = r -> (push!(names, r[1]); push!(weights, r[2]); push!(rows, r[3])))
@@ -87,9 +88,10 @@ function extractAssignments(atlas::AbstractString, outpath::Union{Nothing,Abstra
     isfile(outpath) && !force && return nothing
 
     # Written to a temporary file, moved into place only on success. A multiscale restart starts it over. The
-    # temporary name keeps the extension, which says whether it is compressed.
-    m = match(r"(\.csv\.gz|\.csv)$", outpath)
-    tmppath = m === nothing ? outpath * ".tmp" : outpath[1:(end - length(m.match))] * ".tmp" * m.match
+    # temporary name keeps the extensions (`out.tmp.csv.gz`, `out.tmp.csv.bz2`, `out.tmp.gz`), and with them
+    # whether it is compressed.
+    m = match(r"(\.csv)?(\.gz|\.bz2)?$", outpath)
+    tmppath = outpath[1:(end - length(m.match))] * ".tmp" * m.match
     io = nothing
     function start(units)
         io === nothing || close(io)
@@ -98,7 +100,8 @@ function extractAssignments(atlas::AbstractString, outpath::Union{Nothing,Abstra
     end
     local result
     try
-        result = eachAssignmentRow(Atlas1; graph = graph, progress = progress, cores = cores, start = start,
+        result = eachAssignmentRow(Atlas1; caller = "extractAssignments", graph = graph, progress = progress,
+                                   cores = cores, start = start,
                                    render = (name, _, districts) -> csvcell(name) * "," * join(districts, ",") * "\n",
                                    consume = row -> write(io, row))
         io === nothing || close(io)
@@ -113,16 +116,19 @@ function extractAssignments(atlas::AbstractString, outpath::Union{Nothing,Abstra
 end
 
 """
-    eachAssignmentRow(Atlas1; graph, progress, cores, start, render, consume) -> (units, nmaps, scale) or nothing
+    eachAssignmentRow(Atlas1; caller, graph, progress, cores, start, render, consume)
+        -> (units, nmaps, scale) or nothing
 
-Read every map of `Atlas1` and produce each one's districts, one per unit (the units of `assignmentMatrix`):
+Read every map of `Atlas1` and produce each one's districts, one per unit (the units of `assignmentMatrix`;
+`caller`, the library function, starts its error messages):
 `start(units)` is called first, then `consume(render(name, weight, districts))` for every map in order, with
 `render` run in parallel batches. In a multiscale atlas without `graph`, the first pass stops at the first map
 whose node set differs; `start` is then called again with the finest regions as units and every map is read
 again. Returns the units, the number of maps and a description of the columns (`nothing` when they are simply
 the maps' nodes), or `nothing` for an atlas with no maps.
 """
-function eachAssignmentRow(Atlas1::String; graph::Union{AbstractString,Nothing}, progress::Bool, cores::Int,
+function eachAssignmentRow(Atlas1::String; caller::String, graph::Union{AbstractString,Nothing}, progress::Bool,
+                           cores::Int,
                            start, render, consume)
     atlas = openAtlas(smartOpen(Atlas1, "r"))
     if eof(atlas)
@@ -136,8 +142,8 @@ function eachAssignmentRow(Atlas1::String; graph::Union{AbstractString,Nothing},
 
     if graph !== nothing
         levels = get(params, "levels in graph", nothing)
-        levels === nothing && error("a graph was given, but the atlas has no \"levels in graph\" parameter to say " *
-                                    "which graph attributes its node keys are.")
+        levels === nothing && error("$caller: a graph was given, but the atlas has no \"levels in graph\" " *
+                                    "parameter to say which graph attributes its node keys are.")
         units = sort!(unique(loadHierarchy(graph, levels).finest); by = nodeIdString)
         known = regionsOf(units)
         source = "the graph $(basename(graph))"
@@ -163,7 +169,7 @@ function eachAssignmentRow(Atlas1::String; graph::Union{AbstractString,Nothing},
     n = pass(m -> coverDistricts(m, units, allKeys, "the atlas"), units)
     return (units = units, nmaps = n,
             scale = "the finest regions seen in the atlas (a region never split in any map stays one column; " *
-                    "pass --graph for the graph's finest units)")
+                    "pass graph = <graph.json> for the graph's finest units)")
 end
 
 """`consume(render(m.name, m.weight, districtsOf(m)))` for every map of `Atlas1`, in order (`districtsOf` and

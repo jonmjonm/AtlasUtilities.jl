@@ -164,7 +164,9 @@ function extractMapData(atlas::AbstractString, outdir::AbstractString = stripAtl
     activeAddedNames = [f for f in addFields if shouldWrite(f)]
     activeAddedSet = Set(activeAddedNames)
 
-    computeAdded(m) = isempty(activeAddedSet) ? Dict{String,Any}() : evalWriterSet(writers, m, activeAddedSet)
+    # The writers to evaluate, chosen once for the run (and with them the fast path).
+    active = isempty(activeAddedSet) ? nothing : writerSubset(writers, activeAddedSet)
+    computeAdded(m) = active === nothing ? Dict{String,Any}() : computeWriters(active, m)
     valueOf(m, field, added) = field in addedSet ? added[field] : get(m.data, field, nothing)
 
     skipped = [joinpath(outdir, f * ext) for f in vcat(existingFields, addFields) if !shouldWrite(f)]

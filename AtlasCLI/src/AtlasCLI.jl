@@ -60,7 +60,7 @@ Print the header of an Atlas file (metadata and atlas parameters); the bulky emb
 
 # Args
 
-- `mapatlas`: path to the atlas file (`.jsonl`, `.jsonl.gz`, or `.jsonl.bz2`).
+- `atlas`: path to the atlas file (`.jsonl`, `.jsonl.gz`, or `.jsonl.bz2`).
 
 # Flags
 
@@ -116,7 +116,7 @@ List the names of the data fields (e.g. `log_spanning_trees`) contained in atlas
 
 # Args
 
-- `mapatlas`: path to the atlas file (`.jsonl`, `.jsonl.gz`, or `.jsonl.bz2`).
+- `atlas`: path to the atlas file (`.jsonl`, `.jsonl.gz`, or `.jsonl.bz2`).
 """
 @cast function list_map_data(atlas::String)
     cli("list-map-data") do
@@ -136,7 +136,7 @@ List the node ids in atlas Atlas1 k-th map (1-based, k=1 by default), as a JSON 
 
 # Args
 
-- `mapatlas`: path to the atlas file (`.jsonl`, `.jsonl.gz`, or `.jsonl.bz2`).
+- `atlas`: path to the atlas file (`.jsonl`, `.jsonl.gz`, or `.jsonl.bz2`).
 
 # Options
 
@@ -144,6 +144,7 @@ List the node ids in atlas Atlas1 k-th map (1-based, k=1 by default), as a JSON 
 """
 @cast function list_nodes(atlas::String; map::Int = 1)
     cli("list-nodes") do
+        map >= 1 || error("mapatlas list-nodes: --map must be >= 1 (got $map).")
         JSON.json(stdout, listNodes(atlas; map = map))
         println()
     end
@@ -363,6 +364,7 @@ Like `extract-map-data`, but instead of writing per-map CSV rows, accumulate the
                                           no_compression::Bool = false, force::Bool = false,
                                           quiet::Bool = false)
     cli("extract-map-data-histogram") do
+        max_maps < 0 && error("mapatlas extract-map-data-histogram: --max-maps must be ≥ 0, got $max_maps.")
         parsedBinRange = isempty(bin_range) ? nothing : Tuple(parse.(Float64, split(bin_range, ",")))
         parsedBins = isempty(bins) ? nothing : parse.(Float64, split(bins, ","))
         parsedPowers = parse.(Int, split(moment_powers, ","))
@@ -410,7 +412,8 @@ Print, for every map-data field of atlas Atlas1, its mean, standard deviation, a
 """
 @cast function summarize_map_data(atlas1::String; max_maps::Int = 0, quiet::Bool = false)
     cli("summarize-map-data") do
-        print(summarizeMapData(atlas1; max_maps = max_maps, progress = !quiet))
+        max_maps < 0 && error("mapatlas summarize-map-data: --max-maps must be ≥ 0, got $max_maps.")
+        show(stdout, MIME"text/plain"(), summarizeMapData(atlas1; max_maps = max_maps, progress = !quiet))
     end
 end
 
@@ -445,9 +448,10 @@ Write atlas Atlas1 per-map district assignments to a single wide CSV, named from
         elseif !quiet
             isempty(graph) && r.scale !== nothing &&
                 println("The maps' node sets differ (a multiscale atlas); using the finest regions seen in the " *
-                        "mapatlas as columns.")
+                        "atlas as columns.")
             println("Wrote ", r.nmaps, " map(s) to ", r.path)
-            r.scale === nothing || println("Columns (", length(r.units), "): ", r.scale, ".")
+            r.scale === nothing ||
+                println("Columns (", length(r.units), "): ", replace(r.scale, "graph = <graph.json>" => "--graph"), ".")
         end
     end
 end

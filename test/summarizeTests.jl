@@ -72,7 +72,7 @@ using AtlasUtilities: summarizeMapData, MapDataSummary, FieldSummary, quartiles,
         @test nMaps == total
 
         out = capture_stdout() do
-            print(summarizeMapData(src))
+            show(stdout, MIME"text/plain"(), summarizeMapData(src))
         end
         @test occursin("Maps considered: $total", out)
         s = summarizeMapData(src)                                    # the result, as data
@@ -80,7 +80,9 @@ using AtlasUtilities: summarizeMapData, MapDataSummary, FieldSummary, quartiles,
         @test s.fields["get_log_spanning_forests"] isa FieldSummary
         @test s.fields["get_log_spanning_forests"].unweighted.mean == mean(hists["get_log_spanning_forests"])
         @test length(s.fields["get_isoperimetric_scores"]) == length(hists["get_isoperimetric_scores"])
-        @test sprint(print, s) == out
+        @test sprint(show, MIME"text/plain"(), s) == out
+        @test sprint(print, s) == "MapDataSummary($total maps, $(length(hists)) fields)"   # one line
+        @test repr([s]) == "MapDataSummary[MapDataSummary($total maps, $(length(hists)) fields)]"   # not the report
         for field in keys(hists)
             @test occursin(field * ":", out)
         end
@@ -94,7 +96,7 @@ using AtlasUtilities: summarizeMapData, MapDataSummary, FieldSummary, quartiles,
     @testset "--max-maps limits the maps considered" begin
         src = joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_slice.jsonl.gz")
         out = capture_stdout() do
-            print(summarizeMapData(src; max_maps = 5))
+            show(stdout, MIME"text/plain"(), summarizeMapData(src; max_maps = 5))
         end
         @test occursin("Maps considered: 5", out)
 
@@ -108,7 +110,7 @@ using AtlasUtilities: summarizeMapData, MapDataSummary, FieldSummary, quartiles,
         w = length(hists[field])
 
         out = capture_stdout() do
-            print(summarizeMapData(src))
+            show(stdout, MIME"text/plain"(), summarizeMapData(src))
         end
         for j in 1:w
             @test occursin("[$j]", out)

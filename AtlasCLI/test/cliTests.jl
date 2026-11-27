@@ -28,6 +28,26 @@ end
 mapsof(path) = (io = smartOpen(path, "r"); a = openAtlas(io); ms = Map[]; while !eof(a) push!(ms, nextMap(a)) end; close(io); ms)
 
 @testset "command line" begin
+
+    @testset "--help describes the <atlas> argument" begin
+        for cmd in ("info", "list-map-data", "list-nodes")
+            code, out = atlascli(cmd, "--help")
+            @test code == 0 && occursin("path to the atlas file", out)
+        end
+    end
+
+    @testset "error messages in the terms of the command" begin
+        ct = joinpath(EX, "cycleWalk_ct_slice.jsonl.gz")
+        err(args...) = try atlascli(args...); nothing catch e; e.msg end
+        @test err("summarize-map-data", ct, "--max-maps", "-1") ==
+              "mapatlas summarize-map-data: --max-maps must be ≥ 0, got -1."
+        @test err("extract-map-data-histogram", excopy("cycleWalk_ct_slice.jsonl.gz"), "--max-maps", "-1") ==
+              "mapatlas extract-map-data-histogram: --max-maps must be ≥ 0, got -1."
+        @test err("list-nodes", ct, "--map", "0") == "mapatlas list-nodes: --map must be >= 1 (got 0)."
+        msg = err("add", "no_such_writer", ct, joinpath(mktempdir(), "o.jsonl"), "--graph",
+                  joinpath(DATA, "CT_pct20.json"), "--pop-col", "POP20", "--node-col", "NAME")
+        @test occursin("no_such_writer", msg) && occursin("(see `mapatlas add --list-writers`)", msg)
+    end
     ct = joinpath(EX, "cycleWalk_ct_slice.jsonl.gz")
 
     @testset "info, list-map-data, list-nodes, summarize-map-data" begin

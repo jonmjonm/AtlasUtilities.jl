@@ -226,8 +226,10 @@ end
 Write out the embedded sources the header of the atlas at `atlasPath` carries, each into `dir` (never to the path
 the run recorded it under, which would write back over the original file): the "script" entry under its
 "script_name" (falling back to "extracted_script.jl"), the "toml_config" entry under its "toml_config_file"
-(falling back to "extracted_config.toml"), and every "script_includes" entry under its own name (two includes with
-the same basename get distinct names). An existing file is kept, and its entry skipped, unless `force` is set.
+(falling back to "extracted_config.toml"), and every "script_includes" entry under its own name. Every entry gets a
+file of its own: when two share a basename (two includes from different directories, or an include named like
+the script), the later one is renamed, an include to its recorded path with `/` and `..` turned into `_`, otherwise
+with a numeric suffix (`run_2.jl`). An existing file is kept, and its entry skipped, unless `force` is set.
 
 Returns the paths `written` and `skipped`, and `entries`, every entry in the order handled as `entry => path`, with
 `entry` one of `"script"`, `"toml_config"` or `"script_includes[<name>]"`. An atlas with no "script" entry has no
@@ -249,21 +251,35 @@ function extractScripts(atlasPath::AbstractString, dir::AbstractString = pwd(); 
         return true
     end
 
-    haskey(param, SCRIPT_KEY) &&
-        extract!(extractName(string(get(param, SCRIPT_NAME_KEY, "")), "extracted_script.jl"), param[SCRIPT_KEY],
-                 "script")
-    haskey(param, CONFIG_KEY) &&
-        extract!(extractName(string(get(param, CONFIG_NAME_KEY, "")), "extracted_config.toml"), param[CONFIG_KEY],
-                 "toml_config")
-    # The script's includes, each under its own name. Two includes from different directories can share a
-    # basename, so a name already taken by one of them is disambiguated rather than silently overwritten.
+    # Every entry gets a file name of its own: two entries can share a basename (two includes from different
+    # directories, or an include named like the script), so a name already taken by an earlier entry is
+    # disambiguated -- an include by its recorded path, flattened, then any entry by a numeric suffix -- rather
+    # than overwritten or reported as skipped. The names depend only on the header, not on the files in `dir`.
     taken = Set{String}()
-    for (name, body) in includedSources(param)
-        outName = extractName(name, "extracted_include.jl")
-        if outName in taken
-            outName = replace(replace(String(name), ".." => "_"), '/' => '_')
+    function claim(name, alt = name)
+        out = name in taken ? alt : name
+        if out in taken
+            stem, ext = splitext(out)
+            k = 2
+            while "$(stem)_$k$ext" in taken
+                k += 1
+            end
+            out = "$(stem)_$k$ext"
         end
-        extract!(outName, body, "script_includes[$name]") && push!(taken, outName)
+        push!(taken, out)
+        return out
+    end
+
+    haskey(param, SCRIPT_KEY) &&
+        extract!(claim(extractName(string(get(param, SCRIPT_NAME_KEY, "")), "extracted_script.jl")),
+                 param[SCRIPT_KEY], "script")
+    haskey(param, CONFIG_KEY) &&
+        extract!(claim(extractName(string(get(param, CONFIG_NAME_KEY, "")), "extracted_config.toml")),
+                 param[CONFIG_KEY], "toml_config")
+    for (name, body) in includedSources(param)
+        outName = claim(extractName(name, "extracted_include.jl"),
+                        replace(replace(String(name), ".." => "_"), '/' => '_'))
+        extract!(outName, body, "script_includes[$name]")
     end
     return (written = written, skipped = skipped, entries = entries)
 end

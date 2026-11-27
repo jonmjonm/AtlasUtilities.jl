@@ -196,4 +196,26 @@ end
         @test read(joinpath(out, "run.jl"), String) == "println(1)\n"
     end
 
+    @testset "extractScripts: an include named like the script gets a file of its own" begin
+        dir, out = mktempdir(), mktempdir()
+        path = joinpath(dir, "a.jsonl")
+        writeAtlas(path, Dict{String,Any}(
+            "districts" => 3, "script_name" => "run.jl", "script" => "# script\n",
+            "toml_config_file" => "run.jl", "toml_config" => "[plans]\n",          # also named like the script
+            "script_includes" => Dict{String,Any}("lib/run.jl" => "# lib\n", "run.jl" => "# top\n")))
+        r = extractScripts(path, out)
+        @test isempty(r.skipped) && length(r.written) == 4 == length(unique(r.written))
+        @test length(unique(last.(r.entries))) == 4                               # one path per entry
+        byEntry = Dict(r.entries)
+        @test read(byEntry["script"], String) == "# script\n"                     # never overwritten
+        @test read(byEntry["toml_config"], String) == "[plans]\n"
+        @test basename(byEntry["toml_config"]) == "run_2.jl"
+        @test read(byEntry["script_includes[lib/run.jl]"], String) == "# lib\n"
+        @test basename(byEntry["script_includes[lib/run.jl]"]) == "lib_run.jl"
+        @test read(byEntry["script_includes[run.jl]"], String) == "# top\n"
+        # The names depend on the header only: a rerun skips the very same files.
+        r2 = extractScripts(path, out)
+        @test isempty(r2.written) && sort(r2.skipped) == sort(r.written) && r2.entries == r.entries
+    end
+
 end
