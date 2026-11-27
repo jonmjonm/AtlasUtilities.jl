@@ -28,7 +28,7 @@
 # `f(partition)` writers but are parameterized by two vote columns, and CycleWalk
 # provides a `build_<name>(votes1, votes2)` factory returning the actual
 # `f(partition)` closure. These are driven by `WriterSet`'s `vote_cols` keyword
-# (`--vote-cols`, see `parseVotePairs`); each requested vote pair produces its own output field
+# (`mapatlas`'s `--vote-cols`); each requested vote pair produces its own output field
 # `<name>_<votes1>_<votes2>`.
 const PARTISAN_WRITERS = Set(["get_partisan_margins", "get_partisan_seats"])
 

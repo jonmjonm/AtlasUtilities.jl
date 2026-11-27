@@ -1,4 +1,4 @@
-# Tests for the `atlas extract-assignments` subcommand (src/assignments.jl).
+# Tests for district assignments (src/assignments.jl).
 
 using Test
 using AtlasIO
@@ -52,7 +52,7 @@ readlines_(path) = filter(!isempty, split(read(path, String), '\n'))
         @test !isfile(joinpath(dir, "a-assignments.csv"))
     end
 
-    @testset "extractAssignments: skips existing output unless --force" begin
+    @testset "extractAssignments: skips existing output unless force" begin
         dir = mktempdir()
         path = joinpath(dir, "a.jsonl")
         writeAssignmentsAtlas(path, [Districting(("a",) => 1, ("b",) => 2)])
@@ -60,16 +60,10 @@ readlines_(path) = filter(!isempty, split(read(path, String), '\n'))
 
         extractAssignments(path; compress = false)
         mtime1 = mtime(outpath)
-
-        out = capture_stdout() do
-            cli_extract_assignments(path; compress = false, quiet = true)
-        end
-        @test occursin("already exists", out)
-        @test extractAssignments(path; compress = false) === nothing       # the library: skipped, nothing returned
+        @test extractAssignments(path; compress = false) === nothing       # skipped, nothing returned
         @test mtime(outpath) == mtime1     # untouched
-
-        extractAssignments(path; compress = false, force = true)
-        @test isfile(outpath)              # --force rewrites it
+        @test extractAssignments(path; compress = false, force = true) !== nothing
+        @test isfile(outpath)              # force rewrites it
     end
 
     @testset "extractAssignments: errors (no partial file) when a map's node set differs" begin
@@ -114,12 +108,13 @@ readlines_(path) = filter(!isempty, split(read(path, String), '\n'))
         dir = mktempdir()
         path = joinpath(dir, "ms.jsonl")
         writeAssignmentsAtlas(path, multiscale; params = levelsParams)
+        local r
         logs, out = Test.collect_test_logs() do
             capture_stdout() do
-                cli_extract_assignments(path; compress = false)
+                r = extractAssignments(path; compress = false)
             end
         end
-        @test occursin("multiscale", out) && occursin("finest regions seen in the atlas", out)
+        @test isempty(out) && occursin("finest regions seen in the atlas", r.scale)
         @test !any(l -> l.level >= Base.CoreLogging.Error, logs)    # the restart on a node-set change is silent
         # X:1 X:2 Y:1 Y:2 are finest; Z is never split, so it stays one column
         @test readlines_(joinpath(dir, "ms-assignments.csv")) ==
@@ -265,15 +260,10 @@ readlines_(path) = filter(!isempty, split(read(path, String), '\n'))
         @test isempty(E.names) && isempty(E.units) && size(E.districts) == (0, 0)
     end
 
-    @testset "extractAssignments: no maps prints a message, writes nothing" begin
+    @testset "extractAssignments: no maps writes nothing" begin
         dir = mktempdir()
         path = joinpath(dir, "a.jsonl")
         writeAssignmentsAtlas(path, Districting[])
-
-        out = capture_stdout() do
-            cli_extract_assignments(path; compress = false, quiet = true)
-        end
-        @test occursin("no maps", out)
         @test extractAssignments(path; compress = false).nmaps == 0
         @test isempty(filter(f -> occursin("assignments", f), readdir(dir)))
     end

@@ -1,8 +1,7 @@
-# Tests for the `atlas list-nodes` subcommand (src/nodes.jl).
+# Tests for the node ids of a map (src/nodes.jl).
 
 using Test
 using AtlasIO
-import JSON
 using AtlasUtilities: nodeIdString, listNodes
 
 """Write an atlas at `path` with one map per entry of `districtings`
@@ -24,68 +23,22 @@ end
         @test nodeIdString(("county", "tract")) == "county:tract"
     end
 
-    @testset "atlas list-nodes: prints sorted JSON array for the first map by default" begin
-        dir = mktempdir()
-        path = joinpath(dir, "a.jsonl")
-        writeNodesAtlas(path, [Districting(("c",) => 1, ("a",) => 1, ("b",) => 2)])
-
-        out = capture_stdout() do
-            cli_list_nodes(path)
-        end
-
-        @test JSON.parse(out) == ["a", "b", "c"]
-        @test listNodes(path) == ["a", "b", "c"]                    # the library returns them
+    @testset "listNodes: sorted ids of the first map, or of map `map`; multiscale ids joined with ':'" begin
+        path = joinpath(mktempdir(), "a.jsonl")
+        writeNodesAtlas(path, [Districting(("c",) => 1, ("a",) => 1, ("b",) => 2),
+                               Districting(("X", "2") => 1, ("X", "1") => 1, ("Y", "1") => 2)])
+        @test listNodes(path) == ["a", "b", "c"]
+        @test listNodes(path; map = 2) == ["X:1", "X:2", "Y:1"]
     end
 
-    @testset "atlas list-nodes: --map selects the k-th map (1-based)" begin
+    @testset "listNodes: errors past the last map, for map < 1, and on an atlas with no maps" begin
         dir = mktempdir()
-        path = joinpath(dir, "a.jsonl")
-        writeNodesAtlas(path, [
-            Districting(("a",) => 1, ("b",) => 2),
-            Districting(("x",) => 1, ("y",) => 2, ("z",) => 1),
-        ])
-
-        out = capture_stdout() do
-            cli_list_nodes(path; map = 2)
-        end
-
-        @test JSON.parse(out) == ["x", "y", "z"]
-    end
-
-    @testset "atlas list-nodes: multiscale node ids joined with ':'" begin
-        dir = mktempdir()
-        path = joinpath(dir, "a.jsonl")
-        writeNodesAtlas(path, [Districting(("X", "2") => 1, ("X", "1") => 1, ("Y", "1") => 2)])
-
-        out = capture_stdout() do
-            cli_list_nodes(path)
-        end
-
-        @test JSON.parse(out) == ["X:1", "X:2", "Y:1"]
-    end
-
-    @testset "atlas list-nodes: errors when map index exceeds the atlas's map count" begin
-        dir = mktempdir()
-        path = joinpath(dir, "a.jsonl")
-        writeNodesAtlas(path, [Districting(("a",) => 1, ("b",) => 2)])
-
-        @test_throws ErrorException cli_list_nodes(path; map = 2)
-    end
-
-    @testset "atlas list-nodes: errors on an atlas with no maps" begin
-        dir = mktempdir()
-        path = joinpath(dir, "a.jsonl")
-        writeNodesAtlas(path, Districting[])
-
-        @test_throws ErrorException cli_list_nodes(path)
-    end
-
-    @testset "atlas list-nodes: --map must be >= 1" begin
-        dir = mktempdir()
-        path = joinpath(dir, "a.jsonl")
+        path, none = joinpath(dir, "a.jsonl"), joinpath(dir, "none.jsonl")
         writeNodesAtlas(path, [Districting(("a",) => 1)])
-
-        @test_throws ErrorException cli_list_nodes(path; map = 0)
+        writeNodesAtlas(none, Districting[])
+        @test_throws ErrorException listNodes(path; map = 2)
+        @test_throws ErrorException listNodes(path; map = 0)
+        @test_throws ErrorException listNodes(none)
     end
 
 end

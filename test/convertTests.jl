@@ -1,6 +1,6 @@
-# `atlas convert`, and `relabel`/`add` on format v2 atlases (AtlasIO 0.2.2). Uses NODES/mkmap/labelsof from
+# `convertAtlas`, and `relabelAtlas`/`addMapData` on format v2 atlases (AtlasIO 0.2.2). Uses NODES/mkmap/labelsof from
 # runtests.jl.
-using AtlasUtilities: relabelAtlas, addMapData, command_main
+using AtlasUtilities: relabelAtlas, addMapData
 
 "Every map of the atlas at `path`, and the atlas itself (for its header fields)."
 function readall(path)
@@ -32,16 +32,7 @@ end
         a3, m3 = readall(back)
         @test a3.formatVersion == "1"
         @test [m.districting for m in m3] == [m.districting for m in m1]
-        @test_throws ErrorException command_main(["convert", ct, joinpath(dir, "x.jsonl"), "--to", "3"])
-    end
-
-    @testset "atlas convert: the command line" begin
-        out = joinpath(dir, "cli_v2.jsonl")
-        @test command_main(["convert", ct, out, "--to", "2", "--quiet"]) == 0
-        @test readall(out)[1].formatVersion == "2"
-        out1 = joinpath(dir, "cli_v1.jsonl.bz2")
-        @test command_main(["convert", out, out1, "--to", "1", "--quiet"]) == 0
-        @test [m.districting for m in readall(out1)[2]] == [m.districting for m in readall(ct)[2]]
+        @test_throws Exception convertAtlas(ct, joinpath(dir, "x.jsonl"); formatVersion = 3)
     end
 
     @testset "relabel keeps a v2 atlas in v2 (not a mixed file)" begin

@@ -1,10 +1,7 @@
 # The CycleWalk extension (AtlasUtilitiesCycleWalkExt): `using AtlasUtilities` alone loads no CycleWalk, its
-# functions then say how to get it, and loading CycleWalk -- by `using CycleWalk`, or on demand by `atlas add` --
-# switches the extension on. Included before any test file that imports CycleWalk.
+# functions then say how to get it, and `using CycleWalk` switches the extension on. Included before any test file that imports CycleWalk.
 using Test
 using AtlasUtilities
-
-const CYCLEWALK_ID = Base.PkgId(Base.UUID("ac9cec89-1413-42d8-a7d6-c246d938c565"), "CycleWalk")
 
 @testset "CycleWalk extension" begin
     @testset "using AtlasUtilities alone loads no CycleWalk (fresh process)" begin
@@ -32,16 +29,5 @@ const CYCLEWALK_ID = Base.PkgId(Base.UUID("ac9cec89-1413-42d8-a7d6-c246d938c565"
         @test lines["computeWriters"] == "true"
         @test lines["ext after using CycleWalk"] == "true"
         @test lines["hint gone"] == "true"           # with CycleWalk loaded, a wrong call is just a MethodError
-    end
-
-    @testset "atlas add loads CycleWalk on demand" begin
-        if Base.get_extension(AtlasUtilities, :AtlasUtilitiesCycleWalkExt) !== nothing
-            @info "CycleWalk is already loaded in this process; skipping the on-demand loading check."
-        else
-            @test !haskey(Base.loaded_modules, CYCLEWALK_ID)
-            out = capture_stdout(cli_list_writers)
-            @test occursin("get_log_spanning_trees", out)
-            @test Base.get_extension(AtlasUtilities, :AtlasUtilitiesCycleWalkExt) !== nothing
-        end
     end
 end

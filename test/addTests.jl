@@ -1,4 +1,4 @@
-# Tests for the `atlas add` subcommand: function-name parsing, function
+# Tests for writer evaluation (the CycleWalk extension): function
 # resolution, graph-spec resolution (TOML + flag overrides), the header
 # provenance stamp, and an end-to-end oracle test that recomputes a real
 # CycleWalk atlas's map data and checks it reproduces CycleWalk's own values.
@@ -8,8 +8,7 @@ using AtlasIO
 import JSON
 using CycleWalk: get_log_spanning_trees, get_isoperimetric_scores
 import CycleWalk
-using AtlasUtilities: parseFunctionNames, addMapData, loadGraph, parseVotePairs, parseNodeData,
-                     listWriterDetails, add
+using AtlasUtilities: addMapData, loadGraph, listWriterDetails
 # The writer internals live in the CycleWalk extension, loaded by `import CycleWalk` above.
 const CWExt = Base.get_extension(AtlasUtilities, :AtlasUtilitiesCycleWalkExt)
 using .CWExt: resolveFunctions, resolveGraphSpec, writeHeaderWithProvenance, GraphSpec, buildGraph,
@@ -22,16 +21,6 @@ using .CWExt: resolveFunctions, resolveGraphSpec, writeHeaderWithProvenance, Gra
 rgs(; kw...) = resolveGraphSpec("test"; kw...)
 
 @testset "add" begin
-
-    @testset "parseFunctionNames" begin
-        @test parseFunctionNames("get_log_spanning_trees") == ["get_log_spanning_trees"]
-        @test parseFunctionNames("a,b,c") == ["a", "b", "c"]
-        @test parseFunctionNames("[a, b]") == ["a", "b"]           # bracketed list
-        @test parseFunctionNames("[\"a\", \"b\"]") == ["a", "b"]   # quoted, bracketed
-        @test parseFunctionNames("  a , b ,") == ["a", "b"]        # trailing comma / spaces
-        @test_throws ErrorException parseFunctionNames("")
-        @test_throws ErrorException parseFunctionNames("[]")
-    end
 
     @testset "resolveFunctions" begin
         fns = resolveFunctions(["get_log_spanning_trees", "get_isoperimetric_scores"])
@@ -89,29 +78,11 @@ rgs(; kw...) = resolveGraphSpec("test"; kw...)
         @test !writerWorks((_p) -> error("boom"), p)
     end
 
-    @testset "listWriterDetails, and atlas add --list-writers prints plain + partisan writers" begin
+    @testset "listWriterDetails: plain + partisan writers" begin
         d = listWriterDetails()
         @test first.(d.plain) == cycleWalkWriterNames()
         @test all(fast == hasFastMethod(getfield(CycleWalk, Symbol(n))) for (n, fast) in d.plain)
         @test d.partisan == ["get_partisan_margins", "get_partisan_seats"]
-        out = capture_stdout() do
-            cli_list_writers()
-        end
-        @test occursin("get_log_spanning_trees", out)
-        @test occursin("get_partisan_margins", out)
-        @test occursin("get_partisan_seats", out)
-        @test occursin("--vote-cols", out)
-    end
-
-    @testset "atlas add --list-writers: short-circuits without functions/atlas1/atlas2" begin
-        out = capture_stdout() do
-            add(; list_writers = true)
-        end
-        @test occursin("get_log_spanning_trees", out)
-    end
-
-    @testset "atlas add: missing functions/atlas1/atlas2 errors clearly (without --list-writers)" begin
-        @test_throws ErrorException add()
     end
 
     @testset "resolveGraphSpec: flags only" begin
@@ -327,20 +298,8 @@ rgs(; kw...) = resolveGraphSpec("test"; kw...)
         end
     end
 
-    @testset "parseNodeData" begin
-        @test parseNodeData("") == String[]
-        @test parseNodeData("COUNTY, NAME") == ["COUNTY", "NAME"]
-    end
-
-    @testset "parseVotePairs / voteColumns" begin
-        @test parseVotePairs("") == Tuple{String,String}[]
-        @test parseVotePairs("A,B") == [("A", "B")]
-        @test parseVotePairs("A,B;C,D") == [("A", "B"), ("C", "D")]
-        @test parseVotePairs(" A , B ; C , D ") == [("A", "B"), ("C", "D")]  # spaces trimmed
-        @test parseVotePairs("A,B;") == [("A", "B")]                         # trailing ; ignored
-        @test_throws ErrorException parseVotePairs("A")                      # not a pair
-        @test_throws ErrorException parseVotePairs("A,B,C")                  # too many cols
-        @test voteColumns([("A", "B"), ("C", "A")]) == ["A", "B", "C"]       # distinct, in order
+    @testset "voteColumns: distinct, in order" begin
+        @test voteColumns([("A", "B"), ("C", "A")]) == ["A", "B", "C"]
     end
 
     @testset "resolveFunctions: partisan writers expand per vote pair" begin

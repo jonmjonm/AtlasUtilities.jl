@@ -1,10 +1,10 @@
-# Comonicon CLI configuration. `atlas` is the installed command. deps/build.jl writes the launcher and its
+# Comonicon CLI configuration. `mapatlas` is the installed command. deps/build.jl writes the launcher and its
 # environment itself (no system image) and uses Comonicon only for the shell completions.
 #
 # NOTE: Comonicon reads this standalone file (Comonicon.toml / JuliaComonicon.toml),
 # NOT a [comonicon] table in Project.toml. Without this file the command name
-# falls back to the lowercased module name (`atlasutilities`).
-name = "atlas"
+# falls back to the lowercased module name (`atlascli`).
+name = "mapatlas"
 
 [install]
 completion = true

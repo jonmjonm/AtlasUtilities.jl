@@ -1,14 +1,14 @@
-# Every subcommand run through `command_main`, the entry point the installed `atlas` command uses, so the
+# Every subcommand run through `command_main`, the entry point the installed `mapatlas` command uses, so the
 # command-line layer is tested too: option parsing (e.g. --bins "a,b,c", --integer auto), flags turned into
 # settings (--no-compression -> compress = false), and argument order. The other test files call the library
 # functions directly; these check that the flags reach them.
-import JSON
-using AtlasUtilities: command_main, stripAtlasExt
+using AtlasCLI: command_main
+using AtlasUtilities: stripAtlasExt
 
-const EX = joinpath(@__DIR__, "..", "examples")
-const DATA = joinpath(@__DIR__, "..", "Data")
+const EX = joinpath(@__DIR__, "..", "..", "examples")
+const DATA = joinpath(@__DIR__, "..", "..", "Data")
 
-"Run `atlas args...` and return (exit code, what it printed)."
+"Run `mapatlas args...` and return (exit code, what it printed)."
 function atlascli(args...)
     path, io = mktemp()
     code = redirect_stdout(io) do
