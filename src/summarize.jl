@@ -1,4 +1,4 @@
-# summarize.jl -- summary statistics of the map data (`summarizeMapData`, `atlas summarize-map-data`).
+# summarize.jl -- summary statistics of the map data (`summarizeMapData`, `mapatlas summarize-map-data`).
 #
 # Like `extract-map-data-histogram`, builds a StreamingHistogram per map-data field (or a
 # StreamingHistogram per index for a vector field, sorted ascending so index j holds the
@@ -181,7 +181,7 @@ end
 
 What [`summarizeMapData`](@ref) returns: `nmaps`, the number of maps considered, and `fields`, each field's
 [`FieldSummary`](@ref) (a `Vector{FieldSummary}`, one per index, for a vector field). Printing it gives the text
-`atlas summarize-map-data` prints.
+`mapatlas summarize-map-data` prints.
 """
 struct MapDataSummary
     nmaps::Int
@@ -217,7 +217,7 @@ max]`, each computed from a `StreamingHistogram` (one per index for a vector fie
 sorted ascending first -- see `mapDataHistograms`). When the maps' weights vary, the weighted mean, std and
 quartiles (each map counting its weight) and the effective sample size too (see `fieldSummaryLines`).
 `max_maps` (0 = unlimited, the default) considers only the atlas's first `max_maps` maps. `progress` shows a
-progress bar. Print the result for the text `atlas summarize-map-data` prints.
+progress bar. Print the result for the text `mapatlas summarize-map-data` prints.
 """
 function summarizeMapData(atlas::AbstractString; max_maps::Int = 0, cores::Int = Threads.nthreads(),
                           progress::Bool = false)

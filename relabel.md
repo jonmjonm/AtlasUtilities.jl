@@ -1,6 +1,6 @@
-# `atlas relabel` — Specification
+# `mapatlas relabel` — Specification
 
-The `atlas relabel` command (from the AtlasUtilities package) steps over every
+The `mapatlas relabel` command (AtlasCLI, built on the `relabelAtlas` function of AtlasUtilities) steps over every
 map in an input atlas **A1**, relabels district numbers so that consecutive maps
 are as similar as possible, and writes the relabeled maps to a new atlas **A2**.
 
@@ -115,7 +115,7 @@ for m = 2 … M:
 ## CLI
 
 ```
-atlas relabel <A1> <A2> [<graph.json>] [--first-map] [--quiet]
+mapatlas relabel <A1> <A2> [<graph.json>] [--first-map] [--quiet]
               [--weight-population <pop.json> --population-attr <attr>]
 ```
 
@@ -158,7 +158,7 @@ multiscale atlases:
 
 Parsing/serialization runs across the threads Julia was started with. Because the
 installed command runs on a prebuilt system image, set `JULIA_NUM_THREADS`
-(e.g. `JULIA_NUM_THREADS=8 atlas relabel …`) to enable parallelism; the default
+(e.g. `JULIA_NUM_THREADS=8 mapatlas relabel …`) to enable parallelism; the default
 of one thread runs serially.
 
 A progress bar (on `stderr`) is shown by default since the atlas header carries

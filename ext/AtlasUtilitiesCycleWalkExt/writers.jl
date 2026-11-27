@@ -1,5 +1,5 @@
 # writers.jl (AtlasUtilitiesCycleWalkExt) -- evaluating CycleWalk writer functions on maps: building a
-# `WriterSet`, `computeWriters`, `addMapData` (`atlas add`), and the hook `extractMapData` and `mapDataHistograms`
+# `WriterSet`, `computeWriters`, `addMapData` (`mapatlas add`), and the hook `extractMapData` and `mapDataHistograms`
 # use. The functions are declared, with their docstrings, in AtlasUtilities' src/writers.jl.
 #
 # `addMapData` reads every map in an input atlas Atlas1, reconstructs each map's LinkCutPartition on
@@ -79,7 +79,7 @@ A tiny (4-node, 2-district) synthetic `LinkCutPartition`, built the same way
 `LinkCutPartition`), for probing whether a writer function actually runs (see
 [`writerWorks`](@ref)) rather than merely having a matching method signature. Built
 fresh (not cached) since it's only used for the rare `--list-writers` path; the
-underlying `Graph`/`MultiLevelGraph` construction is the same cost `atlas add`
+underlying `Graph`/`MultiLevelGraph` construction is the same cost `mapatlas add`
 already pays once per real invocation.
 """
 function smokeTestPartition()
@@ -123,16 +123,16 @@ end
 """
     cycleWalkWriterNames() -> Vector{String}
 
-The names of plain CycleWalk writer functions usable with `atlas add` / `--add`:
+The names of plain CycleWalk writer functions usable with `mapatlas add` / `--add`:
 every `get_*` function CycleWalk defines with a method accepting a single
 `LinkCutPartition` (the object [`evalWritersLCP`](@ref) reconstructs and calls
 `f(partition)` on) that actually runs without erroring on a real partition (see
 [`writerWorks`](@ref)), sorted alphabetically. This is exactly the set of names
-`atlas add`/`resolveFunctions` would accept AND successfully compute for a
+`mapatlas add`/`resolveFunctions` would accept AND successfully compute for a
 non-partisan name -- computed by inspecting methods and smoke-testing rather than a
 hard-coded list, so it stays correct as CycleWalk adds writers, fixes bugs, or
 introduces new ones. Excludes writers that only accept some other representation
-(e.g. `MultiLevelPartition`, a raw edge vector), since `atlas add` can't call those,
+(e.g. `MultiLevelPartition`, a raw edge vector), since `mapatlas add` can't call those,
 and excludes the partisan writers (see `PARTISAN_WRITERS`), which take vote columns
 rather than a bare partition.
 """
@@ -265,7 +265,7 @@ Atlas1's header (its three lines) with an `"added map data"` provenance entry ap
 to line 3 (the atlas params) -- recording which fields were added, from which graph,
 and when -- returned as raw bytes ready to emit through an `AtlasOutput`. Lines 1-2
 are copied verbatim. The entry is purely additive to the params dict, so older
-readers ignore it while `atlas info` surfaces it; the declared `mapParamType`
+readers ignore it while `mapatlas info` surfaces it; the declared `mapParamType`
 (`Dict{String,Any}`) is unchanged, since adding keys to each map's data does not
 change its type.
 """
@@ -298,7 +298,7 @@ end
 """
     writeHeaderWithProvenance(Atlas1, Atlas2, names, graphPath)
 
-Write Atlas2's header from Atlas1's with the `atlas add` provenance stamp (see
+Write Atlas2's header from Atlas1's with the `addMapData` provenance stamp (see
 [`provenanceHeaderBytes`](@ref)), through a plain/compressed stream chosen by Atlas2's
 extension. Used on its own (e.g. in tests); `addMapData` instead feeds the same header
 bytes to an `AtlasOutput`.

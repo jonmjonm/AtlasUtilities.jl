@@ -1,4 +1,4 @@
-# nodes.jl -- the node ids of one map (`atlas list-nodes`).
+# nodes.jl -- the node ids of one map (`mapatlas list-nodes`).
 #
 # A node id is a Tuple{Vararg{String}} (multiple components for multiscale/hierarchical atlases); `nodeIdString`
 # joins its components with ":" into a single string.

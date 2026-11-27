@@ -1,4 +1,4 @@
-# info.jl -- reading an atlas header (`atlas info`, `atlas list-map-data`).
+# info.jl -- reading an atlas header (`mapatlas info`, `mapatlas list-map-data`).
 #
 # `atlasInfo` returns the header (the metadata on line 2 and the atlas parameters on line 3) as data, and
 # `atlasHeaderInfo` renders it as text. The bulky "script" entry -- the entire source of the script that generated
@@ -152,8 +152,8 @@ config are embedded and extractable), the "Atlas Parameters" block, and a
 "Map Data Fields" block listing `fieldNames` (the field names found in the first
 map, e.g. `log_spanning_trees`; see [`firstMapFieldNames`](@ref)), with the bulky
 embedded generating `script`/`toml_config` entries omitted. This is exactly what
-`atlas info` prints (minus the script/config bodies) and is reused verbatim in the
-`about.md` that `atlas extract-map-data` writes alongside the CSVs. Given a path, it opens the atlas and
+`mapatlas info` prints (minus the script/config bodies) and is reused verbatim in the
+`about.md` that `mapatlas extract-map-data` writes alongside the CSVs. Given a path, it opens the atlas and
 lists its first map's fields.
 """
 function atlasHeaderInfo(atlasPath::AbstractString)

@@ -1,5 +1,5 @@
 # extractHistogram.jl -- histograms of the map data (`mapDataHistograms`, `writeHistograms`,
-# `atlas extract-map-data-histogram`).
+# `mapatlas extract-map-data-histogram`).
 #
 # Like `extract-map-data`, but instead of writing each map's data to a CSV row, it
 # accumulates every map's data (after skipping `burn_in` maps) into a

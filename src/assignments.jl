@@ -1,12 +1,12 @@
 # assignments.jl -- district assignments as a table (`assignmentMatrix`, `extractAssignments`,
-# `atlas extract-assignments`).
+# `mapatlas extract-assignments`).
 #
 # Read every map in atlas Atlas1 and write a single wide CSV: one row per map, first column the map name, then
 # one column per unit holding the unit's district number in that map.
 #
 # Which units are the columns:
 #   * With `--graph <graph.json>`: the finest units of the dual graph (e.g. precincts), read with the atlas's
-#     "levels in graph" parameter, as `atlas relabel` does. Each map's district for a unit is the district of
+#     "levels in graph" parameter, as `mapatlas relabel` does. Each map's district for a unit is the district of
 #     the longest key covering it: the unit itself if its county is split in that map, or the whole county if
 #     not. This is the true finest scale, including units whose county is never split.
 #   * Without a graph: the first map's nodes, as long as every map has the same node set -- the usual
@@ -14,7 +14,7 @@
 #     whose maps mix whole counties and split ones), the atlas is read once more to collect every key, and the
 #     columns become the finest regions seen in it: a region never split in any map stays one column.
 # A node id with several components is written with them joined by `:` (e.g. `MECKLENBURG:052`), as
-# `atlas list-nodes` does.
+# `mapatlas list-nodes` does.
 #
 # `assignmentMatrix` returns the same table as data (map names, weights, units, and a maps x units matrix of
 # districts); `eachAssignmentRow` is the reading both share.
@@ -32,10 +32,10 @@ struct NodeSetChanged <: Exception end
 
 Every map's district assignment in atlas `Atlas1`, as data: `districts[i, j]` is the district number of unit `j`
 in map `i` (a `Matrix{Int}`, maps x units), `names[i]` and `weights[i]` the map's name and weight, `units[j]` the
-unit's node key (as in a `Districting`) and `unitNames[j]` its name as `atlas extract-assignments` writes it (the
+unit's node key (as in a `Districting`) and `unitNames[j]` its name as `mapatlas extract-assignments` writes it (the
 key's components joined by `:`).
 
-The units are those of `atlas extract-assignments`: the finest units of the dual graph `graph` if given (read
+The units are those of `mapatlas extract-assignments`: the finest units of the dual graph `graph` if given (read
 with the atlas's "levels in graph" parameter); else the first map's nodes when every map has the same ones; else,
 for a multiscale atlas, the finest regions seen anywhere in it (reading the atlas a second time). A unit's
 district in a map is that of the map's longest key covering it: the unit itself, or the region (e.g. a whole

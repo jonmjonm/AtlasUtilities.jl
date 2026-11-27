@@ -1,4 +1,4 @@
-# extract.jl -- extracting map data to CSV (`extractMapData`, `atlas extract-map-data`).
+# extract.jl -- extracting map data to CSV (`extractMapData`, `mapatlas extract-map-data`).
 #
 # Read every map in an input atlas and write its map data out as CSV: one CSV
 # file per data field, inside a directory named after the atlas (its path with the
@@ -68,7 +68,7 @@ end
     writeAboutFile(outdir, Atlas1, atlas, fieldNames; burnIn = 0, maxMaps = 0) -> String
 
 Write an `about.md` into `outdir` describing the extraction: the source atlas name,
-the extraction date, and the atlas's header information -- everything `atlas info`
+the extraction date, and the atlas's header information -- everything `mapatlas info`
 shows except the bulky embedded sources -- the generating script, its includes, and
 the TOML config (see `atlasHeaderInfo`) -- including
 `fieldNames` (the data field names found in the first map, e.g.

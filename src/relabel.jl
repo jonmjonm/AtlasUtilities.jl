@@ -1,4 +1,4 @@
-# relabel.jl -- relabeling an atlas's districts (`relabelAtlas`, `atlas relabel`).
+# relabel.jl -- relabeling an atlas's districts (`relabelAtlas`, `mapatlas relabel`).
 #
 # Walk every map in an input atlas Atlas1, relabel district numbers so consecutive
 # maps are as similar as possible, and write the relabeled maps to a new atlas Atlas2.
