@@ -1,0 +1,12 @@
+# Codecov serves the README's coverage badge and the coverage pages; it should never get in the way of a PR.
+# The coverage checks are informational (a drop in coverage never fails a PR), and Codecov posts no PR comments.
+# AtlasUtilities and AtlasCLI upload separately, under the flags of the same names.
+coverage:
+  status:
+    project:
+      default:
+        informational: true
+    patch:
+      default:
+        informational: true
+comment: false

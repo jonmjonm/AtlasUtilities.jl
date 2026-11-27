@@ -11,60 +11,103 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  JULIA_NUM_THREADS: 2   # exercise the threaded map processing
+
 jobs:
-  # The full test suite, render tests included (CairoMakie draws headless on Linux).
-  test:
-    name: test (Julia ${{ matrix.julia-version }})
+  # One test job per package. 1.11 is the oldest Julia [compat] allows. julia-buildpkg is not used: the only build
+  # step is AtlasCLI's, which installs the `mapatlas` command, and the install job below tests that separately.
+  library:
+    name: AtlasUtilities (Julia ${{ matrix.julia-version }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        # 1.10 (the oldest Julia [compat] allows) cannot find StreamHistogram until it is registered: Julia 1.10
-        # ignores Project.toml's [sources]. Add '1.10' here once it is in the General registry.
         julia-version: ['1.11', '1']
-    env:
-      JULIA_NUM_THREADS: 2   # exercise the threaded map processing
     steps:
       - uses: actions/checkout@v4
       - uses: julia-actions/setup-julia@v2
         with:
           version: ${{ matrix.julia-version }}
       - uses: julia-actions/cache@v2
-      # Pkg.test only; julia-buildpkg is not used, since the build step installs the `atlas` command, which the
-      # install job below tests separately.
-      - name: Run tests
-        run: julia --project -e 'import Pkg; Pkg.test()'
+      - uses: julia-actions/julia-runtest@v1   # collects coverage (its default)
+      - uses: julia-actions/julia-processcoverage@v1
+        with:
+          directories: src,ext
+      - uses: codecov/codecov-action@v5
+        with:
+          files: lcov.info
+          flags: AtlasUtilities
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false   # an upload problem must not fail the tests
 
-  # Install the package the way the README says and run the installed `atlas` command: this exercises
-  # deps/build.jl (the command's environment and launcher), which the test suite does not.
-  install:
-    name: install and run `atlas`
+  cli:
+    name: AtlasCLI (Julia ${{ matrix.julia-version }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        julia-version: ['1.11', '1']
     steps:
       - uses: actions/checkout@v4
       - uses: julia-actions/setup-julia@v2
         with:
-          version: '1'   # Julia 1.13+ follows [sources] for StreamHistogram when installing from a repository
+          version: ${{ matrix.julia-version }}
       - uses: julia-actions/cache@v2
-      # Like the README's `Pkg.add(url=...)`, but from this checkout, so a pull request installs its own code.
-      # Pkg.add runs deps/build.jl only for a newly installed package and only logs a failure, so build again when
-      # the launcher is missing (e.g. the package came from the cache): Pkg.build fails the step with the error.
-      - name: Install AtlasUtilities into a named environment (runs deps/build.jl)
+      - name: Install zsh (the tests check that the zsh completion script parses)
+        run: sudo apt-get update && sudo apt-get install -y zsh
+      - uses: julia-actions/julia-runtest@v1
+        with:
+          project: AtlasCLI
+      - uses: julia-actions/julia-processcoverage@v1
+        with:
+          directories: AtlasCLI/src
+      - uses: codecov/codecov-action@v5
+        with:
+          files: lcov.info
+          flags: AtlasCLI
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+
+  # Install the command the two ways the README says and run it: this exercises deps/build.jl (the command's
+  # environment and launcher), which the test suites do not.
+  install:
+    name: install and run `mapatlas` (Julia ${{ matrix.julia-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        julia-version: ['1.11', '1']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: ${{ matrix.julia-version }}
+      - uses: julia-actions/cache@v2
+      - name: Install from this checkout, as from a clone
         run: |
-          julia --project=@atlas -e 'import Pkg; Pkg.add(path=".")
-              isfile(joinpath(first(DEPOT_PATH), "bin", "atlas")) || Pkg.build("AtlasUtilities")'
+          julia --project=AtlasCLI -e 'import Pkg; Pkg.instantiate()'
+          julia --project=AtlasCLI AtlasCLI/deps/build.jl
       - name: Run the installed command
         run: |
           export PATH="$HOME/.julia/bin:$PATH"
-          test -x "$HOME/.julia/bin/atlas"
-          atlas --help > /dev/null
-          atlas info examples/cycleWalk_ct_slice.jsonl.gz
-          atlas convert examples/cycleWalk_ct_slice.jsonl.gz "$RUNNER_TEMP/ct_v2.jsonl.gz" --to 2
+          test -x "$HOME/.julia/bin/mapatlas"
+          mapatlas --help > /dev/null
+          mapatlas info examples/cycleWalk_ct_slice.jsonl.gz
+          mapatlas convert examples/cycleWalk_ct_slice.jsonl.gz "$RUNNER_TEMP/ct_v2.jsonl.gz" --to 2
           gzip -dc "$RUNNER_TEMP/ct_v2.jsonl.gz" | sed -n 2p | grep -q '"formatVersion":"2"'
-          atlas info "$RUNNER_TEMP/ct_v2.jsonl.gz" > /dev/null
-          atlas list-nodes examples/demo_grid_3x3.jsonl.gz | grep -q '"n0"'
-          # render without the plotting packages must stop with the install message, not crash
-          if atlas render examples/demo_grid_3x3.jsonl.gz Data/grid_graph_10_by_10.json --key node_name > out.txt 2>&1; then
-            echo "render unexpectedly succeeded without the plotting packages"; exit 1
-          fi
-          grep -q 'atlas install-render' out.txt
+          mapatlas info "$RUNNER_TEMP/ct_v2.jsonl.gz" > /dev/null
+          mapatlas list-nodes examples/demo_grid_3x3.jsonl.gz | grep -q '"n0"'
+          mapatlas add get_log_spanning_trees examples/cycleWalk_ct_slice.jsonl.gz "$RUNNER_TEMP/added.jsonl.gz" \
+            --graph Data/CT_pct20.json --pop-col POP20 --node-col NAME --overwrite --quiet
+      # Like the README's `Pkg.add` of both packages from GitHub, but from this checkout, so a pull request installs
+      # its own code. Julia 1.13+ is what follows [sources] for StreamHistogram here. Pkg.add runs deps/build.jl only
+      # for a newly installed package and only logs a failure, so build again if the launcher is missing.
+      - name: Install both packages with Pkg.add
+        if: matrix.julia-version == '1'
+        run: |
+          rm -f "$HOME/.julia/bin/mapatlas"
+          julia --project=@mapatlas -e 'import Pkg
+              Pkg.add([Pkg.PackageSpec(path = "."), Pkg.PackageSpec(path = ".", subdir = "AtlasCLI")])
+              isfile(joinpath(first(DEPOT_PATH), "bin", "mapatlas")) || Pkg.build("AtlasCLI")'
+          "$HOME/.julia/bin/mapatlas" info examples/cycleWalk_ct_slice.jsonl.gz > /dev/null

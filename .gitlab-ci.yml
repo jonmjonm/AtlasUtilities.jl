@@ -22,10 +22,11 @@ cache:
   stage: test
   before_script:
     - julia --version
-    - julia --project=. -e 'using Pkg; Pkg.instantiate()'
   script:
-    # Run with several threads so the parallel batch pipeline is exercised.
-    - julia --project=. --threads=4 test/runtests.jl
+    # Run with several threads so the parallel batch pipeline is exercised. Pkg.test installs each package's test
+    # dependencies (CycleWalk among them, from its GitHub repository via the General registry).
+    - julia --project=. --threads=4 -e 'using Pkg; Pkg.test()'
+    - julia --project=AtlasCLI --threads=4 -e 'using Pkg; Pkg.test()'
 
 # Primary job: pin to the version used during development.
 test:1.12:
