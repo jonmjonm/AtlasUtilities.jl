@@ -538,11 +538,20 @@ function addMapData(src::AbstractString, dst::AbstractString, ws::WriterSet;
     header = provenanceHeaderBytes(String(src), writerFields(ws), ws.graphPath)
     # dst is written under a temporary name and moved into place only once every map is written (see
     # `writeReplacing`), so a failed run leaves no partial atlas; and dst may be src.
-    return writeReplacing(String(dst); keep_partial) do tmp
-        outIO = openAtlasOutput(tmp, header, cores)
-
+    return writeReplacing(String(dst); keep_partial, input = String(src), caller = "addMapData") do tmp
         inIO = smartOpen(String(src), "r")
-        atlas = openAtlas(inIO)
+        atlas = try
+            openAtlas(inIO)
+        catch
+            close(inIO)
+            rethrow()
+        end
+        outIO = try
+            openAtlasOutput(tmp, header, cores)
+        catch
+            close(atlas)
+            rethrow()
+        end
         fv = atlas.formatVersion    # dst's header comes from src's, so its maps must be in the same version
 
         bar = progress ? ProgressUnknown(desc = "Adding map data:", spinner = true) : nothing

@@ -89,6 +89,7 @@ function extractAssignments(atlas::AbstractString, outpath::Union{Nothing,Abstra
     outpath = outpath === nothing ? stripAtlasExt(Atlas1) * "-assignments" * (compress ? ".csv.gz" : ".csv") :
               String(outpath)
     isfile(outpath) && !force && return nothing
+    guardInput("extractAssignments", Atlas1, outpath; keep_partial)
 
     # Written to a temporary file, moved into place only on success. A multiscale restart starts it over. The
     # temporary name keeps the extensions, and with them whether it is compressed (see `tempPath`).

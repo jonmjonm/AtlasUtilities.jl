@@ -397,6 +397,12 @@ rgs(; kw...) = resolveGraphSpec("test"; kw...)
             @test_throws AtlasFormatError addMapData(cut, dst, ["get_log_spanning_trees"]; keep_partial = true, kw...)
         end
         @test !isfile(dst) && length(mapsIn(joinpath(dir, "o.incomplete.jsonl.gz"))) == 19
+        # an input named like the output's temporary file is refused, not overwritten
+        src = joinpath(dir, "run.tmp.jsonl.gz")
+        cp(joinpath(@__DIR__, "..", "..", "examples", "cycleWalk_ct_slice.jsonl.gz"), src)
+        before = read(src)
+        e = errorOf(() -> addMapData(src, joinpath(dir, "run.jsonl.gz"), ["get_cut_edge_sum"]; kw...))
+        @test e isa ErrorException && startswith(e.msg, "addMapData: the input") && read(src) == before
     end
 
 end

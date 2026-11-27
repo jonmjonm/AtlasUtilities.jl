@@ -1,6 +1,6 @@
 # AtlasUtilities refactor plan
 
-As of 2026-11-26. Copied from the Claude Docs doc *AtlasUtilities refactor plan* (https://claude.ai/artifact/GNrUTL7KjxQTKjxtFqXT5Q); this file is now the copy to keep up to date.
+As of 2026-11-26.
 
 AtlasUtilities becomes one light library whose heavier roles (CycleWalk processing, shapefiles, plotting, GUI) are package extensions, plus a separate AtlasCLI package in a subdirectory of the same repo that provides the `mapatlas`, `mapatlas-plot` and `mapatlas-gui` tools. The first branch builds only the core, the CycleWalk extension and the light `mapatlas` tool; plotting is redesigned later.
 

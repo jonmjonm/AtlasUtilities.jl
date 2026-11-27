@@ -238,14 +238,17 @@ end
 function writeHistogramCSV(path::AbstractString, entry)
     ohs = entry isa StreamingHistogram ? [entry] : entry
     io = smartOpen(path, "w")
-    write(io, "index,edge_lo,edge_hi,exact_count,weight_sum\n")
-    for (idx, oh) in enumerate(ohs)
-        b = histBins(oh)
-        for k in eachindex(b.counts)
-            write(io, join((idx, b.edges[k], b.edges[k + 1], b.counts[k], b.weights[k]), ",") * "\n")
+    try
+        write(io, "index,edge_lo,edge_hi,exact_count,weight_sum\n")
+        for (idx, oh) in enumerate(ohs)
+            b = histBins(oh)
+            for k in eachindex(b.counts)
+                write(io, join((idx, b.edges[k], b.edges[k + 1], b.counts[k], b.weights[k]), ",") * "\n")
+            end
         end
+    finally
+        close(io)
     end
-    close(io)
     return path
 end
 
@@ -300,8 +303,11 @@ function writeHistogramJSON(path::AbstractString, entry)
         "histograms" => Dict(string(idx) => histSummaryDict(oh)
                               for (idx, oh) in enumerate(ohs)))
     io = smartOpen(path, "w")
-    JSON.json(io, doc)
-    close(io)
+    try
+        JSON.json(io, doc)
+    finally
+        close(io)
+    end
     return path
 end
 
@@ -350,8 +356,21 @@ function writeHistograms(outdir::AbstractString, hists::AbstractDict;
             append!(skipped, filter(isfile, [csvPath, jsonPath]))
             continue
         end
-        writeReplacing(tmp -> writeHistogramCSV(tmp, hists[field]), csvPath)
-        writeReplacing(tmp -> writeHistogramJSON(tmp, hists[field]), jsonPath)
+        # The pair is written under temporary names and moved into place together, so a failure leaves neither
+        # (a CSV alone would make a rerun skip the field).
+        tmps = [tempPath(csvPath), tempPath(jsonPath)]
+        csvMoved = false
+        try
+            writeHistogramCSV(tmps[1], hists[field])
+            writeHistogramJSON(tmps[2], hists[field])
+            mv(tmps[1], csvPath; force = true)
+            csvMoved = true
+            mv(tmps[2], jsonPath; force = true)
+        catch
+            foreach(t -> rm(t; force = true), tmps)
+            csvMoved && rm(csvPath; force = true)                # the CSV moved, the JSON did not
+            rethrow()
+        end
         append!(written, [csvPath, jsonPath])
     end
     return (written = written, skipped = skipped)

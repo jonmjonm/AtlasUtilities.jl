@@ -380,8 +380,7 @@ Like `extract-map-data`, but instead of writing per-map CSV rows, accumulate the
                         integer == "false" ? false :
                         error("mapatlas extract-map-data-histogram: --integer must be " *
                               "true, false, or auto, got \"$integer\".")
-        outdir = stripAtlasExt(atlas1)
-        isdir(outdir) || mkpath(outdir)
+        outdir = stripAtlasExt(atlas1)            # created by writeHistograms, once there is something to write
         if listMapData(atlas1) === nothing
             println("mapatlas extract-map-data-histogram: $atlas1 has no maps; nothing written.")
             return

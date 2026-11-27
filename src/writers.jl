@@ -1,5 +1,5 @@
-# writers.jl -- the writer API. The part that needs no CycleWalk is here: the `WriterSet` type, `writerFields`,
-# its `show`, and the command-line string parsers. Everything that builds or evaluates a `WriterSet` (the
+# writers.jl -- the writer API. The part that needs no CycleWalk is here: the `WriterSet` type, `writerFields`
+# and its `show`. (The command-line string parsers are in AtlasCLI.) Everything that builds or evaluates a `WriterSet` (the
 # CycleWalk graph, the writer functions, `addMapData`, `computeWriters`, ...) is in the AtlasUtilitiesCycleWalkExt
 # extension (ext/), loaded with CycleWalk; the functions are declared and documented below.
 

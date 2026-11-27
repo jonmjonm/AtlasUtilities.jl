@@ -192,6 +192,7 @@ function extractMapData(atlas::AbstractString, outdir::AbstractString = stripAtl
             width = length(flattenVal(val))
             # smartOpen selects gzip vs. plain from the filename extension, matching
             # `ext` (.csv.gz vs. .csv), which the temporary name keeps.
+            guardInput("extractMapData", Atlas1, joinpath(outdir, field * ext); keep_partial)
             tmp = tempPath(joinpath(outdir, field * ext))
             io = smartOpen(tmp, "w")
             push!(tmps, tmp)
