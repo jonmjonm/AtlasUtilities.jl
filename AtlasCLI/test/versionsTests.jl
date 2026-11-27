@@ -102,15 +102,6 @@ end
         end
     end
 
-    @testset "render: same image" begin
-        p1, p2 = joinpath(d1, "ct.png"), joinpath(d2, "ct.png")
-        for (a, p) in ((ct1, p1), (ct2, p2))
-            vcli("render", a, joinpath(VDATA, "shapefile_CT.zip"), "--key", "NAME", "--map", "2", "--out", p,
-                 "--quiet")
-        end
-        @test read(p1) == read(p2)
-    end
-
     @testset "extract-assignments on a multiscale atlas: same CSV for v1 and v2, with and without --graph" begin
         g = joinpath(VEX, "demo_multiscale_graph.json")
         for flags in ([], ["--graph", g])

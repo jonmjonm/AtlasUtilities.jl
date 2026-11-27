@@ -3,16 +3,14 @@
 #
 #   1. The command's own environment, ~/.julia/scratchspaces/<AtlasCLI uuid>/env, with this checkout of
 #      AtlasUtilities and AtlasCLI developed into it (CycleWalk and the rest come as AtlasCLI's dependencies) and
-#      everything precompiled. `mapatlas install-render` later adds the plotting packages to this environment, never
-#      to the checkout's Project.toml. It is rebuilt in a new directory and swapped in only on success, and resolves
-#      afresh, ignoring the checkout's own Manifest.toml files.
+#      everything precompiled. It is rebuilt in a new directory and swapped in only on success, and resolves afresh,
+#      ignoring the checkout's own Manifest.toml files.
 #   2. The launcher ~/.julia/bin/mapatlas, which runs Julia in that environment (and only it, plus the standard
 #      library). It prefers the Julia that ran this build, and falls back to `julia` on the PATH if that one has been
 #      removed (e.g. by juliaup), so a Julia update does not break the command.
 #   3. Shell completions in ~/.julia/completions (Comonicon).
 #
-# No system image is built: precompiled package images make startup fast enough, install takes minutes less, and a
-# plain environment is what lets `mapatlas install-render` add packages.
+# No system image is built: precompiled package images make startup fast enough, and install takes minutes less.
 using AtlasCLI
 using AtlasUtilities
 using Pkg
@@ -25,13 +23,6 @@ const CLI_DIR = pkgdir(AtlasCLI)
 const BIN = joinpath(first(DEPOT_PATH), "bin", "mapatlas")
 
 # 1. The environment, built in a separate Julia process so it never touches the project running this script.
-# Plotting packages a previous `mapatlas install-render` added are kept.
-render = String[]
-if isfile(joinpath(ENV_DIR, "Project.toml"))
-    deps = get(Pkg.TOML.parsefile(joinpath(ENV_DIR, "Project.toml")), "deps", Dict())
-    render = [p.name for p in AtlasUtilities.RENDER_PACKAGES if haskey(deps, p.name)]
-end
-
 # A checkout's own manifest (its development environment; not in git) is read when the checkout is developed
 # into another environment, so it would pin the packages it gets by URL from [sources] (StreamHistogram) to the
 # commit it last resolved, however old: a stale one makes the build fail, or install an old version. Set it aside
@@ -42,12 +33,11 @@ aside(path) = path * ".aside-during-mapatlas-build"
 setup = """
     import Pkg
     Pkg.develop([Pkg.PackageSpec(path = $(repr(LIB_DIR))), Pkg.PackageSpec(path = $(repr(CLI_DIR)))])
-    isempty($(repr(render))) || Pkg.add($(repr(render)))
     Pkg.precompile()
     """
 
 # Built in a new directory and moved into place only once complete, so a failed build leaves the installed
-# command (and its plotting packages) as it was.
+# command as it was.
 NEW_ENV = ENV_DIR * ".new"
 rm(NEW_ENV; force = true, recursive = true)
 mkpath(NEW_ENV)

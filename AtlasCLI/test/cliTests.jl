@@ -204,14 +204,4 @@ mapsof(path) = (io = smartOpen(path, "r"); a = openAtlas(io); ms = Map[]; while 
         end
         @test err isa ErrorException && occursin("levels in graph", err.msg)
     end
-
-    @testset "render and install-render" begin
-        out = joinpath(mktempdir(), "ct.png")
-        @test atlascli("render", ct, joinpath(DATA, "shapefile_CT.zip"), "--key", "NAME", "--map", "2",
-                       "--out", out, "--quiet")[1] == 0
-        @test isfile(out) && filesize(out) > 0
-        # The test environment has the plotting packages, so install-render only reports that.
-        code, msg = atlascli("install-render")
-        @test code == 0 && occursin("already installed", msg)
-    end
 end

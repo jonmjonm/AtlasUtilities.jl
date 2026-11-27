@@ -29,9 +29,6 @@ include("extract.jl")
 include("extractHistogram.jl")
 include("summarize.jl")
 include("assignments.jl")
-# `atlas render` lives in the AtlasUtilitiesRenderExt package extension (ext/), loaded only when its
-# plotting packages are; render.jl here holds the wrappers that load it on demand.
-include("render.jl")
 
 # Reading
 export atlasInfo, listMapData, listNodes, extractScripts
@@ -42,8 +39,6 @@ export findRelabeling, relabelMap, relabelAtlas, confusionMatrix, permutationFro
 export mapDataHistograms, writeHistograms, summarizeMapData, assignmentMatrix, extractMapData, extractAssignments
 # Process (CycleWalk writers)
 export addMapData, WriterSet, computeWriters, writerFields, listWriters
-# Rendering (removed in a later step of the refactor)
-export render_map, run_render, districtColors
 # Public but not exported (marked `public` once [compat] requires Julia 1.11): nodeIdString, atlasHeaderInfo,
 # listWriterDetails, loadGraph.
 

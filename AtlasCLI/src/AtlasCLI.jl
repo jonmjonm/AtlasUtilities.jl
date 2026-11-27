@@ -4,7 +4,7 @@
 Command-line utilities for redistricting Atlas files (see the Atlas format at
 https://github.com/jonmjonm/AtlasIO.jl/blob/main/atlas_format.md).
 
-Installs a single `mapatlas` command with twelve subcommands:
+Installs a single `mapatlas` command with ten subcommands:
 
   * `mapatlas info <atlas> [--extract-script] [--force]` — print the atlas file
     header, plus the data field names found in its first map; notes when an
@@ -37,15 +37,6 @@ Installs a single `mapatlas` command with twelve subcommands:
     [min, 25% quartile, median, 75% quartile, max].
   * `mapatlas extract-assignments <Atlas1> [--graph <graph.json>] [--no-compression] [--force] [--quiet]` —
     write a single wide CSV of the district assignment of each map, per node (multiscale atlases: per finest unit).
-  * `mapatlas render <Atlas1> <geo> --key <col> [--map k] [--format png|svg|pdf]
-    [--out <path>] [--strip-suffix <regex>] [--county-column <col>]
-    [--county-lines] [--no-precinct-lines] [--skip-missing] [--show]
-    [--quiet]` — draw the districting of a map as a filled-precinct choropleth,
-    using a shapefile or a point-position node-link JSON graph for geometry,
-    and save it to an image file (optionally opening it). Needs the plotting
-    packages, installed once with `mapatlas install-render`.
-  * `mapatlas install-render` — install the plotting packages `mapatlas render` uses
-    (CairoMakie, Shapefile, LibGEOS) into the environment of the `mapatlas` command.
 
 Run `mapatlas --help` or `mapatlas <subcommand> --help` for details.
 """
@@ -53,7 +44,7 @@ module AtlasCLI
 
 using AtlasIO
 using AtlasUtilities
-using AtlasUtilities: atlasHeaderInfo, listWriterDetails, stripAtlasExt, SCRIPT_KEY, run_install_render
+using AtlasUtilities: atlasHeaderInfo, listWriterDetails, stripAtlasExt, SCRIPT_KEY
 using Comonicon
 using CycleWalk        # switches on AtlasUtilities' CycleWalk extension, for `add` and `--add`
 import JSON
@@ -118,15 +109,6 @@ the conversion with an error naming the line and map. The two versions are descr
         n = convertAtlas(src, dst; formatVersion = to, cores = Threads.nthreads())
         quiet || println("converted $n maps to format v$to: $dst")
     end
-end
-
-"""
-Install the plotting packages that `mapatlas render` needs (CairoMakie, Shapefile, LibGEOS) into the
-Julia environment of the `mapatlas` command. Run it once; it downloads and precompiles them, which takes a few minutes.
-The other subcommands never need these packages.
-"""
-@cast function install_render()
-    run_install_render()
 end
 
 """
@@ -468,69 +450,6 @@ Write atlas Atlas1 per-map district assignments to a single wide CSV, named from
             r.scale === nothing || println("Columns (", length(r.units), "): ", r.scale, ".")
         end
     end
-end
-
-"""
-Draw the districting of map `map` (1-based, default 1) of atlas Atlas1 as a filled-precinct choropleth, colored by district, and save it to an image file. Geometry comes from `geo` -- a shapefile (a `.shp` file, or a `.zip` bundling `.shp`/`.shx`/`.dbf`), or a point-position node-link JSON graph (e.g. `Data/hex_graph_10_by_10.json`), the Voronoi cells of whose nodes are used -- matched to the node ids of the atlas via the attribute named by `--key`. By default errors if any node id has no matching geometry record; `--skip-missing` renders anyway, leaving those areas blank.
-
-Drawing needs the plotting packages CairoMakie, Shapefile and LibGEOS, which are not installed with
-AtlasUtilities; install them once with `mapatlas install-render`.
-
-# Args
-
-- `atlas1`: input atlas (`.jsonl` / `.jsonl.gz` / `.jsonl.bz2`).
-- `geo`: path to a `.shp` file, a `.zip` bundling one (e.g. `Data/shapefile_CT.zip`), or a point-position node-link `.json` graph (e.g. `Data/hex_graph_10_by_10.json`).
-
-# Options
-
-- `--key <col>`: required; the attribute whose values match the node ids of the atlas --
-  a shapefile column (e.g. `NAME` for the CT/OH example data) or a point-graph node
-  attribute (e.g. `node_name` for the hex/grid example data). For atlases whose node
-  id has more than one component (e.g. `(county, prec_id)` for NC), pass a
-  comma-separated list of attributes in the same order (e.g. `county,prec_id`); they
-  are joined with `:`, matching how the node id of the atlas itself is rendered as a string.
-  Use `mapatlas list-nodes` on the atlas first to see the exact id format expected.
-- `--strip-suffix <regex>`: strip a trailing regex match from each node id before
-  matching it against the geometry source (e.g. some CycleWalk graphs built for
-  legislative-district consistency suffix node ids with `__SD<n>__HD<n>` tags
-  that have no geometry counterpart; pass `"__SD\\d+__HD\\d+"` to strip them).
-- `--county-column <col>`: the county attribute of the geometry source (a shapefile
-  column, or a point-graph node attribute). Some graphs only keep precinct-level
-  detail for counties split by a district line, collapsing an entire unsplit
-  county into one node (e.g. `("GASTON",)` for NC); a node id matching no precinct
-  token at all is then tried case-insensitively against this attribute, and on a
-  match falls back to every precinct in that county (all drawn in the
-  district color of the node). Required by `--county-lines`.
-- `--map <k>`: 1-based index of the map to draw (default: 1).
-- `--format <png|svg|pdf>`: output image format when `--out` is not given
-  (default `png`).
-- `--out <path>`: output file path (default `<Atlas1 basename>-map<k>.<format>`).
-
-# Flags
-
-- `--county-lines`: draw the outline of each county (needs `--county-column`) -- for a
-  shapefile, its rows are dissolved into the true polygon of that county via LibGEOS; for
-  a point-graph, the adjacency of the graph itself supplies the exact shared edge between
-  differing-county neighbors.
-- `--no-precinct-lines`: omit the per-row stroke (drawn by default).
-- `--skip-missing`: render even if some node ids have no (or only a partial)
-  matching geometry record, leaving those areas blank, instead of erroring.
-- `--show`: open the saved image in the default viewer of the OS (`open` on macOS,
-  `xdg-open` on Linux) after writing it.
-- `--quiet`: suppress the confirmation message.
-"""
-@cast function render(atlas1::String, geo::String;
-                      key::String = "", map::Int = 1,
-                      format::String = "png", out::String = "",
-                      strip_suffix::String = "", county_column::String = "",
-                      county_lines::Bool = false, no_precinct_lines::Bool = false,
-                      skip_missing::Bool = false, show::Bool = false,
-                      quiet::Bool = false)
-    run_render(atlas1, geo; key = key, map = map,
-              format = format, out = out, strip_suffix = strip_suffix,
-              county_column = county_column, county_lines = county_lines,
-              precinct_lines = !no_precinct_lines, skip_missing = skip_missing,
-              show = show, quiet = quiet)
 end
 
 # Designate this module as the CLI entry point; its `@cast` functions above
