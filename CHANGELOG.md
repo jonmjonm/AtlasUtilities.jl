@@ -41,6 +41,8 @@
   a rerun would skip as done. An output atlas may now be its input (`mapatlas relabel a.jsonl.gz a.jsonl.gz`).
   `keep_partial = true` (`--keep-partial`) keeps what a failed run wrote, as `out.incomplete.jsonl.gz`, for
   debugging: every map before the one that failed.
+  An input named like the output's temporary or kept file (reading `run.tmp.jsonl.gz` to write `run.jsonl.gz`)
+  is refused rather than overwritten, and a histogram's CSV and JSON are written together or not at all.
 - **A damaged map is located.** Its `AtlasFormatError` names the file, line and map
   (`cut.jsonl, line 23 (map 20): not a valid Atlas map line ...`); before, it said neither.
 - New `public` (not exported) names: `nodeIdString`, `atlasHeaderInfo`, `listWriterDetails`, `loadGraph`.

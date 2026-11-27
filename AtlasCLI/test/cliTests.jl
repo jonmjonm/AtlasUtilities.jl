@@ -64,6 +64,18 @@ mapsof(path) = (io = smartOpen(path, "r"); a = openAtlas(io); ms = Map[]; while 
         @test isempty(filter(f -> occursin(".tmp", f), vcat(readdir(dir), readdir(joinpath(dir, "cut")))))
     end
 
+    @testset "extract-map-data-histogram: an atlas with no maps leaves no directory" begin
+        dir = mktempdir()
+        empty = joinpath(dir, "empty.jsonl")
+        io = smartOpen(empty, "w")
+        newAtlas(io, AtlasHeader("desc", "2026-01-02T03:04:05", Dict{String,Any}, Dict{String,Any}),
+                 Dict{String,Any}("districts" => 2))
+        close(io)
+        code, out = atlascli("extract-map-data-histogram", empty, "--quiet")
+        @test code == 0 && occursin("has no maps; nothing written", out)
+        @test !isdir(joinpath(dir, "empty"))
+    end
+
     @testset "error messages in the terms of the command" begin
         ct = joinpath(EX, "cycleWalk_ct_slice.jsonl.gz")
         err(args...) = try atlascli(args...); nothing catch e; e.msg end

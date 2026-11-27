@@ -3,8 +3,8 @@
 
 using Test
 using AtlasIO
-using AtlasUtilities: relabelAtlas, extractMapData, mapDataHistograms, extractAssignments, tempPath,
-                      incompletePath, writeReplacing
+using AtlasUtilities: relabelAtlas, extractMapData, mapDataHistograms, extractAssignments, writeHistograms,
+                      tempPath, incompletePath, writeReplacing
 
 const PO_CT = joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_slice.jsonl.gz")
 
@@ -140,6 +140,46 @@ tmpFiles(dir) = [f for (_, _, fs) in walkdir(dir) for f in fs if occursin(".tmp"
         end
         @test isfile(joinpath(dir, "cut-assignments.incomplete.csv.gz"))
         @test !isfile(joinpath(dir, "cut-assignments.csv.gz")) && isempty(tmpFiles(dir))
+    end
+
+    @testset "an input named like the output's temporary or kept file is refused, not overwritten" begin
+        dir = mktempdir()
+        src = joinpath(dir, "run.tmp.jsonl.gz")                 # tempPath("run.jsonl.gz")
+        cp(PO_CT, src)
+        before = read(src)
+        e = errorOf(() -> relabelAtlas(src, joinpath(dir, "run.jsonl.gz")))
+        @test e isa ErrorException && startswith(e.msg, "relabelAtlas: the input $src is named like the temporary")
+        @test read(src) == before && !isfile(joinpath(dir, "run.jsonl.gz"))
+        kept = joinpath(dir, "out.incomplete.jsonl.gz")         # incompletePath("out.jsonl.gz")
+        cp(PO_CT, kept)
+        e = errorOf(() -> relabelAtlas(kept, joinpath(dir, "out.jsonl.gz"); keep_partial = true))
+        @test e isa ErrorException && occursin("kept incomplete output", e.msg) && read(kept) == before
+        @test relabelAtlas(kept, joinpath(dir, "out.jsonl.gz")) == 41    # without keep_partial it cannot clash
+    end
+
+    @testset "an atlas with a bad header: an error, and no temporary file left" begin
+        dir = mktempdir()
+        bad = joinpath(dir, "bad.jsonl")
+        write(bad, "not an atlas\n")
+        @test_throws AtlasFormatError relabelAtlas(bad, joinpath(dir, "o.jsonl.gz"))
+        @test isempty(tmpFiles(dir)) && !isfile(joinpath(dir, "o.jsonl.gz"))
+    end
+
+    @testset "writeHistograms: a field's CSV and JSON are written together or not at all" begin
+        dir = mktempdir()
+        hists, _ = mapDataHistograms(PO_CT)
+        field = "get_log_spanning_trees"
+        # The JSON cannot be written (a directory is in the way of its temporary file): no CSV either.
+        mkpath(tempPath(joinpath(dir, field * "-histogram.json.gz")))
+        @test_throws Exception writeHistograms(dir, hists)
+        @test !isfile(joinpath(dir, field * "-histogram.csv.gz"))
+        @test !isfile(joinpath(dir, field * "-histogram.csv.gz") |> tempPath)
+        rm(tempPath(joinpath(dir, field * "-histogram.json.gz")); force = true, recursive = true)
+        r = writeHistograms(dir, hists)            # a rerun writes the pair; it skips only the complete pairs
+        csv, json = joinpath(dir, field * "-histogram.csv.gz"), joinpath(dir, field * "-histogram.json.gz")
+        @test csv in r.written && json in r.written && isfile(csv) && isfile(json)
+        pairOf(p) = replace(p, r"\.csv\.gz$" => ".json.gz", r"\.json\.gz$" => ".csv.gz")
+        @test all(p -> isfile(pairOf(p)), r.skipped)
     end
 
     @testset "mapDataHistograms: a bad map is an error (and the atlas is closed)" begin

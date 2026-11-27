@@ -27,9 +27,25 @@ const BIN = joinpath(first(DEPOT_PATH), "bin", "mapatlas")
 # into another environment, so it would pin the packages it gets by URL from [sources] (StreamHistogram) to the
 # commit it last resolved, however old: a stale one makes the build fail, or install an old version. Set it aside
 # while the environment resolves, so those are fetched afresh, and put it back afterwards.
+const ASIDE = ".aside-during-mapatlas-build"
+aside(path) = path * ASIDE
+# A build killed while they were set aside (a second Ctrl-C, kill -9, out of memory, a CI timeout: the `finally`
+# below never ran) leaves them under that name, where nothing would look for them again. Put such a leftover back
+# first; if a manifest has been made since, that one is current and the leftover is dropped.
+for d in (LIB_DIR, CLI_DIR), f in readdir(d)
+    m = match(Regex("^((Julia)?Manifest(-v[0-9.]+)?\\.toml)" * replace(ASIDE, "." => "\\.") * "\$"), f)
+    m === nothing && continue
+    original = joinpath(d, m.captures[1])
+    if isfile(original)
+        rm(joinpath(d, f))
+        println("Removed $(joinpath(d, f)), left by an interrupted build ($(m.captures[1]) is newer).")
+    else
+        mv(joinpath(d, f), original)
+        println("Restored $original, left set aside by an interrupted build.")
+    end
+end
 manifests = [joinpath(d, f) for d in (LIB_DIR, CLI_DIR)
              for f in readdir(d) if occursin(r"^(Julia)?Manifest(-v[0-9.]+)?\.toml$", f)]
-aside(path) = path * ".aside-during-mapatlas-build"
 setup = """
     import Pkg
     Pkg.develop([Pkg.PackageSpec(path = $(repr(LIB_DIR))), Pkg.PackageSpec(path = $(repr(CLI_DIR)))])

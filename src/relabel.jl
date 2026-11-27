@@ -259,13 +259,20 @@ function relabelAtlas(src::AbstractString, dst::AbstractString;
                       cores::Int = Threads.nthreads(), progress::Bool = false, keep_partial::Bool = false)
     # dst is written under a temporary name and moved into place only once every map is written (see
     # `writeReplacing`), so a failed run leaves no partial atlas; and dst may be src.
-    return writeReplacing(String(dst); keep_partial) do tmp
-        # Start by cloning src's header (lines 1-3), then append maps to it. For .gz output, `AtlasOutput`
-        # compresses the map body as byte-targeted gzip members in parallel (the serial write is only raw
-        # I/O); plain/.bz2 stream as before.
-        outIO = openAtlasOutput(tmp, atlasHeaderBytes(String(src)), cores)
-        atlas = openAtlas(smartOpen(String(src), "r"))
+    return writeReplacing(String(dst); keep_partial, input = String(src), caller = "relabelAtlas") do tmp
+        inIO = smartOpen(String(src), "r")
+        atlas = try
+            openAtlas(inIO)
+        catch
+            close(inIO)
+            rethrow()
+        end
+        outIO = nothing
         try
+            # Start by cloning src's header (lines 1-3), then append maps to it. For .gz output, `AtlasOutput`
+            # compresses the map body as byte-targeted gzip members in parallel (the serial write is only raw
+            # I/O); plain/.bz2 stream as before.
+            outIO = openAtlasOutput(tmp, atlasHeaderBytes(String(src)), cores)
             mpt = atlas.mapParamType
             wt = atlas.weightType
             fv = atlas.formatVersion    # dst copies src's header, so its maps must be in the same version
@@ -370,7 +377,7 @@ function relabelAtlas(src::AbstractString, dst::AbstractString;
             written
         finally
             close(atlas)
-            close(outIO)
+            outIO === nothing || close(outIO)
         end
     end
 end

@@ -41,16 +41,38 @@ function keepOrRemove(tmps, paths, keep_partial::Bool)
 end
 
 """
-    writeReplacing(f, path; keep_partial = false)
+    guardInput(caller, input, path; keep_partial = false)
+
+Error if writing `path` would overwrite the file `input` (the atlas being read): when `input` is the temporary
+file `path` is written under ([`tempPath`](@ref)), or, with `keep_partial`, the file a failed run's output is kept
+as ([`incompletePath`](@ref)) -- e.g. reading `run.tmp.jsonl.gz` to write `run.jsonl.gz`. `caller` names the
+library function in the message. Nothing to check when `input === nothing`.
+"""
+function guardInput(caller::AbstractString, input, path::AbstractString; keep_partial::Bool = false)
+    input === nothing && return nothing
+    for (what, p) in (("temporary file", tempPath(path)), ("kept incomplete output", incompletePath(path)))
+        what == "kept incomplete output" && !keep_partial && continue
+        ispath(p) && ispath(input) && samefile(input, p) &&
+            error("$caller: the input $input is named like the $what of the output $path, so writing the output " *
+                  "would overwrite it; rename the input, or choose another output name.")
+    end
+    return nothing
+end
+
+"""
+    writeReplacing(f, path; keep_partial = false, input = nothing, caller = "writeReplacing")
 
 Write the file `path` through `f(tmp)`, which writes it (and closes it) under the temporary name `tmp` (see
 [`tempPath`](@ref)). When `f` returns, `tmp` is moved onto `path`, replacing any file there, and `f`'s result is
 returned. When `f` throws, `tmp` is removed and `path` is left as it was: a run that fails never leaves a partial
 file under the real name, which a later run would take for finished output, and the input may be the output
 (`relabelAtlas(a, a)`), as it is read whole before being replaced. With `keep_partial`, what was written is kept
-under the [`incompletePath`](@ref) of `path` instead, for debugging.
+under the [`incompletePath`](@ref) of `path` instead, for debugging. Given the `input` file the output is made
+from, it first checks that neither name would overwrite it (see [`guardInput`](@ref)).
 """
-function writeReplacing(f, path::AbstractString; keep_partial::Bool = false)
+function writeReplacing(f, path::AbstractString; keep_partial::Bool = false, input = nothing,
+                        caller::AbstractString = "writeReplacing")
+    guardInput(caller, input, path; keep_partial)
     tmp = tempPath(path)
     try
         result = f(tmp)
