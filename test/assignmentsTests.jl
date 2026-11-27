@@ -2,7 +2,7 @@
 
 using Test
 using AtlasIO
-using AtlasUtilities: run_extract_assignments, assignmentMatrix, loadHierarchy, expandLabels, nodeIdString
+using AtlasUtilities: extractAssignments, assignmentMatrix, loadHierarchy, expandLabels, nodeIdString
 
 """Write an atlas at `path` with one map per entry of `districtings`
 (named m1, m2, ...)."""
@@ -19,7 +19,7 @@ readlines_(path) = filter(!isempty, split(read(path, String), '\n'))
 
 @testset "extract-assignments" begin
 
-    @testset "run_extract_assignments: writes wide CSV, columns sorted, one row per map" begin
+    @testset "extractAssignments: writes wide CSV, columns sorted, one row per map" begin
         dir = mktempdir()
         path = joinpath(dir, "a.jsonl")
         writeAssignmentsAtlas(path, [
@@ -27,11 +27,14 @@ readlines_(path) = filter(!isempty, split(read(path, String), '\n'))
             Districting(("c",) => 2, ("a",) => 1, ("b",) => 2),
         ])
 
+        local r
         out = capture_stdout() do
-            run_extract_assignments(path; compress = false, quiet = true)
+            r = extractAssignments(path; compress = false)
         end
+        @test isempty(out)                                          # the library prints nothing
 
         outpath = joinpath(dir, "a-assignments.csv")
+        @test r.path == outpath && r.nmaps == 2 && r.units == [("a",), ("b",), ("c",)] && r.scale === nothing
         @test isfile(outpath)
         lines = readlines_(outpath)
         @test lines[1] == "name,a,b,c"
@@ -39,36 +42,37 @@ readlines_(path) = filter(!isempty, split(read(path, String), '\n'))
         @test lines[3] == "m2,1,2,2"
     end
 
-    @testset "run_extract_assignments: gzip by default, plain with --no-compression" begin
+    @testset "extractAssignments: gzip by default, plain with --no-compression" begin
         dir = mktempdir()
         path = joinpath(dir, "a.jsonl")
         writeAssignmentsAtlas(path, [Districting(("a",) => 1, ("b",) => 2)])
 
-        run_extract_assignments(path; quiet = true)
+        extractAssignments(path)
         @test isfile(joinpath(dir, "a-assignments.csv.gz"))
         @test !isfile(joinpath(dir, "a-assignments.csv"))
     end
 
-    @testset "run_extract_assignments: skips existing output unless --force" begin
+    @testset "extractAssignments: skips existing output unless --force" begin
         dir = mktempdir()
         path = joinpath(dir, "a.jsonl")
         writeAssignmentsAtlas(path, [Districting(("a",) => 1, ("b",) => 2)])
         outpath = joinpath(dir, "a-assignments.csv")
 
-        run_extract_assignments(path; compress = false, quiet = true)
+        extractAssignments(path; compress = false)
         mtime1 = mtime(outpath)
 
         out = capture_stdout() do
-            run_extract_assignments(path; compress = false, quiet = true)
+            cli_extract_assignments(path; compress = false, quiet = true)
         end
         @test occursin("already exists", out)
+        @test extractAssignments(path; compress = false) === nothing       # the library: skipped, nothing returned
         @test mtime(outpath) == mtime1     # untouched
 
-        run_extract_assignments(path; compress = false, force = true, quiet = true)
+        extractAssignments(path; compress = false, force = true)
         @test isfile(outpath)              # --force rewrites it
     end
 
-    @testset "run_extract_assignments: errors (no partial file) when a map's node set differs" begin
+    @testset "extractAssignments: errors (no partial file) when a map's node set differs" begin
         dir = mktempdir()
         path = joinpath(dir, "a.jsonl")
         writeAssignmentsAtlas(path, [
@@ -78,7 +82,7 @@ readlines_(path) = filter(!isempty, split(read(path, String), '\n'))
 
         # The node sets differ, so the finest regions seen (a, b, c) become the columns; m1 covers no "c".
         logs, err = Test.collect_test_logs() do
-            try run_extract_assignments(path; compress = false, quiet = true); nothing catch e; e end
+            try extractAssignments(path; compress = false); nothing catch e; e end
         end
         @test err isa ErrorException && occursin("map \"m1\" assigns no district to \"c\"", err.msg)
         @test !any(l -> l.level >= Base.CoreLogging.Error, logs)    # an error for the user: no AtlasIO log
@@ -87,12 +91,12 @@ readlines_(path) = filter(!isempty, split(read(path, String), '\n'))
         @test isempty(filter(f -> occursin("assignments", f), readdir(dir)))
     end
 
-    @testset "run_extract_assignments: multi-component node ids, same in every map: joined with ':'" begin
+    @testset "extractAssignments: multi-component node ids, same in every map: joined with ':'" begin
         dir = mktempdir()
         path = joinpath(dir, "a.jsonl")
         writeAssignmentsAtlas(path, [Districting(("county", "tract") => 1, ("county", "t2") => 2),
                                      Districting(("county", "tract") => 2, ("county", "t2") => 1)])
-        run_extract_assignments(path; compress = false, quiet = true)
+        extractAssignments(path; compress = false)
         @test readlines_(joinpath(dir, "a-assignments.csv")) == ["name,county:t2,county:tract", "m1,2,1", "m2,1,2"]
     end
 
@@ -112,7 +116,7 @@ readlines_(path) = filter(!isempty, split(read(path, String), '\n'))
         writeAssignmentsAtlas(path, multiscale; params = levelsParams)
         logs, out = Test.collect_test_logs() do
             capture_stdout() do
-                run_extract_assignments(path; compress = false)
+                cli_extract_assignments(path; compress = false)
             end
         end
         @test occursin("multiscale", out) && occursin("finest regions seen in the atlas", out)
@@ -127,7 +131,7 @@ readlines_(path) = filter(!isempty, split(read(path, String), '\n'))
         path, g = joinpath(dir, "ms.jsonl.gz"), joinpath(dir, "g.json")
         writeAssignmentsAtlas(path, multiscale; params = levelsParams)
         write(g, graphJSON)
-        run_extract_assignments(path; graph = g, compress = false, quiet = true)
+        extractAssignments(path; graph = g, compress = false)
         @test readlines_(joinpath(dir, "ms-assignments.csv")) ==
               ["name,X:1,X:2,Y:1,Y:2,Z:1,Z:2", "m1,1,1,1,2,2,2", "m2,2,1,2,2,1,1"]
     end
@@ -139,13 +143,13 @@ readlines_(path) = filter(!isempty, split(read(path, String), '\n'))
         # the atlas does not say which graph attributes its keys are
         p1 = joinpath(dir, "nolevels.jsonl")
         writeAssignmentsAtlas(p1, multiscale)
-        err = try run_extract_assignments(p1; graph = g, compress = false, quiet = true); nothing catch e; e end
+        err = try extractAssignments(p1; graph = g, compress = false); nothing catch e; e end
         @test err isa ErrorException && occursin("levels in graph", err.msg)
         # a map uses a county the graph does not have
         p2 = joinpath(dir, "unknown.jsonl")
         writeAssignmentsAtlas(p2, [multiscale[1], Districting(("X",) => 1, ("Y",) => 2, ("W",) => 1)];
                               params = levelsParams)
-        err = try run_extract_assignments(p2; graph = g, compress = false, quiet = true); nothing catch e; e end
+        err = try extractAssignments(p2; graph = g, compress = false); nothing catch e; e end
         @test err isa ErrorException && occursin("map \"m2\" has node \"W\"", err.msg)
         @test isempty(filter(f -> occursin("assignments", f), readdir(dir)))
     end
@@ -156,7 +160,7 @@ readlines_(path) = filter(!isempty, split(read(path, String), '\n'))
         path = joinpath(dir, "demo_multiscale.jsonl.gz")
         cp(joinpath(ex, "demo_multiscale.jsonl.gz"), path)
         g = joinpath(ex, "demo_multiscale_graph.json")
-        run_extract_assignments(path; graph = g, compress = false, quiet = true)
+        extractAssignments(path; graph = g, compress = false)
         lines = readlines_(joinpath(dir, "demo_multiscale-assignments.csv"))
         cols = split(lines[1], ',')[2:end]
 
@@ -196,7 +200,7 @@ readlines_(path) = filter(!isempty, split(read(path, String), '\n'))
     "`assignmentMatrix(path; kw...)` and the CSV `extract-assignments` writes with the same options agree."
     function sameAsCSV(path; kw...)
         A = assignmentMatrix(path; kw...)
-        run_extract_assignments(path; compress = false, force = true, quiet = true, kw...)
+        extractAssignments(path; compress = false, force = true, kw...)
         lines = readlines_(replace(path, r"\.jsonl(\.gz)?$" => "-assignments.csv"))
         rows = csvsplit.(lines[2:end])
         return csvsplit(lines[1])[2:end] == A.unitNames && A.unitNames == nodeIdString.(A.units) &&
@@ -224,8 +228,7 @@ readlines_(path) = filter(!isempty, split(read(path, String), '\n'))
         write(g, graphJSON)
         @test sameAsCSV(ms; graph = g)                               # the graph's finest units
         @test assignmentMatrix(ms; graph = g).districts == [1 1 1 2 2 2; 2 1 2 2 1 1]
-        out = capture_stdout(() -> assignmentMatrix(ms; quiet = false))
-        @test occursin("multiscale", out)
+        @test isempty(capture_stdout(() -> assignmentMatrix(ms)))       # the library prints nothing
 
         ex = joinpath(@__DIR__, "..", "examples")
         demo = joinpath(dir, "demo_multiscale.jsonl.gz")
@@ -262,15 +265,16 @@ readlines_(path) = filter(!isempty, split(read(path, String), '\n'))
         @test isempty(E.names) && isempty(E.units) && size(E.districts) == (0, 0)
     end
 
-    @testset "run_extract_assignments: no maps prints a message, writes nothing" begin
+    @testset "extractAssignments: no maps prints a message, writes nothing" begin
         dir = mktempdir()
         path = joinpath(dir, "a.jsonl")
         writeAssignmentsAtlas(path, Districting[])
 
         out = capture_stdout() do
-            run_extract_assignments(path; compress = false, quiet = true)
+            cli_extract_assignments(path; compress = false, quiet = true)
         end
         @test occursin("no maps", out)
+        @test extractAssignments(path; compress = false).nmaps == 0
         @test isempty(filter(f -> occursin("assignments", f), readdir(dir)))
     end
 

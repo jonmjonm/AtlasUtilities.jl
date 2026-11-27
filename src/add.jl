@@ -1,6 +1,7 @@
-# add.jl -- the `atlas add` subcommand.
+# add.jl -- evaluating CycleWalk writer functions on maps: building a `WriterSet`, `computeWriters`,
+# `addMapData` (`atlas add`), and the hook `extractMapData` and `mapDataHistograms` use.
 #
-# Read every map in an input atlas Atlas1, reconstruct each map's LinkCutPartition on
+# `addMapData` reads every map in an input atlas Atlas1, reconstructs each map's LinkCutPartition on
 # a supplied dual graph, evaluate one or more CycleWalk "pushable writer"
 # functions on it (the very functions you would hand to `push_writer!` during a
 # CycleWalk run), append their results to the map's data, and write the augmented
@@ -8,8 +9,8 @@
 #
 # A CycleWalk atlas stores only districtings (keys like `("DAVIDSON_18",)`), not
 # the graph, so the graph and the columns needed to build it must be supplied
-# externally -- via a CycleWalk TOML `--config`, via explicit column flags, or a
-# mix (flags override / fill in the TOML). We then rebuild each map's partition
+# externally -- via a CycleWalk TOML `config`, via explicit column keywords, or a
+# mix (keywords override / fill in the TOML). We then rebuild each map's partition
 # exactly as CycleWalk does at startup (`MultiLevelPartition(graph, districting)`
 # followed by `LinkCutPartition(partition, rng)`) and evaluate `f(partition)` for
 # each requested function -- the same call CycleWalk's writer makes in `output`.
@@ -22,53 +23,13 @@
 # Resolving the writer functions
 # ---------------------------------------------------------------------------
 
-"""
-    parseFunctionNames(s) -> Vector{String}
-
-Parse the `functions` argument. Accepts a single name (`"get_log_spanning_trees"`),
-a comma-separated list (`"a,b,c"`), or a bracketed list (`["a", "b"]`) -- so the
-same argument covers the "single string" and "list of strings" forms. Surrounding
-brackets, quotes and whitespace are stripped from each name.
-"""
-function parseFunctionNames(s::AbstractString)
-    body = strip(s)
-    body = strip(body, ['[', ']'])
-    names = String[]
-    for part in split(body, ',')
-        name = strip(strip(part), ['"', '\'', ' '])
-        isempty(name) || push!(names, String(name))
-    end
-    isempty(names) && error("no writer function names were given.")
-    return names
-end
-
 # CycleWalk writers that need a pair of vote columns: they are not nullary
 # `f(partition)` writers but are parameterized by two vote columns, and CycleWalk
 # provides a `build_<name>(votes1, votes2)` factory returning the actual
-# `f(partition)` closure. These are driven by the `--vote-cols` flag (see
-# `parseVotePairs`); each requested vote pair produces its own output field
+# `f(partition)` closure. These are driven by `WriterSet`'s `vote_cols` keyword
+# (`--vote-cols`, see `parseVotePairs`); each requested vote pair produces its own output field
 # `<name>_<votes1>_<votes2>`.
 const PARTISAN_WRITERS = Set(["get_partisan_margins", "get_partisan_seats"])
-
-"""
-    parseVotePairs(s) -> Vector{Tuple{String,String}}
-
-Parse the `--vote-cols` argument into `(votes1, votes2)` column pairs. Elections are
-separated by `;`, the two columns of a pair by `,` -- e.g.
-`"G20_PR_D,G20_PR_R;G16_PR_D,G16_PR_R"` gives two pairs. Empty input gives no pairs.
-"""
-function parseVotePairs(s::AbstractString)
-    pairs = Tuple{String,String}[]
-    for part in split(strip(s), ';')
-        isempty(strip(part)) && continue
-        cols = strip.(split(part, ','))
-        length(cols) == 2 && all(!isempty, cols) ||
-            error("vote-column pair \"$part\" (--vote-cols / vote_cols) must be exactly two " *
-                  "comma-separated columns (votes1,votes2).")
-        push!(pairs, (String(cols[1]), String(cols[2])))
-    end
-    return pairs
-end
 
 """All distinct vote column names referenced by `votePairs` (for keeping on the graph)."""
 voteColumns(votePairs) = unique!(String[c for p in votePairs for c in p])
@@ -84,28 +45,27 @@ to `CycleWalk.<name>` directly (the set of names usable with `push_writer!`). A
 `votePairs`: for pair `(v1, v2)` it builds `CycleWalk.build_<name>(v1, v2)` and emits
 the field `<name>_<v1>_<v2>`; requesting one with no `votePairs` is an error.
 """
-function resolveFunctions(names::Vector{String},
-                          votePairs::Vector{Tuple{String,String}} = Tuple{String,String}[])
+function resolveFunctions(names::AbstractVector{<:AbstractString},
+                          votePairs::AbstractVector = Tuple{String,String}[])
     fns = Tuple{String,Function}[]
     for name in names
         if name in PARTISAN_WRITERS
             isempty(votePairs) &&
-                error("\"$name\" needs vote columns; pass --vote-cols (or vote_cols =) " *
-                      "\"votes1,votes2\" (one or more `;`-separated pairs).")
+                error("WriterSet: \"$name\" needs vote columns; pass vote_cols = <pairs of vote columns>.")
             builder = getfield(CycleWalk, Symbol("build_" * name))
             for (v1, v2) in votePairs
-                push!(fns, ("$(name)_$(v1)_$(v2)", builder(v1, v2)))
+                push!(fns, ("$(name)_$(v1)_$(v2)", builder(String(v1), String(v2))))
             end
             continue
         end
         sym = Symbol(name)
         isdefined(CycleWalk, sym) ||
-            error("CycleWalk has no name \"$name\"; it must be a function usable with push_writer! " *
-                  "(see `atlas add --list-writers` or `listWriters()`).")
+            error("WriterSet: CycleWalk has no name \"$name\"; it must be a function usable with push_writer! " *
+                  "(see `listWriters()`).")
         f = getfield(CycleWalk, sym)
         f isa Function ||
-            error("CycleWalk's \"$name\" is not a function.")
-        push!(fns, (name, f))
+            error("WriterSet: CycleWalk's \"$name\" is not a function.")
+        push!(fns, (String(name), f))
     end
     return fns
 end
@@ -191,29 +151,24 @@ function cycleWalkWriterNames()
 end
 
 """
-    run_list_writers()
+    listWriters() -> Vector{String}
 
-Print the CycleWalk writer functions usable with `atlas add <functions>` / `atlas
-extract-map-data --add <functions>` (see [`cycleWalkWriterNames`](@ref)): plain
-writers one per line (marked `(fast)` when they offer the partition-free method
-`allTreeless`/`evalWritersTreeless` can use), then the partisan writers, which
-additionally require `--vote-cols votes1,votes2[;votes1,votes2...]`.
+The writer names `WriterSet` (and `addMapData`) accept, sorted: every CycleWalk `get_*` writer that runs on a
+partition (see [`cycleWalkWriterNames`](@ref)), and the partisan writers `get_partisan_margins` and
+`get_partisan_seats`, which need `vote_cols`.
 """
-function run_list_writers()
-    println("Writer functions usable with atlas add / --add (CycleWalk ",
-            pkgversion(CycleWalk), "):")
-    println()
-    for n in cycleWalkWriterNames()
-        marker = hasFastMethod(getfield(CycleWalk, Symbol(n))) ? " (fast)" : ""
-        println("  ", n, marker)
-    end
-    println()
-    println("Partisan writers (require --vote-cols votes1,votes2[;votes1,votes2...]):")
-    for n in sort(collect(PARTISAN_WRITERS))
-        println("  ", n)
-    end
-    return nothing
-end
+listWriters() = sort!(vcat(cycleWalkWriterNames(), collect(PARTISAN_WRITERS)))
+
+"""
+    listWriterDetails() -> (plain = Vector{Tuple{String,Bool}}, partisan = Vector{String})
+
+The writers of [`listWriters`](@ref), in two groups, each sorted: `plain`, each writer's name and whether it is
+fast (it offers the partition-free method `allTreeless`/`evalWritersTreeless` use, so no partition is rebuilt),
+and `partisan`, the writers that also need `vote_cols`.
+"""
+listWriterDetails() =
+    (plain = [(n, hasFastMethod(getfield(CycleWalk, Symbol(n)))) for n in cycleWalkWriterNames()],
+     partisan = sort(collect(PARTISAN_WRITERS)))
 
 # ---------------------------------------------------------------------------
 # Resolving the graph specification
@@ -238,20 +193,21 @@ struct GraphSpec
 end
 
 """
-    resolveGraphSpec(; config, graph, pop_col, node_col, area_col, border_col,
-                       edge_perimeter_col, node_data) -> GraphSpec
+    resolveGraphSpec(caller; config, graph, pop_col, node_col, area_col, border_col,
+                     edge_perimeter_col, node_data) -> GraphSpec
 
 Build the `GraphSpec` from an optional CycleWalk TOML `config` (its `[plans]`
 table: `map_directory`/`map_file`, `pop_col`, `geo_units`, `area_col`,
-`node_border_col`, `edge_perimeter_col`, `node_data`), then apply the CLI
-overrides -- any non-empty flag replaces the corresponding TOML value, so the
-flags can also stand alone with no TOML at all.
+`node_border_col`, `edge_perimeter_col`, `node_data`), then apply the keyword
+overrides -- any one given (not `nothing` or empty) replaces the corresponding TOML value, so the
+keywords can also stand alone with no TOML at all. `caller` names the function in the error messages.
 """
-function resolveGraphSpec(; config::AbstractString, graph::AbstractString,
-                          pop_col::AbstractString, node_col::AbstractString,
-                          area_col::AbstractString, border_col::AbstractString,
-                          edge_perimeter_col::AbstractString,
-                          node_data::AbstractString)
+function resolveGraphSpec(caller::AbstractString = "loadGraph";
+                          config::OptString = nothing, graph::OptString = nothing,
+                          pop_col::OptString = nothing, node_col::OptString = nothing,
+                          area_col::OptString = nothing, border_col::OptString = nothing,
+                          edge_perimeter_col::OptString = nothing,
+                          node_data::AbstractVector{<:AbstractString} = String[])
     path = ""
     pc = ""
     levels = String[]
@@ -260,7 +216,7 @@ function resolveGraphSpec(; config::AbstractString, graph::AbstractString,
     ec = nothing
     nd = Set{String}()
 
-    if !isempty(config)
+    if isgiven(config)
         params = TOML.parsefile(String(config))
         plans = get(params, "plans", Dict{String,Any}())
         if haskey(plans, "map_file")
@@ -275,21 +231,21 @@ function resolveGraphSpec(; config::AbstractString, graph::AbstractString,
         haskey(plans, "node_data")          && (nd = Set(String.(plans["node_data"])))
     end
 
-    # CLI overrides (a non-empty flag wins over / fills in the TOML).
-    isempty(graph)              || (path = String(graph))
-    isempty(pop_col)            || (pc = String(pop_col))
-    isempty(node_col)           || (levels = [String(node_col)])
-    isempty(area_col)           || (ac = String(area_col))
-    isempty(border_col)         || (bc = String(border_col))
-    isempty(edge_perimeter_col) || (ec = String(edge_perimeter_col))
-    isempty(node_data)          || (nd = Set(String.(strip.(split(node_data, ',')))))
+    # Keyword overrides (a given keyword wins over / fills in the TOML).
+    isgiven(graph)              && (path = String(graph))
+    isgiven(pop_col)            && (pc = String(pop_col))
+    isgiven(node_col)           && (levels = [String(node_col)])
+    isgiven(area_col)           && (ac = String(area_col))
+    isgiven(border_col)         && (bc = String(border_col))
+    isgiven(edge_perimeter_col) && (ec = String(edge_perimeter_col))
+    isempty(node_data)          || (nd = Set(String.(node_data)))
 
-    isempty(path) && error("no graph given; pass --graph (graph =) or a --config (config =) " *
+    isempty(path) && error("$caller: no graph given; pass graph = <graph.json>, or config = <param.toml> " *
                            "whose [plans] has map_file.")
-    isempty(pc)   && error("no population column; pass --pop-col (pop_col =) or " *
-                           "[plans].pop_col in the config.")
-    isempty(levels) && error("no node column; pass --node-col (node_col =) or " *
-                             "[plans].geo_units in the config.")
+    isempty(pc)   && error("$caller: no population column; pass pop_col = <column>, or [plans].pop_col in " *
+                           "the config.")
+    isempty(levels) && error("$caller: no node column; pass node_col = <column>, or [plans].geo_units in " *
+                             "the config.")
 
     # Make sure the graph keeps the columns the reconstruction and functions need.
     union!(nd, Set(levels))
@@ -309,12 +265,22 @@ function buildGraph(spec::GraphSpec)
                  edge_perimeter_col = spec.edge_perimeter_col)
 end
 
+"""
+    loadGraph(; config = nothing, graph = nothing, pop_col = nothing, node_col = nothing, area_col = nothing,
+              border_col = nothing, edge_perimeter_col = nothing, node_data = String[])
+
+The CycleWalk dual graph (a `MultiLevelGraph`) described as for [`WriterSet`](@ref): a CycleWalk TOML `config`
+(its `[plans]` table) and/or the keywords, which override it. The graph keeps the node attributes in `node_data`
+plus the columns named by the other keywords.
+"""
+loadGraph(; kw...) = buildGraph(resolveGraphSpec("loadGraph"; kw...))
+
 # ---------------------------------------------------------------------------
 # Header provenance
 # ---------------------------------------------------------------------------
 
 """
-    provenanceHeaderBytes(Atlas1, names, spec) -> Vector{UInt8}
+    provenanceHeaderBytes(Atlas1, names, graphPath) -> Vector{UInt8}
 
 Atlas1's header (its three lines) with an `"added map data"` provenance entry appended
 to line 3 (the atlas params) -- recording which fields were added, from which graph,
@@ -324,7 +290,7 @@ readers ignore it while `atlas info` surfaces it; the declared `mapParamType`
 (`Dict{String,Any}`) is unchanged, since adding keys to each map's data does not
 change its type.
 """
-function provenanceHeaderBytes(Atlas1::AbstractString, names::Vector{String}, spec::GraphSpec)
+function provenanceHeaderBytes(Atlas1::AbstractString, names::Vector{String}, graphPath::AbstractString)
     src = smartOpen(String(Atlas1), "r")
     line1 = readline(src)   # fixed description line
     line2 = readline(src)   # AtlasHeader
@@ -335,7 +301,8 @@ function provenanceHeaderBytes(Atlas1::AbstractString, names::Vector{String}, sp
     # written back unchanged: same key order, and exact numbers. (JSON3 into a Dict
     # scrambled the key order, read 0.0 back as 0, and corrupted integers beyond 2^53.)
     atlasParam = JSON.parse(line3)
-    entry = (by = "atlas add", fields = names, graph = spec.path, date = string(Dates.now()))
+    # "by" stays "atlas add" (what earlier versions wrote), whether from the command or `addMapData`.
+    entry = (by = "atlas add", fields = names, graph = String(graphPath), date = string(Dates.now()))
     prior = get(atlasParam, "added map data", nothing)
     log = prior === nothing ? Any[] : collect(Any, prior)
     push!(log, entry)
@@ -350,17 +317,17 @@ function provenanceHeaderBytes(Atlas1::AbstractString, names::Vector{String}, sp
 end
 
 """
-    writeHeaderWithProvenance(Atlas1, Atlas2, names, spec)
+    writeHeaderWithProvenance(Atlas1, Atlas2, names, graphPath)
 
 Write Atlas2's header from Atlas1's with the `atlas add` provenance stamp (see
 [`provenanceHeaderBytes`](@ref)), through a plain/compressed stream chosen by Atlas2's
-extension. Used on its own (e.g. in tests); `run_add` instead feeds the same header
+extension. Used on its own (e.g. in tests); `addMapData` instead feeds the same header
 bytes to an `AtlasOutput`.
 """
 function writeHeaderWithProvenance(Atlas1::AbstractString, Atlas2::AbstractString,
-                                   names::Vector{String}, spec::GraphSpec)
+                                   names::Vector{String}, graphPath::AbstractString)
     out = smartOpen(String(Atlas2), "w")
-    write(out, provenanceHeaderBytes(String(Atlas1), names, spec))
+    write(out, provenanceHeaderBytes(String(Atlas1), names, graphPath))
     close(out)
     return nothing
 end
@@ -525,78 +492,139 @@ path that builds no partition object at all; otherwise it falls back to the
 always-correct [`evalWritersLCP`](@ref) (which realigns per-district results via
 `labelPermutation`/`alignResult`). Both paths agree to machine precision. The `treeless`
 decision depends only on `fns`, so the drivers resolve it once per run and pass it in;
-callers may omit it. Shared by `atlas add` and `atlas extract-map-data`.
+callers may omit it. Shared by `addMapData`, `computeWriters`, `extractMapData` and `mapDataHistograms`.
 """
 evalWriters(g, m, fns; treeless::Bool = allTreeless(fns)) =
     treeless ? evalWritersTreeless(g, m, fns) : evalWritersLCP(g, m, fns)
 
 # ---------------------------------------------------------------------------
-# Driver
+# WriterSet and computeWriters
+# ---------------------------------------------------------------------------
+
+function WriterSet(functions::AbstractVector{<:AbstractString};
+                   config::OptString = nothing, graph::OptString = nothing, pop_col::OptString = nothing,
+                   node_col::OptString = nothing, area_col::OptString = nothing, border_col::OptString = nothing,
+                   edge_perimeter_col::OptString = nothing,
+                   node_data::AbstractVector{<:AbstractString} = String[],
+                   vote_cols::AbstractVector = Tuple{String,String}[])
+    isempty(functions) && error("WriterSet: no writer function names were given.")
+    for p in vote_cols
+        (p isa Tuple{AbstractString,AbstractString}) ||
+            error("WriterSet: vote_cols = must be a vector of (votes1, votes2) column pairs, got $(repr(p)).")
+    end
+    writers = resolveFunctions(functions, vote_cols)
+    spec = resolveGraphSpec("WriterSet"; config, graph, pop_col, node_col, area_col, border_col,
+                            edge_perimeter_col, node_data)
+    union!(spec.node_data, Set(voteColumns(vote_cols)))      # the partisan writers read the vote columns
+    return WriterSet(buildGraph(spec), writers, allTreeless(writers), spec.path)
+end
+
+"""
+    computeWriters(ws::WriterSet, m::Map) -> Dict{String,Any}
+    computeWriters(ws::WriterSet, maps::AbstractVector{<:Map}; cores = Threads.nthreads())
+        -> Vector{Dict{String,Any}}
+
+Evaluate the writers of `ws` on map `m`: each field (see `writerFields`) => its value, a per-district vector
+indexed by the map's own district numbers (entry `i` describes district `i` of `m.districting`) or a scalar,
+exactly the values `addMapData` writes into the map's data. The map's partition is rebuilt on the graph as
+CycleWalk does at startup (or skipped, for writers with a partition-free method); the statistics depend only on
+the districting.
+
+The vector form evaluates the maps in parallel across `cores` threads and returns the results in order.
+
+    computeWriters(ws::WriterSet, path::AbstractString; cores = Threads.nthreads(), skip = 0, max = typemax(Int))
+    computeWriters(ws::WriterSet, atlas::Atlas; ...)
+
+The writers on every map of an atlas file (or an open `Atlas`), streamed: an iterator giving
+`(name = m.name, weight = m.weight, values = computeWriters(ws, m))` for each map, in file order, with the maps
+read and evaluated in parallel across `cores` tasks (AtlasIO's `eachMap(f, ...)`), so the whole atlas is never
+in memory. `skip` maps are skipped first (a burn-in) and at most `max` are read; from a `path` the file is
+closed when the last map has been read. With several threads, run it with BLAS on one thread
+(`BLAS.set_num_threads(1)`; the vector form does this for you), or BLAS's threads compete with the tasks.
+"""
+computeWriters(ws::WriterSet, m::Map) = evalWriters(ws.graph, m, ws.writers; treeless = ws.treeless)
+
+function computeWriters(ws::WriterSet, maps::AbstractVector{<:Map}; cores::Int = Threads.nthreads())
+    out = Vector{Dict{String,Any}}(undef, length(maps))
+    with_serial_blas() do
+        parallelDo!(length(maps), cores) do i
+            out[i] = computeWriters(ws, maps[i])
+        end
+    end
+    return out
+end
+
+computeWriters(ws::WriterSet, source::Union{AbstractString,Atlas}; cores::Int = Threads.nthreads(),
+               skip::Integer = 0, max::Integer = typemax(Int)) =
+    eachMap(m -> (name = m.name, weight = m.weight, values = computeWriters(ws, m)), source;
+            ntasks = cores, skip = skip, max = max)
+
+"""
+    evalWriterSet(ws::WriterSet, m, fields = nothing) -> Dict{String,Any}
+
+The hook `extractMapData` and `mapDataHistograms` evaluate their `writers` with: [`computeWriters`](@ref)`(ws, m)`,
+or with `fields` (a collection of field names), only the writers giving those fields, so a field whose output
+file is kept is not computed. The fast path is chosen for the writers actually evaluated, as `addMapData` does.
+"""
+function evalWriterSet(ws::WriterSet, m, fields = nothing)
+    fields === nothing && return computeWriters(ws, m)
+    fns = [(n, f) for (n, f) in ws.writers if n in fields]
+    isempty(fns) && return Dict{String,Any}()
+    return evalWriters(ws.graph, m, fns)
+end
+
+# ---------------------------------------------------------------------------
+# addMapData
 # ---------------------------------------------------------------------------
 
 """
-    run_add(functions, Atlas1, Atlas2; config, graph, pop_col, node_col, area_col,
-            border_col, edge_perimeter_col, node_data, overwrite, quiet,
-            cores = Threads.nthreads())
+    addMapData(src, dst, ws::WriterSet; overwrite = false, cores = Threads.nthreads(), progress = false) -> Int
+    addMapData(src, dst, functions; config, graph, pop_col, node_col, area_col, border_col, edge_perimeter_col,
+               node_data, vote_cols, overwrite = false, cores = Threads.nthreads(), progress = false) -> Int
 
-Add the CycleWalk writer function(s) named by `functions` to every map in atlas
-`Atlas1`, writing the augmented atlas to `Atlas2`. The graph is described by `config`
-and/or the column keyword arguments (see `resolveGraphSpec`). By default it is an
-error for a requested field to already exist on a map; pass `overwrite = true` to
-recompute it instead. `quiet` suppresses the progress bar.
+Add the values of the writers in `ws` (see [`WriterSet`](@ref)) to the data of every map in atlas `src`, writing
+the augmented atlas to `dst`, and return the number of maps written. The second form builds the `WriterSet` from
+the writer names `functions` and the graph keywords first. `dst`'s header is `src`'s, in the same format version,
+with an `"added map data"` entry recording the fields, the graph and the date. By default it is an error for a
+requested field to already exist on a map; pass `overwrite = true` to recompute it instead. `progress` shows a
+progress bar.
 
 The per-map work (parse -> reconstruct partition -> evaluate writers -> serialize)
 is independent across maps and is threaded across `cores` tasks; maps are written
-to `Atlas2` serially in order. `cores` defaults to the threads Julia was started with,
+to `dst` serially in order. `cores` defaults to the threads Julia was started with,
 so a single thread runs serially.
 """
-function run_add(functions::AbstractString, Atlas1::AbstractString, Atlas2::AbstractString;
-                 config::AbstractString = "", graph::AbstractString = "",
-                 pop_col::AbstractString = "", node_col::AbstractString = "",
-                 area_col::AbstractString = "", border_col::AbstractString = "",
-                 edge_perimeter_col::AbstractString = "",
-                 node_data::AbstractString = "", vote_cols::AbstractString = "",
-                 overwrite::Bool = false, quiet::Bool = false,
-                 cores::Int = Threads.nthreads())
-    names = parseFunctionNames(functions)
-    votePairs = parseVotePairs(vote_cols)
-    fns = resolveFunctions(names, votePairs)
-    treeless = allTreeless(fns)     # fast-path decision depends only on fns; resolve once
-    spec = resolveGraphSpec(; config = config, graph = graph, pop_col = pop_col,
-                            node_col = node_col, area_col = area_col,
-                            border_col = border_col,
-                            edge_perimeter_col = edge_perimeter_col,
-                            node_data = node_data)
-    # Keep the vote columns on the graph so the partisan writers can read them.
-    union!(spec.node_data, Set(voteColumns(votePairs)))
-    g = buildGraph(spec)
+function addMapData(src::AbstractString, dst::AbstractString, ws::WriterSet;
+                    overwrite::Bool = false, progress::Bool = false, cores::Int = Threads.nthreads())
+    fns = ws.writers
+    treeless = ws.treeless      # fast-path decision depends only on fns; resolved once
+    g = ws.graph
 
-    # Start Atlas2 with Atlas1's header plus a provenance stamp (the actual field names, so
+    # Start dst with src's header plus a provenance stamp (the actual field names, so
     # expanded partisan fields are recorded), then append maps to it. For .gz output,
     # `AtlasOutput` compresses the map body as byte-targeted gzip members in parallel
     # (the serial write is only raw I/O); plain/.bz2 stream as before.
-    header = provenanceHeaderBytes(String(Atlas1), [d for (d, _) in fns], spec)
-    outIO = openAtlasOutput(String(Atlas2), header, cores)
+    header = provenanceHeaderBytes(String(src), writerFields(ws), ws.graphPath)
+    outIO = openAtlasOutput(String(dst), header, cores)
 
-    inIO = smartOpen(String(Atlas1), "r")
+    inIO = smartOpen(String(src), "r")
     atlas = openAtlas(inIO)
-    fv = atlas.formatVersion    # Atlas2's header comes from Atlas1's, so its maps must be in the same version
+    fv = atlas.formatVersion    # dst's header comes from src's, so its maps must be in the same version
 
-    progress = quiet ? nothing :
-               ProgressUnknown(desc = "Adding map data:", spinner = true)
+    bar = progress ? ProgressUnknown(desc = "Adding map data:", spinner = true) : nothing
     written = 0
 
     # Per map, parse + reconstruct + evaluate + serialize in parallel (AtlasIO's
-    # `eachMap(f, ...)`), then write the serialized bytes to Atlas2 in map order,
+    # `eachMap(f, ...)`), then write the serialized bytes to dst in map order,
     # BATCH maps per `writeMaps!` (which gzips a batch in parallel). A field that is
-    # already there (without --overwrite) is an error meant for the user: it is
+    # already there (without `overwrite`) is an error meant for the user: it is
     # returned as a `CapturedError` and raised here, at the first such map.
     function addTo(m)
         if !overwrite
             for (desc, _) in fns
                 haskey(m.data, desc) &&
-                    return CapturedError(ErrorException("atlas add: map \"$(m.name)\" already has field " *
-                                                        "\"$desc\"; pass --overwrite to recompute it."))
+                    return CapturedError(ErrorException("addMapData: map \"$(m.name)\" already has field " *
+                                                        "\"$desc\"; pass overwrite = true to recompute it."))
             end
         end
         for (desc, val) in evalWriters(g, m, fns; treeless = treeless)
@@ -607,24 +635,30 @@ function run_add(functions::AbstractString, Atlas1::AbstractString, Atlas2::Abst
         return take!(buf)
     end
     bytes = Vector{UInt8}[]
-    with_serial_blas() do
-        for b in eachMap(addTo, atlas; ntasks = cores)
-            raiseCaptured(b)
-            push!(bytes, b)
-            if length(bytes) == BATCH
-                writeMaps!(outIO, bytes)
-                empty!(bytes)
+    try
+        with_serial_blas() do
+            for b in eachMap(addTo, atlas; ntasks = cores)
+                raiseCaptured(b)
+                push!(bytes, b)
+                if length(bytes) == BATCH
+                    writeMaps!(outIO, bytes)
+                    empty!(bytes)
+                end
+                written += 1
+                bar === nothing || next!(bar; showvalues = [("maps written", written)])
             end
-            written += 1
-            progress === nothing ||
-                next!(progress; showvalues = [("maps written", written)])
+            isempty(bytes) || writeMaps!(outIO, bytes)
         end
-        isempty(bytes) || writeMaps!(outIO, bytes)
+        bar === nothing || finish!(bar; showvalues = [("maps written", written)])
+    finally
+        close(atlas)
+        close(outIO)
     end
-    progress === nothing ||
-        finish!(progress; showvalues = [("maps written", written)])
+    return written
+end
 
-    close(atlas)
-    close(outIO)
-    return nothing
+function addMapData(src::AbstractString, dst::AbstractString,
+                    functions::Union{AbstractString,AbstractVector{<:AbstractString}};
+                    overwrite::Bool = false, progress::Bool = false, cores::Int = Threads.nthreads(), kw...)
+    return addMapData(src, dst, WriterSet(functions; kw...); overwrite, progress, cores)
 end

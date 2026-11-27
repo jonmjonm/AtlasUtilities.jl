@@ -3,7 +3,7 @@
 using Test
 using AtlasIO
 import JSON
-using AtlasUtilities: nodeIdString, run_list_nodes
+using AtlasUtilities: nodeIdString, listNodes
 
 """Write an atlas at `path` with one map per entry of `districtings`
 (named m1, m2, ...)."""
@@ -24,19 +24,20 @@ end
         @test nodeIdString(("county", "tract")) == "county:tract"
     end
 
-    @testset "run_list_nodes: prints sorted JSON array for the first map by default" begin
+    @testset "atlas list-nodes: prints sorted JSON array for the first map by default" begin
         dir = mktempdir()
         path = joinpath(dir, "a.jsonl")
         writeNodesAtlas(path, [Districting(("c",) => 1, ("a",) => 1, ("b",) => 2)])
 
         out = capture_stdout() do
-            run_list_nodes(path)
+            cli_list_nodes(path)
         end
 
         @test JSON.parse(out) == ["a", "b", "c"]
+        @test listNodes(path) == ["a", "b", "c"]                    # the library returns them
     end
 
-    @testset "run_list_nodes: --map selects the k-th map (1-based)" begin
+    @testset "atlas list-nodes: --map selects the k-th map (1-based)" begin
         dir = mktempdir()
         path = joinpath(dir, "a.jsonl")
         writeNodesAtlas(path, [
@@ -45,46 +46,46 @@ end
         ])
 
         out = capture_stdout() do
-            run_list_nodes(path; map = 2)
+            cli_list_nodes(path; map = 2)
         end
 
         @test JSON.parse(out) == ["x", "y", "z"]
     end
 
-    @testset "run_list_nodes: multiscale node ids joined with ':'" begin
+    @testset "atlas list-nodes: multiscale node ids joined with ':'" begin
         dir = mktempdir()
         path = joinpath(dir, "a.jsonl")
         writeNodesAtlas(path, [Districting(("X", "2") => 1, ("X", "1") => 1, ("Y", "1") => 2)])
 
         out = capture_stdout() do
-            run_list_nodes(path)
+            cli_list_nodes(path)
         end
 
         @test JSON.parse(out) == ["X:1", "X:2", "Y:1"]
     end
 
-    @testset "run_list_nodes: errors when map index exceeds the atlas's map count" begin
+    @testset "atlas list-nodes: errors when map index exceeds the atlas's map count" begin
         dir = mktempdir()
         path = joinpath(dir, "a.jsonl")
         writeNodesAtlas(path, [Districting(("a",) => 1, ("b",) => 2)])
 
-        @test_throws ErrorException run_list_nodes(path; map = 2)
+        @test_throws ErrorException cli_list_nodes(path; map = 2)
     end
 
-    @testset "run_list_nodes: errors on an atlas with no maps" begin
+    @testset "atlas list-nodes: errors on an atlas with no maps" begin
         dir = mktempdir()
         path = joinpath(dir, "a.jsonl")
         writeNodesAtlas(path, Districting[])
 
-        @test_throws ErrorException run_list_nodes(path)
+        @test_throws ErrorException cli_list_nodes(path)
     end
 
-    @testset "run_list_nodes: --map must be >= 1" begin
+    @testset "atlas list-nodes: --map must be >= 1" begin
         dir = mktempdir()
         path = joinpath(dir, "a.jsonl")
         writeNodesAtlas(path, [Districting(("a",) => 1)])
 
-        @test_throws ErrorException run_list_nodes(path; map = 0)
+        @test_throws ErrorException cli_list_nodes(path; map = 0)
     end
 
 end

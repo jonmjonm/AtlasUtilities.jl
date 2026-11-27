@@ -7,19 +7,18 @@ using Test
 using AtlasIO
 import JSON
 using CycleWalk: get_log_spanning_trees, get_isoperimetric_scores
+import CycleWalk
 using AtlasUtilities: parseFunctionNames, resolveFunctions, resolveGraphSpec,
-                     writeHeaderWithProvenance, GraphSpec, run_add, buildGraph,
+                     writeHeaderWithProvenance, GraphSpec, addMapData, buildGraph, loadGraph,
                      evalWriters, evalWritersTreeless, evalWritersLCP, allTreeless,
-                     hasFastMethod, parseVotePairs, voteColumns,
-                     cycleWalkWriterNames, run_list_writers, PARTISAN_WRITERS,
+                     hasFastMethod, parseVotePairs, parseNodeData, voteColumns,
+                     cycleWalkWriterNames, listWriterDetails, PARTISAN_WRITERS,
                      add, smokeTestPartition, writerWorks
 
 # capture_stdout is defined in infoTests.jl, included before this file (see runtests.jl).
 
-# resolveGraphSpec takes only keyword arguments; default them all to "".
-rgs(; kw...) = resolveGraphSpec(; config = "", graph = "", pop_col = "",
-                                node_col = "", area_col = "", border_col = "",
-                                edge_perimeter_col = "", node_data = "", kw...)
+# resolveGraphSpec's keywords are all optional.
+rgs(; kw...) = resolveGraphSpec("test"; kw...)
 
 @testset "add" begin
 
@@ -68,12 +67,12 @@ rgs(; kw...) = resolveGraphSpec(; config = "", graph = "", pop_col = "",
         graph = joinpath(@__DIR__, "..", "Data", "CT_pct20.json")
         oracle = joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_slice.jsonl.gz")
         Atlas2 = joinpath(mktempdir(), "listed_writers_smoke.jsonl.gz")
-        run_add(join(writerNames, ","), oracle, Atlas2;
-                graph = graph, pop_col = "POP20", node_col = "NAME",
-                area_col = "area", border_col = "border_length",
-                edge_perimeter_col = "length",
-                node_data = "COUNTY,NAME,POP20,area,border_length",
-                overwrite = true, quiet = true)   # must not throw
+        addMapData(oracle, Atlas2, writerNames;
+                   graph = graph, pop_col = "POP20", node_col = "NAME",
+                   area_col = "area", border_col = "border_length",
+                   edge_perimeter_col = "length",
+                   node_data = ["COUNTY", "NAME", "POP20", "area", "border_length"],
+                   overwrite = true)   # must not throw
 
         a = openAtlas(smartOpen(Atlas2, "r"))
         m = nextMap(a)
@@ -89,9 +88,13 @@ rgs(; kw...) = resolveGraphSpec(; config = "", graph = "", pop_col = "",
         @test !writerWorks((_p) -> error("boom"), p)
     end
 
-    @testset "run_list_writers: prints plain + partisan writers" begin
+    @testset "listWriterDetails, and atlas add --list-writers prints plain + partisan writers" begin
+        d = listWriterDetails()
+        @test first.(d.plain) == cycleWalkWriterNames()
+        @test all(fast == hasFastMethod(getfield(CycleWalk, Symbol(n))) for (n, fast) in d.plain)
+        @test d.partisan == ["get_partisan_margins", "get_partisan_seats"]
         out = capture_stdout() do
-            run_list_writers()
+            cli_list_writers()
         end
         @test occursin("get_log_spanning_trees", out)
         @test occursin("get_partisan_margins", out)
@@ -126,7 +129,9 @@ rgs(; kw...) = resolveGraphSpec(; config = "", graph = "", pop_col = "",
     end
 
     @testset "resolveGraphSpec: missing required pieces error" begin
-        @test_throws ErrorException rgs(pop_col = "POP20", node_col = "NAME")   # no graph
+        err = try rgs(pop_col = "POP20", node_col = "NAME"); nothing catch e; e end     # no graph
+        @test err isa ErrorException && startswith(err.msg, "test: no graph given") && occursin("graph =", err.msg)
+        @test_throws ErrorException rgs(graph = "", pop_col = "POP20", node_col = "NAME")   # "" is not given
         @test_throws ErrorException rgs(graph = "g.json", node_col = "NAME")    # no pop col
         @test_throws ErrorException rgs(graph = "g.json", pop_col = "POP20")    # no node col
     end
@@ -170,7 +175,7 @@ rgs(; kw...) = resolveGraphSpec(; config = "", graph = "", pop_col = "",
                  Dict{String,Any}("districts" => 3))
         close(io)
 
-        spec = rgs(graph = "g.json", pop_col = "POP20", node_col = "NAME")
+        spec = rgs(graph = "g.json", pop_col = "POP20", node_col = "NAME").path
         writeHeaderWithProvenance(Atlas1, Atlas2, ["get_log_spanning_trees"], spec)
 
         atlas = openAtlas(smartOpen(Atlas2, "r"))
@@ -234,12 +239,13 @@ rgs(; kw...) = resolveGraphSpec(; config = "", graph = "", pop_col = "",
         @testset "oracle: $fixture" begin
             oracle = joinpath(@__DIR__, "..", "examples", fixture)
             Atlas2 = joinpath(mktempdir(), "ct_recomputed.jsonl.gz")
-            run_add(join(fields, ","), oracle, Atlas2;
-                    graph = graph, pop_col = "POP20", node_col = "NAME",
-                    area_col = "area", border_col = "border_length",
-                    edge_perimeter_col = "length",
-                    node_data = "COUNTY,NAME,POP20,area,border_length",
-                    overwrite = true, quiet = true)
+            n = addMapData(oracle, Atlas2, fields;
+                           graph = graph, pop_col = "POP20", node_col = "NAME",
+                           area_col = "area", border_col = "border_length",
+                           edge_perimeter_col = "length",
+                           node_data = ["COUNTY", "NAME", "POP20", "area", "border_length"],
+                           overwrite = true)
+            @test n == length(readall(oracle))
 
             orig, recomp = readall(oracle), readall(Atlas2)
             @test length(orig) == length(recomp)
@@ -292,10 +298,10 @@ rgs(; kw...) = resolveGraphSpec(; config = "", graph = "", pop_col = "",
             @info "CycleWalk lacks the partition-free writer methods; skipping " *
                   "fast==LCP value checks (all writers route to the LinkCutPartition path)."
         else
-            g = buildGraph(rgs(graph = graph, pop_col = "POP20", node_col = "NAME",
-                               area_col = "area", border_col = "border_length",
-                               edge_perimeter_col = "length",
-                               node_data = "COUNTY,NAME,POP20,area,border_length"))
+            g = loadGraph(graph = graph, pop_col = "POP20", node_col = "NAME",
+                          area_col = "area", border_col = "border_length",
+                          edge_perimeter_col = "length",
+                          node_data = ["COUNTY", "NAME", "POP20", "area", "border_length"])
             maps = readall(joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_slice.jsonl.gz"))
             @test length(maps) >= 40
             for m in maps
@@ -318,6 +324,11 @@ rgs(; kw...) = resolveGraphSpec(; config = "", graph = "", pop_col = "",
                       fast["get_log_spanning_trees"]
             end
         end
+    end
+
+    @testset "parseNodeData" begin
+        @test parseNodeData("") == String[]
+        @test parseNodeData("COUNTY, NAME") == ["COUNTY", "NAME"]
     end
 
     @testset "parseVotePairs / voteColumns" begin
@@ -355,15 +366,15 @@ rgs(; kw...) = resolveGraphSpec(; config = "", graph = "", pop_col = "",
 
     # End-to-end: add per-district vote shares and check them against an independent
     # aggregation of the graph's vote columns over each map's own districting.
-    @testset "run_add: partisan margins == independent tally" begin
+    @testset "addMapData: partisan margins == independent tally" begin
         graphPath = joinpath(@__DIR__, "..", "Data", "CT_pct20.json")
         src = joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_slice.jsonl.gz")
         v1, v2 = "G20PREDEM", "G20PREREP"
         field = "get_partisan_margins_$(v1)_$(v2)"
 
         Atlas2 = joinpath(mktempdir(), "votes.jsonl.gz")
-        run_add("get_partisan_margins", src, Atlas2; graph = graphPath, pop_col = "POP20",
-                node_col = "NAME", vote_cols = "$v1,$v2", overwrite = true, quiet = true)
+        addMapData(src, Atlas2, ["get_partisan_margins"]; graph = graphPath, pop_col = "POP20",
+                   node_col = "NAME", vote_cols = [(v1, v2)], overwrite = true)
 
         # graph vote data keyed by NAME
         graph = JSON.parse(read(graphPath, String))

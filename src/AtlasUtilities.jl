@@ -67,11 +67,10 @@ using Comonicon
 include("json.jl")
 include("threading.jl")
 include("info.jl")
-include("convert.jl")
 include("nodes.jl")
 include("relabel.jl")
-include("add.jl")
 include("writers.jl")
+include("add.jl")
 include("extract.jl")
 include("extractHistogram.jl")
 include("summarize.jl")
@@ -80,10 +79,21 @@ include("assignments.jl")
 # plotting packages are; render.jl here holds the wrappers that load it on demand.
 include("render.jl")
 
-export confusionMatrix, permutationFromConfusion, hammingDistance, relabelMap,
-       findRelabeling, Hierarchy, loadHierarchy, loadPopulation, atlasInfo, listMapData,
-       mapDataHistograms, assignmentMatrix, WriterSet, computeWriters, writerFields, listWriters,
-       render_map, run_render, districtColors
+# Reading
+export atlasInfo, listMapData, listNodes, extractScripts
+# Relabeling
+export findRelabeling, relabelMap, relabelAtlas, confusionMatrix, permutationFromConfusion, hammingDistance,
+       Hierarchy, loadHierarchy, loadPopulation
+# Analysis
+export mapDataHistograms, writeHistograms, summarizeMapData, assignmentMatrix, extractMapData, extractAssignments
+# Process (CycleWalk writers)
+export addMapData, WriterSet, computeWriters, writerFields, listWriters
+# Rendering (removed in a later step of the refactor)
+export render_map, run_render, districtColors
+# Public but not exported (marked `public` once [compat] requires Julia 1.11): nodeIdString, atlasHeaderInfo,
+# listWriterDetails, loadGraph.
+
+include("cli.jl")
 
 """
 Print the header of an Atlas file (metadata and atlas parameters); the bulky embedded generating `script`, its `script_includes`, and the TOML config are never printed, though their presence is noted (use `--extract-script` to write them out).
@@ -106,7 +116,10 @@ Print the header of an Atlas file (metadata and atlas parameters); the bulky emb
 """
 @cast function info(atlas::String; extract_script::Bool = false,
                     force::Bool = false)
-    run_info(atlas; extract_script = extract_script, force = force)
+    cli("info") do
+        print(atlasHeaderInfo(atlas))
+        extract_script && printExtracted(extractScripts(atlas; force = force))
+    end
 end
 
 """
@@ -131,7 +144,11 @@ the conversion with an error naming the line and map. See AtlasIO's `atlas_forma
 - `--quiet`: don't print the number of maps converted.
 """
 @cast function convert(src::String, dst::String; to::Int = 2, quiet::Bool = false)
-    run_convert(src, dst; to = to, quiet = quiet)
+    cli("convert") do
+        to in (1, 2) || error("atlas convert: --to must be 1 or 2, got $to.")
+        n = convertAtlas(src, dst; formatVersion = to, cores = Threads.nthreads())
+        quiet || println("converted $n maps to format v$to: $dst")
+    end
 end
 
 """
@@ -151,7 +168,16 @@ List the names of the data fields (e.g. `log_spanning_trees`) contained in atlas
 - `atlas`: path to the atlas file (`.jsonl`, `.jsonl.gz`, or `.jsonl.bz2`).
 """
 @cast function list_map_data(atlas::String)
-    run_list_map_data(atlas)
+    cli("list-map-data") do
+        fieldNames = listMapData(atlas)
+        if fieldNames === nothing
+            println("atlas list-map-data: $atlas has no maps; nothing to list.")
+        elseif isempty(fieldNames)
+            println("atlas list-map-data: $atlas's first map has no data fields.")
+        else
+            foreach(println, fieldNames)
+        end
+    end
 end
 
 """
@@ -166,7 +192,10 @@ List the node ids in atlas Atlas1 k-th map (1-based, k=1 by default), as a JSON 
 - `--map <k>`: 1-based index of the map to list nodes from (default: 1).
 """
 @cast function list_nodes(atlas::String; map::Int = 1)
-    run_list_nodes(atlas; map = map)
+    cli("list-nodes") do
+        JSON.json(stdout, listNodes(atlas; map = map))
+        println()
+    end
 end
 
 """
@@ -197,10 +226,12 @@ Relabel district numbers across atlas Atlas1 so consecutive maps stay as similar
 @cast function relabel(atlas1::String, atlas2::String, graph::String = "";
                        first_map::Bool = false, quiet::Bool = false,
                        weight_population::String = "", population_attr::String = "")
-    run_relabel(atlas1, atlas2, isempty(graph) ? nothing : graph;
-                firstMap = first_map, quiet = quiet,
-                popJsonPath = isempty(weight_population) ? nothing : weight_population,
-                popAttr = isempty(population_attr) ? nothing : population_attr)
+    cli("relabel") do
+        relabelAtlas(atlas1, atlas2; graph = isempty(graph) ? nothing : graph, first_map = first_map,
+                     population_file = isempty(weight_population) ? nothing : weight_population,
+                     population_attr = isempty(population_attr) ? nothing : population_attr,
+                     progress = !quiet)
+    end
 end
 
 """
@@ -246,16 +277,14 @@ Add CycleWalk pushable writer function(s) (e.g. `get_log_spanning_trees`) to eve
                    edge_perimeter_col::String = "", node_data::String = "",
                    vote_cols::String = "",
                    overwrite::Bool = false, quiet::Bool = false)
-    if list_writers
-        run_list_writers()
-        return
+    cli("add") do
+        list_writers && return printWriterList()
+        (isempty(functions) || isempty(atlas1) || isempty(atlas2)) &&
+            error("atlas add: <functions> <atlas1> <atlas2> are required (unless --list-writers).")
+        ws = cliWriterSet(functions; config, graph, pop_col, node_col, area_col, border_col,
+                          edge_perimeter_col, node_data, vote_cols)
+        addMapData(atlas1, atlas2, ws; overwrite = overwrite, progress = !quiet)
     end
-    (isempty(functions) || isempty(atlas1) || isempty(atlas2)) &&
-        error("atlas add: <functions> <atlas1> <atlas2> are required (unless --list-writers).")
-    run_add(functions, atlas1, atlas2; config = config, graph = graph, pop_col = pop_col,
-            node_col = node_col, area_col = area_col, border_col = border_col,
-            edge_perimeter_col = edge_perimeter_col, node_data = node_data,
-            vote_cols = vote_cols, overwrite = overwrite, quiet = quiet)
 end
 
 """
@@ -299,11 +328,25 @@ Write each map-data field of atlas Atlas1 to its own CSV (one row per map: the m
                                 node_data::String = "", vote_cols::String = "",
                                 max_maps::Int = 0,
                                 quiet::Bool = false)
-    run_extract(atlas1; add = add, compress = !no_compression, force = force,
-                config = config, graph = graph, pop_col = pop_col,
-                node_col = node_col, area_col = area_col, border_col = border_col,
-                edge_perimeter_col = edge_perimeter_col, node_data = node_data,
-                vote_cols = vote_cols, max_maps = max_maps, quiet = quiet)
+    cli("extract-map-data") do
+        max_maps < 0 && error("atlas extract-map-data: --max-maps must be ≥ 0, got $max_maps.")
+        ws = isempty(add) ? nothing :
+             cliWriterSet(add; config, graph, pop_col, node_col, area_col, border_col, edge_perimeter_col,
+                          node_data, vote_cols)
+        r = extractMapData(atlas1; writers = ws, compress = !no_compression, force = force, max_maps = max_maps,
+                           progress = !quiet)
+        if isempty(r.written)
+            println("atlas extract-map-data: $atlas1 has no maps; nothing written.")
+            return
+        end
+        isempty(r.skipped) || @info "extract-map-data: skipping existing file(s) " *
+            "(use --force to overwrite): " * join(basename.(r.skipped), ", ")
+        if length(r.written) == 1           # about.md only
+            println("atlas extract-map-data: nothing to write (all target files exist; pass --force to overwrite).")
+            return
+        end
+        quiet || println("Wrote ", length(r.written) - 1, " file(s) + about.md to ", r.outdir, "/")
+    end
 end
 
 """
@@ -368,22 +411,34 @@ Like `extract-map-data`, but instead of writing per-map CSV rows, accumulate the
                                           integer::String = "false",
                                           no_compression::Bool = false, force::Bool = false,
                                           quiet::Bool = false)
-    parsedBinRange = isempty(bin_range) ? nothing : Tuple(parse.(Float64, split(bin_range, ",")))
-    parsedBins = isempty(bins) ? nothing : parse.(Float64, split(bins, ","))
-    parsedPowers = parse.(Int, split(moment_powers, ","))
-    parsedInteger = integer == "auto" ? :auto :
-                    integer == "true" ? true :
-                    integer == "false" ? false :
-                    error("atlas extract-map-data-histogram: --integer must be " *
-                          "true, false, or auto, got \"$integer\".")
-    run_extract_map_data_histogram(atlas1; add = add, vote_cols = vote_cols,
-        config = config, graph = graph, pop_col = pop_col, node_col = node_col,
-        area_col = area_col, border_col = border_col,
-        edge_perimeter_col = edge_perimeter_col, node_data = node_data,
-        burn_in = burn_in, max_maps = max_maps, sortVals = !no_sort,
-        compress = !no_compression, force = force, integer = parsedInteger,
-        bin_range = parsedBinRange, bin_num = bin_num, bins = parsedBins,
-        moment_powers = parsedPowers, quiet = quiet)
+    cli("extract-map-data-histogram") do
+        parsedBinRange = isempty(bin_range) ? nothing : Tuple(parse.(Float64, split(bin_range, ",")))
+        parsedBins = isempty(bins) ? nothing : parse.(Float64, split(bins, ","))
+        parsedPowers = parse.(Int, split(moment_powers, ","))
+        parsedInteger = integer == "auto" ? :auto :
+                        integer == "true" ? true :
+                        integer == "false" ? false :
+                        error("atlas extract-map-data-histogram: --integer must be " *
+                              "true, false, or auto, got \"$integer\".")
+        outdir = stripAtlasExt(atlas1)
+        isdir(outdir) || mkpath(outdir)
+        if listMapData(atlas1) === nothing
+            println("atlas extract-map-data-histogram: $atlas1 has no maps; nothing written.")
+            return
+        end
+        ws = isempty(add) ? nothing :
+             cliWriterSet(add; config, graph, pop_col, node_col, area_col, border_col, edge_perimeter_col,
+                          node_data, vote_cols)
+        hists, _ = mapDataHistograms(atlas1; writers = ws, burn_in = burn_in, max_maps = max_maps,
+                                     sort_values = !no_sort, progress = !quiet, integer = parsedInteger,
+                                     bin_range = parsedBinRange, bin_num = bin_num, bins = parsedBins,
+                                     moment_powers = parsedPowers)
+        r = writeHistograms(outdir, hists; atlas = atlas1, burn_in = burn_in, max_maps = max_maps,
+                            compress = !no_compression, force = force)
+        isempty(r.skipped) || @info "extract-map-data-histogram: skipping existing file(s) " *
+            "(use --force to overwrite): " * join(r.skipped, ", ")
+        quiet || println("Wrote ", length(r.written) - 1, " file(s) + about.md to ", outdir, "/")
+    end
 end
 
 """
@@ -403,7 +458,9 @@ Print, for every map-data field of atlas Atlas1, its mean, standard deviation, a
 - `--quiet`: suppress the progress bar.
 """
 @cast function summarize_map_data(atlas1::String; max_maps::Int = 0, quiet::Bool = false)
-    run_summarize_map_data(atlas1; max_maps = max_maps, quiet = quiet)
+    cli("summarize-map-data") do
+        print(summarizeMapData(atlas1; max_maps = max_maps, progress = !quiet))
+    end
 end
 
 """
@@ -426,8 +483,22 @@ Write atlas Atlas1 per-map district assignments to a single wide CSV, named from
 @cast function extract_assignments(atlas1::String; graph::String = "",
                                    no_compression::Bool = false, force::Bool = false,
                                    quiet::Bool = false)
-    run_extract_assignments(atlas1; graph = isempty(graph) ? nothing : graph,
-                            compress = !no_compression, force = force, quiet = quiet)
+    cli("extract-assignments") do
+        outpath = stripAtlasExt(atlas1) * "-assignments" * (no_compression ? ".csv" : ".csv.gz")
+        r = extractAssignments(atlas1, outpath; graph = isempty(graph) ? nothing : graph, force = force,
+                               progress = !quiet)
+        if r === nothing
+            println("atlas extract-assignments: $outpath already exists; pass --force to overwrite.")
+        elseif r.nmaps == 0
+            println("atlas extract-assignments: $atlas1 has no maps; nothing written.")
+        elseif !quiet
+            isempty(graph) && r.scale !== nothing &&
+                println("The maps' node sets differ (a multiscale atlas); using the finest regions seen in the " *
+                        "atlas as columns.")
+            println("Wrote ", r.nmaps, " map(s) to ", r.path)
+            r.scale === nothing || println("Columns (", length(r.units), "): ", r.scale, ".")
+        end
+    end
 end
 
 """

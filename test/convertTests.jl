@@ -1,6 +1,6 @@
 # `atlas convert`, and `relabel`/`add` on format v2 atlases (AtlasIO 0.2.2). Uses NODES/mkmap/labelsof from
 # runtests.jl.
-using AtlasUtilities: run_convert, run_relabel, run_add, command_main
+using AtlasUtilities: relabelAtlas, addMapData, command_main
 
 "Every map of the atlas at `path`, and the atlas itself (for its header fields)."
 function readall(path)
@@ -20,7 +20,7 @@ end
 
     @testset "atlas convert: v1 -> v2 -> v1 keeps every map" begin
         v2, back = joinpath(dir, "ct_v2.jsonl.gz"), joinpath(dir, "ct_back.jsonl")
-        n = run_convert(ct, v2; to = 2, quiet = true)
+        n = convertAtlas(ct, v2; formatVersion = 2)
         a1, m1 = readall(ct)
         a2, m2 = readall(v2)
         @test n == length(m1) > 0
@@ -28,11 +28,11 @@ end
         @test [m.districting for m in m2] == [m.districting for m in m1]
         @test [m.data for m in m2] == [m.data for m in m1]
         @test a2.atlasParam == a1.atlasParam
-        run_convert(v2, back; to = 1, quiet = true)
+        convertAtlas(v2, back; formatVersion = 1)
         a3, m3 = readall(back)
         @test a3.formatVersion == "1"
         @test [m.districting for m in m3] == [m.districting for m in m1]
-        @test_throws ErrorException run_convert(ct, joinpath(dir, "x.jsonl"); to = 3, quiet = true)
+        @test_throws ErrorException command_main(["convert", ct, joinpath(dir, "x.jsonl"), "--to", "3"])
     end
 
     @testset "atlas convert: the command line" begin
@@ -52,10 +52,10 @@ end
             addMap(io, mkmap("m$k", l))
         end
         close(io)
-        run_convert(src1, src2; to = 2, quiet = true)
+        convertAtlas(src1, src2; formatVersion = 2)
         out1, out2 = joinpath(dir, "r_out_v1.jsonl"), joinpath(dir, "r_out_v2.jsonl.gz")
-        run_relabel(src1, out1; quiet = true, cores = 1)
-        run_relabel(src2, out2; quiet = true, cores = 1)
+        relabelAtlas(src1, out1; cores = 1)
+        relabelAtlas(src2, out2; cores = 1)
         a2, m2 = readall(out2)                   # reading a mixed file would raise AtlasFormatError
         @test a2.formatVersion == "2"
         @test [labelsof(m) for m in m2] == [labelsof(m) for m in readall(out1)[2]]
@@ -65,12 +65,12 @@ end
     @testset "add keeps a v2 atlas in v2 (not a mixed file)" begin
         graph = joinpath(@__DIR__, "..", "Data", "CT_pct20.json")
         ct2 = joinpath(dir, "ct2.jsonl.gz")
-        run_convert(ct, ct2; to = 2, quiet = true)
-        kw = (graph = graph, pop_col = "POP20", node_col = "NAME", vote_cols = "G20PREDEM,G20PREREP",
-              overwrite = true, quiet = true)
+        convertAtlas(ct, ct2; formatVersion = 2)
+        kw = (graph = graph, pop_col = "POP20", node_col = "NAME", vote_cols = [("G20PREDEM", "G20PREREP")],
+              overwrite = true)
         out1, out2 = joinpath(dir, "add_v1.jsonl.gz"), joinpath(dir, "add_v2.jsonl.gz")
-        run_add("get_partisan_margins", ct, out1; kw...)
-        run_add("get_partisan_margins", ct2, out2; kw...)
+        addMapData(ct, out1, ["get_partisan_margins"]; kw...)
+        addMapData(ct2, out2, ["get_partisan_margins"]; kw...)
         a2, m2 = readall(out2)
         _, m1 = readall(out1)
         @test a2.formatVersion == "2"

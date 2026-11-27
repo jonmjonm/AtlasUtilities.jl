@@ -3,7 +3,7 @@
 
 using Test
 using AtlasIO
-using AtlasUtilities: run_extract, stripAtlasExt, flattenVal, headerRow, valueRow
+using AtlasUtilities: extractMapData, WriterSet, stripAtlasExt, flattenVal, headerRow, valueRow
 
 readtext(p) = (io = smartOpen(p, "r"); s = read(io, String); close(io); s)
 rowsof(s) = filter(!isempty, split(s, "\n"))
@@ -40,7 +40,7 @@ rowsof(s) = filter(!isempty, split(s, "\n"))
         atlaspath = joinpath(dir, "run.jsonl.gz")
         cp(src, atlaspath)
 
-        run_extract(atlaspath; quiet = true)
+        extractMapData(atlaspath)
         outdir = joinpath(dir, "run")
 
         # Read the atlas maps for comparison.
@@ -66,16 +66,19 @@ rowsof(s) = filter(!isempty, split(s, "\n"))
 
         # Default skip: re-running writes nothing (files already exist).
         before = mtime(joinpath(outdir, "get_log_spanning_forests.csv.gz"))
-        run_extract(atlaspath; quiet = true)
+        r = extractMapData(atlaspath)
         @test mtime(joinpath(outdir, "get_log_spanning_forests.csv.gz")) == before
+        @test r.written == [joinpath(outdir, "about.md")] && joinpath(outdir, "get_log_spanning_forests.csv.gz") in r.skipped
 
         # --add recomputes a field; its extracted values must match the stored ones.
         dir2 = mktempdir()
         atlas2 = joinpath(dir2, "run.jsonl.gz"); cp(src, atlas2)
-        run_extract(atlas2; add = "get_isoperimetric_scores", graph = graph,
-                    pop_col = "POP20", node_col = "NAME", area_col = "area",
-                    border_col = "border_length", edge_perimeter_col = "length",
-                    force = true, quiet = true)
+        ws = WriterSet(["get_isoperimetric_scores"]; graph = graph, pop_col = "POP20", node_col = "NAME",
+                       area_col = "area", border_col = "border_length", edge_perimeter_col = "length")
+        r = extractMapData(atlas2; writers = ws, force = true)
+        @test r.outdir == joinpath(dir2, "run") && r.nmaps == length(maps) && isempty(r.skipped)
+        @test first(r.written) == joinpath(dir2, "run", "about.md")
+        @test joinpath(dir2, "run", "get_isoperimetric_scores.csv.gz") in r.written
         rows = rowsof(readtext(joinpath(dir2, "run", "get_isoperimetric_scores.csv.gz")))
         maxrel = 0.0
         for (i, m) in enumerate(maps)
@@ -97,9 +100,9 @@ rowsof(s) = filter(!isempty, split(s, "\n"))
 
         dir = mktempdir()
         atlaspath = joinpath(dir, "run.jsonl.gz"); cp(src, atlaspath)
-        run_extract(atlaspath; add = "get_partisan_margins", graph = graph,
-                    pop_col = "POP20", node_col = "NAME", vote_cols = "$v1,$v2",
-                    force = true, quiet = true)
+        ws = WriterSet(["get_partisan_margins"]; graph = graph, pop_col = "POP20", node_col = "NAME",
+                       vote_cols = [(v1, v2)])
+        extractMapData(atlaspath; writers = ws, force = true)
 
         csv = joinpath(dir, "run", field * ".csv.gz")
         @test isfile(csv)
@@ -123,7 +126,7 @@ rowsof(s) = filter(!isempty, split(s, "\n"))
         field = "get_log_spanning_forests"
         dir = mktempdir()
         atlaspath = joinpath(dir, "run.jsonl.gz"); cp(src, atlaspath)
-        run_extract(atlaspath; max_maps = 5, quiet = true)
+        extractMapData(atlaspath; max_maps = 5)
         outdir = joinpath(dir, "run")
 
         partialCsv = joinpath(outdir, field * "-partial.csv.gz")
@@ -138,7 +141,7 @@ rowsof(s) = filter(!isempty, split(s, "\n"))
 
         # A full run afterward doesn't collide with (or get shadowed by) the
         # partial run's files, since they're named differently.
-        run_extract(atlaspath; force = true, quiet = true)
+        extractMapData(atlaspath; force = true)
         @test isfile(joinpath(outdir, field * ".csv.gz"))
         fullRows = rowsof(readtext(joinpath(outdir, field * ".csv.gz")))
         @test length(fullRows) > length(rows)
@@ -148,14 +151,14 @@ rowsof(s) = filter(!isempty, split(s, "\n"))
         src = joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_slice.jsonl.gz")
         dir = mktempdir()
         atlaspath = joinpath(dir, "run.jsonl.gz"); cp(src, atlaspath)
-        @test_throws ErrorException run_extract(atlaspath; max_maps = -1, quiet = true)
+        @test_throws ErrorException extractMapData(atlaspath; max_maps = -1)
     end
 
     @testset "--no-compression writes plain .csv" begin
         src = joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_metadata.jsonl.gz")
         dir = mktempdir()
         atlaspath = joinpath(dir, "meta.jsonl.gz"); cp(src, atlaspath)
-        run_extract(atlaspath; compress = false, quiet = true)
+        extractMapData(atlaspath; compress = false)
         files = readdir(joinpath(dir, "meta"))
         @test "about.md" in files                        # about.md accompanies the CSVs
         @test !isempty(filter(f -> endswith(f, ".csv"), files))
@@ -168,7 +171,7 @@ rowsof(s) = filter(!isempty, split(s, "\n"))
         src = joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_metadata.jsonl.gz")
         dir = mktempdir()
         atlaspath = joinpath(dir, "meta.jsonl.gz"); cp(src, atlaspath)
-        run_extract(atlaspath; quiet = true)
+        extractMapData(atlaspath)
 
         about = joinpath(dir, "meta", "about.md")
         @test isfile(about)

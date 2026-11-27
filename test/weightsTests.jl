@@ -6,7 +6,7 @@ using Test
 import JSON
 using AtlasIO
 using StreamHistogram
-using AtlasUtilities: mapDataHistograms, run_extract_map_data_histogram, run_extract, run_summarize_map_data,
+using AtlasUtilities: mapDataHistograms, writeHistograms, extractMapData, summarizeMapData,
                       ashQuantileGap, fieldSummaryLines, weightsVary, stripAtlasExt
 
 const WCT = joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_slice.jsonl.gz")
@@ -44,8 +44,8 @@ everyHist(hs) = [(f, j, oh) for f in sort(collect(keys(hs)))
     src = reweighted(k -> 0.25 * k)
     ms = allmaps(src)
     w = [m.weight for m in ms]
-    hs, nmaps = mapDataHistograms(src; quiet = true)
-    hu, _ = mapDataHistograms(WCT; quiet = true)            # the same maps, every weight 1
+    hs, nmaps = mapDataHistograms(src)
+    hu, _ = mapDataHistograms(WCT)            # the same maps, every weight 1
 
     @testset "the weighted statistics are those of the weighted map values" begin
         @test nmaps == length(ms) && w[3] === 0.75
@@ -85,8 +85,8 @@ everyHist(hs) = [(f, j, oh) for f in sort(collect(keys(hs)))
 
     @testset "an integer weight k counts like the map repeated k times" begin
         times(k) = 1 + k % 3
-        weighted, _ = mapDataHistograms(reweighted(times; T = Int); quiet = true)
-        repeated, _ = mapDataHistograms(reweighted(k -> 1; T = Int, repeats = times); quiet = true)
+        weighted, _ = mapDataHistograms(reweighted(times; T = Int))
+        repeated, _ = mapDataHistograms(reweighted(k -> 1; T = Int, repeats = times))
         for ((_, _, a), (_, _, b)) in zip(everyHist(weighted), everyHist(repeated))
             @test totalweight(a) == nobs(b)
             @test weightedHistogram(a).weights == exactHistogram(b).weights   # the same learned range
@@ -98,7 +98,7 @@ everyHist(hs) = [(f, j, oh) for f in sort(collect(keys(hs)))
 
     @testset "extract-map-data-histogram writes the weighted bins and statistics" begin
         for (path, hists) in ((src, hs), (reweighted(k -> 1; T = Int), hu))
-            run_extract_map_data_histogram(path; compress = false, quiet = true)
+            histogramFiles(path; compress = false)
             dir = stripAtlasExt(path)
             for f in ("get_log_spanning_forests", "get_isoperimetric_scores")
                 lines = filter(!isempty, split(wreadtext(joinpath(dir, f * "-histogram.csv")), '\n'))
@@ -125,7 +125,7 @@ everyHist(hs) = [(f, j, oh) for f in sort(collect(keys(hs)))
         end
         # with every weight 1, the weighted entries repeat the unweighted ones
         dir = stripAtlasExt(reweighted(k -> 1; T = Int))
-        run_extract_map_data_histogram(dir * ".jsonl.gz"; compress = false, quiet = true)
+        histogramFiles(dir * ".jsonl.gz"; compress = false)
         h = JSON.parse(wreadtext(joinpath(dir, "get_log_spanning_forests-histogram.json")))["histograms"]["1"]
         @test h["total_weight"] == h["effective_sample_size"] == h["nobs"]
         @test h["weighted_mean"] ≈ h["mean"] && h["weighted_std"] ≈ h["std"]
@@ -133,7 +133,7 @@ everyHist(hs) = [(f, j, oh) for f in sort(collect(keys(hs)))
     end
 
     @testset "extract-map-data ends each row with the map's weight" begin
-        run_extract(src; compress = false, quiet = true)
+        extractMapData(src; compress = false)
         for f in ("get_log_spanning_trees", "get_isoperimetric_scores")
             lines = filter(!isempty, split(wreadtext(joinpath(stripAtlasExt(src), f * ".csv")), '\n'))
             @test endswith(lines[1], ",map_weight")
@@ -142,17 +142,17 @@ everyHist(hs) = [(f, j, oh) for f in sort(collect(keys(hs)))
     end
 
     @testset "summarize-map-data prints the weighted statistics when the weights vary" begin
-        out = capture_stdout(() -> run_summarize_map_data(src; quiet = true))
+        out = capture_stdout(() -> print(summarizeMapData(src)))
         f = "get_log_spanning_forests"
         @test occursin("weighted mean: $(weightedMean(hs[f]))", out)
         @test occursin("effective sample size: $(effectivesamplesize(hs[f])) of $(length(ms)) maps", out)
         @test occursin("weighted [min, 25%, median, 75%, max]:", out)
         @test occursin("mean: $(mean(hs[f]))", out)                  # the unweighted lines are still there
         # with every weight 1 the output is unweighted only
-        plain = capture_stdout(() -> run_summarize_map_data(WCT; quiet = true))
+        plain = capture_stdout(() -> print(summarizeMapData(WCT)))
         @test !occursin("weighted", plain)
         # with every weight 0 it says so
-        zero = capture_stdout(() -> run_summarize_map_data(reweighted(k -> 0.0); quiet = true))
+        zero = capture_stdout(() -> print(summarizeMapData(reweighted(k -> 0.0))))
         @test occursin("every map has weight 0", zero) && !occursin("NaN", zero)
     end
 
@@ -200,7 +200,7 @@ everyHist(hs) = [(f, j, oh) for f in sort(collect(keys(hs)))
             name = allmaps(path)[bad].name
             logs, err = Test.collect_test_logs() do
                 try
-                    mapDataHistograms(path; quiet = true)
+                    mapDataHistograms(path)
                     nothing
                 catch e
                     e

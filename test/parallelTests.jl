@@ -13,7 +13,7 @@
 
 using Test
 using AtlasIO
-using AtlasUtilities: run_add, run_extract, run_extract_assignments
+using AtlasUtilities: addMapData, extractMapData, extractAssignments, WriterSet
 
 const RTOL = 1e-10   # observed threading/serial nondeterminism is ~1e-15
 
@@ -28,7 +28,7 @@ asvec(x) = x isa AbstractVector ? Float64.(x) : [Float64(x)]
     src = joinpath(@__DIR__, "..", "examples", "cycleWalk_ct_slice.jsonl.gz")
     gargs = (graph = graph, pop_col = "POP20", node_col = "NAME", area_col = "area",
              border_col = "border_length", edge_perimeter_col = "length")
-    funcs = "get_log_spanning_trees,get_isoperimetric_scores"
+    funcs = ["get_log_spanning_trees", "get_isoperimetric_scores"]
 
     readmaps(p) = (a = openAtlas(smartOpen(p, "r")); ms = Map[];
                    while !eof(a); push!(ms, nextMap(a)); end; close(a); ms)
@@ -48,8 +48,8 @@ asvec(x) = x isa AbstractVector ? Float64.(x) : [Float64(x)]
     @testset "add: cores=1 vs cores=4" begin
         d = mktempdir()
         atlas1 = joinpath(d, "s1.jsonl.gz"); a4 = joinpath(d, "s4.jsonl.gz")
-        run_add(funcs, src, atlas1; gargs..., overwrite = true, quiet = true, cores = 1)
-        run_add(funcs, src, a4; gargs..., overwrite = true, quiet = true, cores = 4)
+        addMapData(src, atlas1, funcs; gargs..., overwrite = true, cores = 1)
+        addMapData(src, a4, funcs; gargs..., overwrite = true, cores = 4)
 
         m1, m4 = readmaps(atlas1), readmaps(a4)
         @test length(m1) == length(m4)
@@ -67,10 +67,9 @@ asvec(x) = x isa AbstractVector ? Float64.(x) : [Float64(x)]
         d1 = mktempdir(); d4 = mktempdir()
         s1 = joinpath(d1, "run.jsonl.gz"); cp(src, s1)
         s4 = joinpath(d4, "run.jsonl.gz"); cp(src, s4)
-        run_extract(s1; add = "get_isoperimetric_scores", gargs...,
-                    force = true, quiet = true, cores = 1)
-        run_extract(s4; add = "get_isoperimetric_scores", gargs...,
-                    force = true, quiet = true, cores = 4)
+        ws = WriterSet(["get_isoperimetric_scores"]; gargs...)
+        extractMapData(s1; writers = ws, force = true, cores = 1)
+        extractMapData(s4; writers = ws, force = true, cores = 4)
 
         for f in ("get_log_spanning_trees", "get_log_spanning_forests",
                   "get_isoperimetric_scores")
@@ -88,7 +87,7 @@ asvec(x) = x isa AbstractVector ? Float64.(x) : [Float64(x)]
         outs = map((1, 4)) do cores
             d = mktempdir()
             p = joinpath(d, "run.jsonl.gz"); cp(src, p)
-            run_extract_assignments(p; compress = false, quiet = true, cores = cores)
+            extractAssignments(p; compress = false, cores = cores)
             read(joinpath(d, "run-assignments.csv"), String)
         end
         @test outs[1] == outs[2] && count('\n', outs[1]) == length(readmaps(src)) + 1
@@ -100,8 +99,8 @@ asvec(x) = x isa AbstractVector ? Float64.(x) : [Float64(x)]
         d = mktempdir()
         bad = joinpath(d, "bad.jsonl")
         write(bad, join(lines, "\n") * "\n")
-        @test_throws AtlasFormatError run_add(funcs, bad, joinpath(d, "out.jsonl"); gargs..., overwrite = true,
-                                              quiet = true, cores = cores)
-        @test_throws AtlasFormatError run_extract(bad; force = true, quiet = true, cores = cores)
+        @test_throws AtlasFormatError addMapData(bad, joinpath(d, "out.jsonl"), funcs; gargs..., overwrite = true,
+                                                 cores = cores)
+        @test_throws AtlasFormatError extractMapData(bad; force = true, cores = cores)
     end
 end

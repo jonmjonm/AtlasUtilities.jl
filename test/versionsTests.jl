@@ -1,7 +1,7 @@
 # Every subcommand gives the same results on a format v1 atlas and on its v2 conversion, and atlases with Float64
 # weights keep them. Runs the subcommands through `command_main`, like test/cliTests.jl.
 import JSON
-using AtlasUtilities: command_main, stripAtlasExt, run_convert, atlasInfo
+using AtlasUtilities: command_main, stripAtlasExt, atlasInfo
 
 const VEX = joinpath(@__DIR__, "..", "examples")
 const VDATA = joinpath(@__DIR__, "..", "Data")
@@ -41,8 +41,8 @@ end
     ms1, ms2 = joinpath(d1, "ms.jsonl.gz"), joinpath(d2, "ms.jsonl.gz")
     cp(joinpath(VEX, "cycleWalk_ct_slice.jsonl.gz"), ct1)
     cp(joinpath(VEX, "demo_multiscale.jsonl.gz"), ms1)
-    run_convert(ct1, ct2; to = 2, quiet = true)
-    run_convert(ms1, ms2; to = 2, quiet = true)
+    convertAtlas(ct1, ct2; formatVersion = 2)
+    convertAtlas(ms1, ms2; formatVersion = 2)
     @test vmaps(ct1)[1].formatVersion == "1" && vmaps(ct2)[1].formatVersion == "2"
 
     @testset "info shows the format version" begin

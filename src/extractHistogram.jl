@@ -1,16 +1,17 @@
-# extractHistogram.jl -- the `atlas extract-map-data-histogram` subcommand.
+# extractHistogram.jl -- histograms of the map data (`mapDataHistograms`, `writeHistograms`,
+# `atlas extract-map-data-histogram`).
 #
 # Like `extract-map-data`, but instead of writing each map's data to a CSV row, it
 # accumulates every map's data (after skipping `burn_in` maps) into a
 # StreamHistogram `StreamingHistogram` per field -- one `StreamingHistogram` for a scalar field, a
-# `Vector{StreamingHistogram}` (one per index) for a vector field. `sortVals` sorts a
+# `Vector{StreamingHistogram}` (one per index) for a vector field. `sort_values` sorts a
 # vector field's values ascending before feeding, so histogram `j` holds the `j`-th
 # order statistic across maps rather than raw index `j` (index identity is not
 # generally comparable across maps -- see e.g. district relabeling).
 #
 # `mapDataHistograms` is the library entry point (returns the
-# `Dict{String,Union{StreamingHistogram,Vector{StreamingHistogram}}}`); `run_extract_map_data_histogram`
-# is the CLI driver, which also writes each field's histogram(s) to a pair of files
+# `Dict{String,Union{StreamingHistogram,Vector{StreamingHistogram}}}`); `writeHistograms`
+# writes each field's histogram(s) to a pair of files
 # (`<field>-histogram.csv[.gz]` + `<field>-histogram.json[.gz]`) in the same output
 # directory `extract-map-data` uses. The CSV holds only the exact per-bin edges,
 # counts and sums of map weights (a plain numeric table for loading straight into a
@@ -27,22 +28,19 @@
 # ---------------------------------------------------------------------------
 
 """
-    mapDataHistograms(Atlas1; add, vote_cols, config, graph, pop_col, node_col,
-                      area_col, border_col, edge_perimeter_col, node_data,
-                      burn_in = 0, max_maps = 0, sortVals = true,
-                      cores = Threads.nthreads(), quiet = false, integer = false,
-                      bin_range = nothing, bin_num = 50, bins = nothing,
-                      moment_powers = [1, 2, 4, 8])
+    mapDataHistograms(atlas; writers = nothing, burn_in = 0, max_maps = 0, sort_values = true,
+                      cores = Threads.nthreads(), progress = false, integer = false,
+                      bin_range = nothing, bin_num = 50, bins = nothing, moment_powers = [1, 2, 4, 8])
     -> (Dict{String,Union{StreamingHistogram,Vector{StreamingHistogram}}}, Int)
 
-Read every map in atlas `Atlas1` after skipping the first `burn_in` maps,
-computing any `add` writer fields (exactly as `extract-map-data`/`add` do -- see
-`setupAddComputation`), and accumulate each field's values into a `StreamingHistogram`
+Read every map in the atlas at `atlas` after skipping the first `burn_in` maps,
+computing the fields of `writers` (a [`WriterSet`](@ref), exactly as `extractMapData` does), and accumulate each
+field's values into a `StreamingHistogram`
 (scalar field) or a `Vector{StreamingHistogram}` (vector field, one histogram per index).
-`sortVals` sorts a vector field's values ascending before feeding (a no-op for
+`sort_values` sorts a vector field's values ascending before feeding (a no-op for
 scalars), so histogram `j` holds the `j`-th order statistic across maps.
 `max_maps` (0 = unlimited, the default) stops after accumulating that many maps
-past the burn-in.
+past the burn-in. `progress` shows a progress bar.
 
 Each value is added with its map's weight (`add!(oh, x, w)`), so every histogram
 has both the unweighted results (each map counts once) and the weighted ones (each
@@ -58,31 +56,22 @@ resolve differently); `:auto` requires `bin_range`/`bins` to be left unset (see
 `StreamingHistogram`).
 
 Returns the histogram dict alongside the number of maps actually accumulated
-(past the burn-in, capped by `max_maps`).
+(past the burn-in, capped by `max_maps`). [`writeHistograms`](@ref) writes them to files.
 """
-function mapDataHistograms(Atlas1::AbstractString;
-                           add::AbstractString = "", vote_cols::AbstractString = "",
-                           config::AbstractString = "", graph::AbstractString = "",
-                           pop_col::AbstractString = "", node_col::AbstractString = "",
-                           area_col::AbstractString = "", border_col::AbstractString = "",
-                           edge_perimeter_col::AbstractString = "",
-                           node_data::AbstractString = "",
-                           burn_in::Int = 0, max_maps::Int = 0, sortVals::Bool = true,
-                           cores::Int = Threads.nthreads(), quiet::Bool = false,
+function mapDataHistograms(atlas::AbstractString;
+                           writers::Union{Nothing,WriterSet} = nothing,
+                           burn_in::Int = 0, max_maps::Int = 0, sort_values::Bool = true,
+                           cores::Int = Threads.nthreads(), progress::Bool = false,
                            integer::Union{Bool,Symbol} = false,
                            bin_range::Union{Nothing,Tuple{<:Real,<:Real}} = nothing,
                            bin_num::Int = 50,
                            bins::Union{Nothing,AbstractVector{<:Real}} = nothing,
                            moment_powers::AbstractVector{<:Integer} = [1, 2, 4, 8])
-    max_maps < 0 && error("atlas extract-map-data-histogram: --max-maps must be ≥ 0, got $max_maps.")
-    addNames = isempty(add) ? String[] : parseFunctionNames(add)
-    votePairs = parseVotePairs(vote_cols)
-    fns, addFields, addedSet, g = setupAddComputation(addNames, votePairs;
-        config = config, graph = graph, pop_col = pop_col, node_col = node_col,
-        area_col = area_col, border_col = border_col,
-        edge_perimeter_col = edge_perimeter_col, node_data = node_data)
-    treeless = allTreeless(fns)
-    computeAdded(m) = isempty(fns) ? Dict{String,Any}() : evalWriters(g, m, fns; treeless = treeless)
+    max_maps < 0 && error("mapDataHistograms: max_maps = $max_maps must be ≥ 0.")
+    Atlas1 = atlas
+    addFields = writers === nothing ? String[] : writerFields(writers)
+    addedSet = Set(addFields)
+    computeAdded(m) = writers === nothing ? Dict{String,Any}() : evalWriterSet(writers, m)
     valueOf(m, field, added) = field in addedSet ? added[field] : get(m.data, field, nothing)
 
     atlas = openAtlas(smartOpen(String(Atlas1), "r"))
@@ -96,8 +85,7 @@ function mapDataHistograms(Atlas1::AbstractString;
     end
     if eof(atlas)
         close(atlas)
-        error("atlas extract-map-data-histogram: $Atlas1 has no maps left after " *
-              "--burn-in $burn_in.")
+        error("mapDataHistograms: $Atlas1 has no maps left after burn_in = $burn_in.")
     end
 
     first = nextMap(atlas)
@@ -112,12 +100,12 @@ function mapDataHistograms(Atlas1::AbstractString;
         hists[k] = widths[k] == 1 ? mkHist() : [mkHist() for _ in 1:widths[k]]
     end
 
-    """Flatten `val` to `Float64`s, sorted ascending when `sortVals` (a no-op for a
+    """Flatten `val` to `Float64`s, sorted ascending when `sort_values` (a no-op for a
     single value); `nothing` (a missing field on this map) becomes an empty vector."""
     function extractVals(val)
         val === nothing && return Float64[]
         vals = Float64.(flattenVal(val))
-        sortVals && length(vals) > 1 && sort!(vals)
+        sort_values && length(vals) > 1 && sort!(vals)
         return vals
     end
 
@@ -141,7 +129,7 @@ function mapDataHistograms(Atlas1::AbstractString;
     feedRow!([extractVals(valueOf(first, f, firstAdded)) for f in fieldNames], mapWeight(first))
 
     # Per map, parse + compute (--add) + extract the values in parallel (AtlasIO's
-    # `eachMap(f, ...)`). `fns` empty means `computeAdded` never touches
+    # `eachMap(f, ...)`). No `writers` means `computeAdded` never touches
     # `m.districting` (it short-circuits to an empty dict), so read a `MapData`
     # instead of a full `Map` to skip reconstructing districting, which otherwise
     # dominates the parse cost (see AtlasIO's `MapData`).
@@ -156,9 +144,8 @@ function mapDataHistograms(Atlas1::AbstractString;
         added = computeAdded(m)
         ([extractVals(valueOf(m, field, added)) for field in fieldNames], w)
     end
-    each = isempty(fns) ? eachMapData : eachMap
-    progress = quiet ? nothing :
-               ProgressUnknown(desc = "Building histograms:", spinner = true)
+    each = writers === nothing ? eachMapData : eachMap
+    bar = progress ? ProgressUnknown(desc = "Building histograms:", spinner = true) : nothing
     written = 1                    # maps accumulated past burn-in (for --max-maps)
     processed = 1 + n_burned       # total maps read from the start (for the progress bar)
 
@@ -195,13 +182,11 @@ function mapDataHistograms(Atlas1::AbstractString;
             length(rows) == BATCH && flush!()
             written += 1
             processed += 1
-            progress === nothing ||
-                next!(progress; showvalues = [("maps processed", processed)])
+            bar === nothing || next!(bar; showvalues = [("maps processed", processed)])
         end
         flush!()
     end
-    progress === nothing ||
-        finish!(progress; showvalues = [("maps processed", processed)])
+    bar === nothing || finish!(bar; showvalues = [("maps processed", processed)])
 
     close(atlas)
     for h in hists
@@ -221,7 +206,7 @@ the map.
 function mapWeight(m)
     w = Float64(m.weight)
     (isfinite(w) && w >= 0) ||
-        error("atlas: map \"$(m.name)\" has weight $(m.weight); map weights must be finite and nonnegative.")
+        error("mapDataHistograms: map \"$(m.name)\" has weight $(m.weight); map weights must be finite and nonnegative.")
     return w
 end
 
@@ -318,75 +303,43 @@ function writeHistogramJSON(path::AbstractString, entry)
 end
 
 # ---------------------------------------------------------------------------
-# Driver
+# Writing the files
 # ---------------------------------------------------------------------------
 
 """
-    run_extract_map_data_histogram(Atlas1; add, vote_cols, config, graph, pop_col,
-                                   node_col, area_col, border_col,
-                                   edge_perimeter_col, node_data, burn_in, max_maps,
-                                   sortVals, compress, force, integer, bin_range,
-                                   bin_num, bins, moment_powers, quiet, cores)
+    writeHistograms(outdir, hists; atlas = nothing, burn_in = 0, max_maps = 0, compress = true, force = false)
+        -> (written, skipped)
 
-Build `mapDataHistograms` for atlas `Atlas1` and write each field's histogram(s) to
-a `<field>-histogram.csv[.gz]` + `<field>-histogram.json[.gz]` pair in a directory
-named after `Atlas1` (the same directory `extract-map-data` uses), plus an
-`about.md` (as `extract-map-data` writes). The CSV holds the exact per-bin edges
-and counts; the JSON holds everything else (see `writeHistogramCSV`/
-`writeHistogramJSON`). `compress` gzips both files; a field whose CSV or JSON
-output file already exists is skipped unless `force = true`. `max_maps` (0 =
-unlimited, the default) stops after accumulating that many maps past the burn-in;
-when set, output filenames get a `-histogram-partial` suffix so a partial run
-never collides with a full one's output, and `about.md` notes the limit.
+Write each field's histogram(s) of `hists` (as [`mapDataHistograms`](@ref) returns them) to a
+`<field>-histogram.csv[.gz]` + `<field>-histogram.json[.gz]` pair in `outdir`, and, given the path of the
+`atlas` they came from, an `about.md` describing it (as `extractMapData` writes), noting `burn_in` and
+`max_maps`. The CSV holds the exact per-bin edges and counts; the JSON holds everything else (see
+`writeHistogramCSV`/`writeHistogramJSON`). `compress` gzips both files; a field whose CSV or JSON output file
+already exists is skipped unless `force = true`. A nonzero `max_maps` (the limit the histograms were built with)
+gives the files a `-histogram-partial` suffix, so a partial run never collides with a full one's output.
+
+Returns the paths `written` (`about.md` first, when written) and `skipped` (files that already existed).
 """
-function run_extract_map_data_histogram(Atlas1::AbstractString;
-                                        add::AbstractString = "",
-                                        vote_cols::AbstractString = "",
-                                        config::AbstractString = "",
-                                        graph::AbstractString = "",
-                                        pop_col::AbstractString = "",
-                                        node_col::AbstractString = "",
-                                        area_col::AbstractString = "",
-                                        border_col::AbstractString = "",
-                                        edge_perimeter_col::AbstractString = "",
-                                        node_data::AbstractString = "",
-                                        burn_in::Int = 0, max_maps::Int = 0,
-                                        sortVals::Bool = true,
-                                        compress::Bool = true, force::Bool = false,
-                                        integer::Union{Bool,Symbol} = false,
-                                        bin_range::Union{Nothing,Tuple{<:Real,<:Real}} = nothing,
-                                        bin_num::Int = 50,
-                                        bins::Union{Nothing,AbstractVector{<:Real}} = nothing,
-                                        moment_powers::AbstractVector{<:Integer} = [1, 2, 4, 8],
-                                        quiet::Bool = false, cores::Int = Threads.nthreads())
-    outdir = stripAtlasExt(String(Atlas1))
+function writeHistograms(outdir::AbstractString, hists::AbstractDict;
+                         atlas::Union{Nothing,AbstractString} = nothing, burn_in::Int = 0, max_maps::Int = 0,
+                         compress::Bool = true, force::Bool = false)
+    outdir = String(outdir)
     isdir(outdir) || mkpath(outdir)
-
-    peek = openAtlas(smartOpen(String(Atlas1), "r"))
-    if eof(peek)
-        close(peek)
-        println("atlas extract-map-data-histogram: $Atlas1 has no maps; nothing written.")
-        return nothing
+    written = String[]
+    skipped = String[]
+    if atlas !== nothing
+        a = openAtlas(smartOpen(String(atlas), "r"))
+        try
+            fields = something(firstMapFieldNames(a), String[])
+            push!(written, writeAboutFile(outdir, String(atlas), a, fields; burnIn = burn_in, maxMaps = max_maps))
+        finally
+            close(a)
+        end
     end
-    firstMap = nextMap(peek)
-    writeAboutFile(outdir, String(Atlas1), peek, sort(collect(keys(firstMap.data)));
-                  burnIn = burn_in, maxMaps = max_maps)
-    close(peek)
 
-    hists, _ = mapDataHistograms(Atlas1; add = add, vote_cols = vote_cols, config = config,
-        graph = graph, pop_col = pop_col, node_col = node_col, area_col = area_col,
-        border_col = border_col, edge_perimeter_col = edge_perimeter_col,
-        node_data = node_data, burn_in = burn_in, max_maps = max_maps, sortVals = sortVals,
-        cores = cores, quiet = quiet, integer = integer, bin_range = bin_range,
-        bin_num = bin_num, bins = bins, moment_powers = moment_powers)
-
-    # A --max-maps run gets its own filenames so it never collides with (or is
-    # silently mistaken for) a full run's output in the same directory.
     partial = max_maps > 0 ? "-partial" : ""
     csvExt = partial * (compress ? ".csv.gz" : ".csv")
     jsonExt = partial * (compress ? ".json.gz" : ".json")
-    written = String[]
-    skipped = String[]
     for field in sort(collect(keys(hists)))
         csvPath = joinpath(outdir, field * "-histogram" * csvExt)
         jsonPath = joinpath(outdir, field * "-histogram" * jsonExt)
@@ -398,9 +351,5 @@ function run_extract_map_data_histogram(Atlas1::AbstractString;
         writeHistogramJSON(jsonPath, hists[field])
         append!(written, [csvPath, jsonPath])
     end
-    isempty(skipped) || @info "extract-map-data-histogram: skipping existing file(s) " *
-        "(use --force to overwrite): " * join(skipped, ", ")
-
-    quiet || println("Wrote ", length(written), " file(s) + about.md to ", outdir, "/")
-    return nothing
+    return (written = written, skipped = skipped)
 end

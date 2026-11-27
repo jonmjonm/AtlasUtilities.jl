@@ -1,6 +1,6 @@
 # Every subcommand run through `command_main`, the entry point the installed `atlas` command uses, so the
 # command-line layer is tested too: option parsing (e.g. --bins "a,b,c", --integer auto), flags turned into
-# settings (--no-compression -> compress = false), and argument order. The other test files call the run_*
+# settings (--no-compression -> compress = false), and argument order. The other test files call the library
 # functions directly; these check that the flags reach them.
 import JSON
 using AtlasUtilities: command_main, stripAtlasExt
@@ -70,7 +70,7 @@ mapsof(path) = (io = smartOpen(path, "r"); a = openAtlas(io); ms = Map[]; while 
         outdir = stripAtlasExt(a)
         csvs = filter(endswith(".csv"), readdir(outdir))
         @test length(csvs) == 3 && isfile(joinpath(outdir, "about.md"))
-        @test !any(endswith(".gz"), readdir(outdir))                  # --no-compression reached run_extract
+        @test !any(endswith(".gz"), readdir(outdir))                  # --no-compression reached extractMapData
         rows = readlines(joinpath(outdir, csvs[1]))
         @test length(rows) == 1 + 3                                   # header + --max-maps 3 rows
 
