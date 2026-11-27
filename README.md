@@ -101,7 +101,7 @@ mapatlas info some_atlas.jsonl.gz
 > No system image is built. The launcher uses the Julia that ran the build, or `julia`
 > on your `PATH` if that version has since been removed.
 
-**Coming from the `atlas` command** (AtlasUtilities 0.3.1 and earlier): the command is
+**Coming from the `atlas` command** (AtlasUtilities 0.3.2 and earlier): the command is
 now `mapatlas`, and `atlas render` and `atlas install-render` are gone for now. Installing
 `mapatlas` leaves an old `atlas` in place; remove it with
 `rm ~/.julia/bin/atlas ~/.julia/completions/_atlas`.

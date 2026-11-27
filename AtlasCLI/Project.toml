@@ -19,7 +19,7 @@ StreamHistogram = {rev = "main", url = "https://github.com/jonmjonm/StreamHistog
 [compat]
 Aqua = "0.8"
 AtlasIO = "0.2.5"
-AtlasUtilities = "0.3.2"
+AtlasUtilities = "0.4"
 Comonicon = "1.0.8"
 CycleWalk = "0.2"
 JSON = "1.6"

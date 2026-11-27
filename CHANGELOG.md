@@ -1,8 +1,8 @@
 # Changelog
 
-## [Unreleased]
+## [0.4.0]
 
-**Breaking.** AtlasUtilities is now a library, and the command is a separate package, AtlasCLI (in `AtlasCLI/`).
+**Breaking.** AtlasUtilities is now a library, and the command is a separate package, AtlasCLI (in `AtlasCLI/`), first released as 0.1.0.
 
 ### Atlas output
 
