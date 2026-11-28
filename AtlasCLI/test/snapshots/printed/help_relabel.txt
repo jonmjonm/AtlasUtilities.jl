@@ -1,0 +1,49 @@
+$ mapatlas relabel --help
+
+
+  relabel <args> [options] [flags]
+
+
+
+Args
+
+  <atlas1>                                                  input atlas (.jsonl / .jsonl.gz /
+                                                            .jsonl.bz2).
+
+  <atlas2>                                                  output atlas.
+
+  [graph]                                                   optional dual-graph hierarchy (NetworkX node-link JSON).
+                                                            Required for multiscale/hierarchical atlases whose per-map
+                                                            node sets vary.
+
+
+
+Options
+
+  --weight-population <pop.json>                            weight the alignment by population instead of raw node
+                                                            counts. <pop.json> is a node-link JSON (often the
+                                                            same file as graph) whose nodes carry a population
+                                                            attribute, named by --population-attr, and are
+                                                            keyed by the "levels in graph" param of the atlas.
+                                                            Requires --population-attr.
+
+  --population-attr <name>                                  the population attribute name on the nodes of
+                                                            <pop.json> (e.g. pop2020cen). Required
+                                                            by --weight-population.
+
+
+
+Flags
+
+  --first-map                                               align every map to map 1 (anchor) instead of to its
+                                                            predecessor.
+
+  --quiet                                                   suppress the progress bar.
+
+  --keep-partial                                            if the command fails partway, keep what it wrote, as
+                                                            OUT.incomplete.EXT, for debugging (otherwise nothing is
+                                                            left; an existing output is never replaced by an incomplete
+                                                            one).
+
+  -h, --help                                                Print this help message.
+[exit 0]

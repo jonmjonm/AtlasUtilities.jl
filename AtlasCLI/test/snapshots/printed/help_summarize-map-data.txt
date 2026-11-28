@@ -1,0 +1,27 @@
+$ mapatlas summarize-map-data --help
+
+
+  summarize-map-data <args> [options] [flags]
+
+
+
+Args
+
+  <atlas1>                                                  input atlas (.jsonl / .jsonl.gz /
+                                                            .jsonl.bz2).
+
+
+
+Options
+
+  --max-maps <n>                                            only consider the first n maps of the atlas
+                                                            (default 0, unlimited).
+
+
+
+Flags
+
+  --quiet                                                   suppress the progress bar.
+
+  -h, --help                                                Print this help message.
+[exit 0]

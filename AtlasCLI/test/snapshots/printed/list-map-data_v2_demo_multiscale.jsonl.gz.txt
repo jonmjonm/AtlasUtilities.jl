@@ -1,0 +1,3 @@
+$ mapatlas list-map-data v2_demo_multiscale.jsonl.gz
+mapatlas list-map-data: v2_demo_multiscale.jsonl.gz's first map has no data fields.
+[exit 0]

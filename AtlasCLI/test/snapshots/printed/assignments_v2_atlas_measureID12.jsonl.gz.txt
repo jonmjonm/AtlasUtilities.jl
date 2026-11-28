@@ -1,0 +1,2 @@
+$ mapatlas extract-assignments v2_atlas_measureID12.jsonl.gz --quiet
+[exit 0]

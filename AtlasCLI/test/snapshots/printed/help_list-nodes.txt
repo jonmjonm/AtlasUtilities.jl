@@ -1,0 +1,24 @@
+$ mapatlas list-nodes --help
+
+
+  list-nodes <args> [options]
+
+
+
+Args
+
+  <atlas>                                                   path to the atlas file (.jsonl,
+                                                            .jsonl.gz, or .jsonl.bz2).
+
+
+
+Options
+
+  --map <k>                                                 1-based index of the map to list nodes from (default: 1).
+
+
+
+Flags
+
+  -h, --help                                                Print this help message.
+[exit 0]

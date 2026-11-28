@@ -1,0 +1,10 @@
+$ mapatlas extract-map-data-histogram cycleWalk_ct_slice.jsonl.gz --no-sort --no-compression --quiet
+[exit 0]
+$ mapatlas extract-map-data-histogram cycleWalk_ct_slice.jsonl.gz --bins 0,250,500,1000 --moment-powers 1,2 --quiet
+[exit 0]
+$ mapatlas extract-map-data-histogram cycleWalk_ct_slice.jsonl.gz --quiet
+┌ Info: extract-map-data-histogram: skipping existing file(s) (use --force to overwrite): cycleWalk_ct_slice/get_isoperimetric_scores-histogram.csv.gz, cycleWalk_ct_slice/get_isoperimetric_scores-histogram.json.gz, cycleWalk_ct_slice/get_log_spanning_forests-histogram.csv.gz, cycleWalk_ct_slice/get_log_spanning_forests-histogram.json.gz, cycleWalk_ct_slice/get_log_spanning_trees-histogram.csv.gz, cycleWalk_ct_slice/get_log_spanning_trees-histogram.json.gz
+└ @ AtlasCLI <source>
+[exit 0]
+$ mapatlas extract-map-data-histogram cycleWalk_ct_slice.jsonl.gz --force --quiet
+[exit 0]

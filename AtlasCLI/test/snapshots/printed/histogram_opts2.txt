@@ -1,0 +1,4 @@
+$ mapatlas extract-map-data-histogram cycleWalk_ct_slice.jsonl.gz --bin-range 0,1000 --bin-num 10 --burn-in 5 --max-maps 10 --quiet
+[exit 0]
+$ mapatlas extract-map-data-histogram cycleWalk_ct_slice.jsonl.gz --integer auto --no-compression --quiet
+[exit 0]

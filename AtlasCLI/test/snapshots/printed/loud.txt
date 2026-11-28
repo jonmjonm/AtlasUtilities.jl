@@ -1,0 +1,70 @@
+$ mapatlas relabel demo_grid_4x4.jsonl.gz r.jsonl.gz
+[exit 0]
+$ mapatlas add get_isoperimetric_scores cycleWalk_ct_slice.jsonl.gz a.jsonl.gz --graph ../../data/CT_pct20.json --pop-col POP20 --node-col NAME --area-col area --border-col border_length --edge-perimeter-col length
+[exit error: mapatlas add: map "step1" already has field "get_isoperimetric_scores"; pass --overwrite to recompute it.]
+$ mapatlas add get_isoperimetric_scores cycleWalk_ct_slice.jsonl.gz a.jsonl.gz --graph ../../data/CT_pct20.json --pop-col POP20 --node-col NAME --area-col area --border-col border_length --edge-perimeter-col length --overwrite
+[exit 0]
+$ mapatlas extract-map-data cycleWalk_ct_slice.jsonl.gz
+Wrote 3 file(s) + about.md to cycleWalk_ct_slice/
+[exit 0]
+$ mapatlas extract-map-data cycleWalk_ct_slice.jsonl.gz
+mapatlas extract-map-data: nothing to write (all target files exist; pass --force to overwrite).
+┌ Info: extract-map-data: skipping existing file(s) (use --force to overwrite): get_isoperimetric_scores.csv.gz, get_log_spanning_forests.csv.gz, get_log_spanning_trees.csv.gz
+└ @ AtlasCLI <source>
+[exit 0]
+$ mapatlas extract-map-data-histogram cycleWalk_ct_slice.jsonl.gz
+Wrote 6 file(s) + about.md to cycleWalk_ct_slice/
+[exit 0]
+$ mapatlas extract-map-data-histogram cycleWalk_ct_slice.jsonl.gz
+Wrote 0 file(s) + about.md to cycleWalk_ct_slice/
+┌ Info: extract-map-data-histogram: skipping existing file(s) (use --force to overwrite): cycleWalk_ct_slice/get_isoperimetric_scores-histogram.csv.gz, cycleWalk_ct_slice/get_isoperimetric_scores-histogram.json.gz, cycleWalk_ct_slice/get_log_spanning_forests-histogram.csv.gz, cycleWalk_ct_slice/get_log_spanning_forests-histogram.json.gz, cycleWalk_ct_slice/get_log_spanning_trees-histogram.csv.gz, cycleWalk_ct_slice/get_log_spanning_trees-histogram.json.gz
+└ @ AtlasCLI <source>
+[exit 0]
+$ mapatlas summarize-map-data cycleWalk_ct_slice.jsonl.gz --max-maps 4
+Maps considered: 4
+
+get_isoperimetric_scores:
+  [1]
+    mean: 41.05312117981604   std: 2.9978833807957317
+    [min, 25%, median, 75%, max]: [37.36511295759833, 37.496930474036404, 39.85316858036697, 41.48441034628813, 45.60370773497793]
+    WARNING: a quartile estimate disagrees with the ASH density by 4.2 percentage points -- the within-bin interpolation may not fit this field's shape.
+  [2]
+    mean: 44.08315518241626   std: 2.254613439696142
+    [min, 25%, median, 75%, max]: [41.751420142047714, 41.8445808665998, 42.6131568441545, 44.53459678804127, 47.57396542655306]
+    WARNING: a quartile estimate disagrees with the ASH density by 4.2 percentage points -- the within-bin interpolation may not fit this field's shape.
+  [3]
+    mean: 48.4529175431088   std: 3.5956106990225254
+    [min, 25%, median, 75%, max]: [42.988253818608975, 43.149293976211816, 48.68504939380947, 49.349340043921195, 53.053263668786535]
+  [4]
+    mean: 55.51878803284926   std: 2.7878994326854167
+    [min, 25%, median, 75%, max]: [52.46158242343904, 52.58174097024038, 54.23392098875883, 55.555665003573594, 59.97149159852291]
+  [5]
+    mean: 98.50471527654724   std: 15.902933960359185
+    [min, 25%, median, 75%, max]: [72.72534211189014, 73.4161093869037, 100.96045447806937, 105.70947949378758, 115.89829680023757]
+
+get_log_spanning_forests:
+  mean: 893.6952042119892   std: 6.3650178406671065
+  [min, 25%, median, 75%, max]: [887.1043584528486, 887.3118319846869, 887.5971080909645, 900.0066187140441, 900.0714541927435]
+  WARNING: a quartile estimate disagrees with the ASH density by 12.8 percentage points -- the within-bin interpolation may not fit this field's shape.
+
+get_log_spanning_trees:
+  [1]
+    mean: 164.12524726267898   std: 1.7893687869586719
+    [min, 25%, median, 75%, max]: [161.45014228533435, 161.5254429401624, 163.6997493483224, 165.35636375453953, 166.1564332120876]
+  [2]
+    mean: 170.83879205837113   std: 2.0067134603682146
+    [min, 25%, median, 75%, max]: [168.73682651719488, 168.80672454698993, 168.99894412892635, 172.65111618571805, 173.10545337938592]
+  [3]
+    mean: 177.00877460612676   std: 3.9095703604915313
+    [min, 25%, median, 75%, max]: [171.847857008351, 172.01726803273493, 175.51137041065314, 178.53959247151562, 182.43604603234562]
+  [4]
+    mean: 189.36595302483013   std: 2.7512832413012944
+    [min, 25%, median, 75%, max]: [185.61941387113802, 185.73322567177132, 188.0805940598335, 191.21041857724973, 192.73265141072034]
+  [5]
+    mean: 192.35643725998227   std: 2.4759544991219333
+    [min, 25%, median, 75%, max]: [188.86192974683567, 188.9621774637316, 191.30546784617383, 194.20012067154363, 195.12741205283092]
+    WARNING: a quartile estimate disagrees with the ASH density by 12.5 percentage points -- the within-bin interpolation may not fit this field's shape.
+[exit 0]
+$ mapatlas convert cycleWalk_ct_slice.jsonl.gz c.jsonl.gz
+converted 41 maps to format v2: c.jsonl.gz
+[exit 0]

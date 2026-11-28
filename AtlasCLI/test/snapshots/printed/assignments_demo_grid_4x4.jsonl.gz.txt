@@ -1,0 +1,2 @@
+$ mapatlas extract-assignments demo_grid_4x4.jsonl.gz --quiet
+[exit 0]

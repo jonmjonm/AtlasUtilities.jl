@@ -1,0 +1,2 @@
+$ mapatlas relabel demo_multiscale.jsonl.gz out.jsonl.gz ../../data/demo_multiscale_graph.json --quiet
+[exit 0]

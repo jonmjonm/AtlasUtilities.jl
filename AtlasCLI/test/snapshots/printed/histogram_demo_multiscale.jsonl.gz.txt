@@ -1,0 +1,2 @@
+$ mapatlas extract-map-data-histogram demo_multiscale.jsonl.gz --quiet
+[exit 0]

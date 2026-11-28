@@ -1,0 +1,2 @@
+$ mapatlas extract-map-data cycleWalk_ct_slice.jsonl.gz --add get_log_spanning_trees --config ../../data/ct.toml --no-compression --quiet
+[exit 0]

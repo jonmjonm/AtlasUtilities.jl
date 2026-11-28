@@ -1,0 +1,3 @@
+$ mapatlas list-nodes demo_multiscale.jsonl.gz
+["X","Y"]
+[exit 0]

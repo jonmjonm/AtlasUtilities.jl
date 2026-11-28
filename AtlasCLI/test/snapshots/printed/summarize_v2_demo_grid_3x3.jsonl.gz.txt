@@ -1,0 +1,3 @@
+$ mapatlas summarize-map-data v2_demo_grid_3x3.jsonl.gz --quiet
+Maps considered: 4
+[exit 0]

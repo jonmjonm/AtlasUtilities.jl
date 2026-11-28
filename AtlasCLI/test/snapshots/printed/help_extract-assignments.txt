@@ -1,0 +1,39 @@
+$ mapatlas extract-assignments --help
+
+
+  extract-assignments <args> [options] [flags]
+
+
+
+Args
+
+  <atlas1>                                                  input atlas (.jsonl / .jsonl.gz /
+                                                            .jsonl.bz2).
+
+
+
+Options
+
+  --graph <graph.json>                                      dual-graph JSON whose finest units (per the levels in
+                                                            graph parameter of the atlas) become the columns, e.g.
+                                                            every precinct, including those in counties never split.
+
+
+
+Flags
+
+  --no-compression                                          write plain .csv instead of gzip-compressed
+                                                            .csv.gz.
+
+  --force                                                   overwrite the output file if it already exists (otherwise it
+                                                            is skipped).
+
+  --quiet                                                   suppress the progress bar and messages.
+
+  --keep-partial                                            if the command fails partway, keep what it wrote, as
+                                                            OUT.incomplete.EXT, for debugging (otherwise nothing is
+                                                            left; an existing output is never replaced by an incomplete
+                                                            one).
+
+  -h, --help                                                Print this help message.
+[exit 0]

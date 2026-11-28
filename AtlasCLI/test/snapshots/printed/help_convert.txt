@@ -1,0 +1,29 @@
+$ mapatlas convert --help
+
+
+  convert <args> [options] [flags]
+
+
+
+Args
+
+  <src>                                                     the atlas to convert (.jsonl, .jsonl.gz,
+                                                            or .jsonl.bz2).
+
+  <dst>                                                     the converted atlas to write (.jsonl,
+                                                            .jsonl.gz, or .jsonl.bz2).
+
+
+
+Options
+
+  --to <version>                                            the format version to write, 1 or 2 (default: 2).
+
+
+
+Flags
+
+  --quiet                                                   do not print the number of maps converted.
+
+  -h, --help                                                Print this help message.
+[exit 0]

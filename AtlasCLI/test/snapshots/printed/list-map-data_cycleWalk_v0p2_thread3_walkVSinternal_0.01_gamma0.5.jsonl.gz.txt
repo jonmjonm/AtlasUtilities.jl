@@ -1,0 +1,5 @@
+$ mapatlas list-map-data cycleWalk_v0p2_thread3_walkVSinternal_0.01_gamma0.5.jsonl.gz
+get_isoperimetric_scores
+get_log_spanning_forests
+get_log_spanning_trees
+[exit 0]

@@ -1,0 +1,6 @@
+$ mapatlas relabel v2_demo_grid_4x4.jsonl.gz g.jsonl.gz --first-map --quiet
+[exit 0]
+$ mapatlas relabel v2_demo_multiscale.jsonl.gz m.jsonl ../../data/demo_multiscale_graph.json --quiet
+[exit 0]
+$ mapatlas relabel v2_atlas_measureID12.jsonl.gz w.jsonl.gz ../../data/NC_pct21.json --weight-population ../../data/NC_pct21.json --population-attr pop2020cen --quiet
+[exit 0]

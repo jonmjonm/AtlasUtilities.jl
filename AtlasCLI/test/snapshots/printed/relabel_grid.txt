@@ -1,0 +1,4 @@
+$ mapatlas relabel demo_grid_4x4.jsonl.gz out.jsonl.gz --quiet
+[exit 0]
+$ mapatlas relabel demo_grid_4x4.jsonl.gz first.jsonl --first-map --quiet
+[exit 0]

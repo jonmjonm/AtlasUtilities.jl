@@ -1,0 +1,2 @@
+$ mapatlas add get_isoperimetric_scores,get_partisan_margins cycleWalk_ct_slice.jsonl.gz a.jsonl.gz --graph ../../data/CT_pct20.json --pop-col POP20 --node-col NAME --area-col area --border-col border_length --edge-perimeter-col length --node-data COUNTY,G20PREDEM --vote-cols G20PREDEM,G20PREREP --overwrite --quiet
+[exit 0]

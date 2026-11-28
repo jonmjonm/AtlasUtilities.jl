@@ -1,0 +1,4 @@
+$ mapatlas extract-assignments v2_demo_multiscale.jsonl.gz --graph ../../data/demo_multiscale_graph.json --quiet
+[exit 0]
+$ mapatlas extract-assignments v2_atlas_measureID12.jsonl.gz --graph ../../data/NC_pct21.json --no-compression --quiet
+[exit 0]

@@ -1,0 +1,2 @@
+$ mapatlas extract-map-data-histogram v2_demo_grid_4x4.jsonl.gz --quiet
+[exit 0]

@@ -1,0 +1,30 @@
+$ mapatlas add get_log_spanning_trees cycleWalk_ct_slice.jsonl.gz o.jsonl --graph ../../data/CT_pct20.json --pop-col POP20 --node-col NAME --quiet
+[exit error: mapatlas add: map "step1" already has field "get_log_spanning_trees"; pass --overwrite to recompute it.]
+$ mapatlas add get_log_spanning_trees cycleWalk_ct_slice.jsonl.gz o.jsonl --pop-col POP20 --node-col NAME
+[exit error: mapatlas add: no graph given; pass --graph <graph.json>, or --config <param.toml> whose [plans] has map_file.]
+$ mapatlas add get_log_spanning_trees cycleWalk_ct_slice.jsonl.gz o.jsonl --graph ../../data/CT_pct20.json --node-col NAME
+[exit error: mapatlas add: no population column; pass --pop-col <column>, or [plans].pop_col in the config.]
+$ mapatlas add get_partisan_margins cycleWalk_ct_slice.jsonl.gz o.jsonl --graph ../../data/CT_pct20.json --pop-col POP20 --node-col NAME
+[exit error: mapatlas add: "get_partisan_margins" needs vote columns; pass --vote-cols "votes1,votes2" (one or more `;`-separated pairs).]
+$ mapatlas add no_such_writer cycleWalk_ct_slice.jsonl.gz o.jsonl --graph ../../data/CT_pct20.json --pop-col POP20 --node-col NAME
+[exit error: mapatlas add: CycleWalk has no name "no_such_writer"; it must be a function usable with push_writer! (see `mapatlas add --list-writers`).]
+$ mapatlas add  cycleWalk_ct_slice.jsonl.gz o.jsonl
+[exit error: mapatlas add: <functions> <atlas1> <atlas2> are required (unless --list-writers).]
+$ mapatlas relabel demo_multiscale.jsonl.gz r.jsonl ../../data/demo_multiscale_graph.json --weight-population ../../data/CT_pct20.json --quiet
+[exit error: mapatlas relabel: --weight-population needs --population-attr <name>, the population attribute.]
+$ mapatlas relabel demo_grid_4x4.jsonl.gz r.jsonl ../../data/demo_multiscale_graph.json --quiet
+[exit error: mapatlas relabel: a dual-graph JSON was given but the atlas has no "levels in graph" param to interpret it.]
+$ mapatlas extract-map-data cycleWalk_ct_slice.jsonl.gz --max-maps -1
+[exit error: mapatlas extract-map-data: --max-maps must be ≥ 0, got -1.]
+$ mapatlas extract-map-data-histogram cycleWalk_ct_slice.jsonl.gz --burn-in 1000 --quiet
+[exit error: mapatlas extract-map-data-histogram: cycleWalk_ct_slice.jsonl.gz has no maps left after --burn-in 1000.]
+$ mapatlas extract-map-data-histogram cycleWalk_ct_slice.jsonl.gz --max-maps -1 --quiet
+[exit error: mapatlas extract-map-data-histogram: --max-maps must be ≥ 0, got -1.]
+$ mapatlas summarize-map-data cycleWalk_ct_slice.jsonl.gz --max-maps -1
+[exit error: mapatlas summarize-map-data: --max-maps must be ≥ 0, got -1.]
+$ mapatlas list-nodes cycleWalk_ct_slice.jsonl.gz --map 0
+[exit error: mapatlas list-nodes: --map must be >= 1 (got 0).]
+$ mapatlas list-nodes cycleWalk_ct_slice.jsonl.gz --map 45
+[exit error: EOFError: read end of file]
+$ mapatlas convert cycleWalk_ct_slice.jsonl.gz c.jsonl --to 3
+[exit error: mapatlas convert: --to must be 1 or 2, got 3.]

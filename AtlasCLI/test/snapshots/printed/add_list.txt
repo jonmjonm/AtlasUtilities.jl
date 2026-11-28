@@ -1,0 +1,19 @@
+$ mapatlas add --list-writers
+Writer functions usable with mapatlas add / --add (CycleWalk 0.2.5):
+
+  get_cut_edge_sum
+  get_diameters
+  get_district_quotient_graph
+  get_isoperimetric_score
+  get_isoperimetric_scores (fast)
+  get_log_district_trees
+  get_log_district_trees_data
+  get_log_linking_edges
+  get_log_spanning_forests (fast)
+  get_log_spanning_trees (fast)
+  get_neighbor_lists
+
+Partisan writers (require --vote-cols votes1,votes2[;votes1,votes2...]):
+  get_partisan_margins
+  get_partisan_seats
+[exit 0]

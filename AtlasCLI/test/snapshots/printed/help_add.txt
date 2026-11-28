@@ -1,0 +1,70 @@
+$ mapatlas add --help
+
+
+  add <args> [options] [flags]
+
+
+
+Args
+
+  [functions]                                               writer function name, or a comma-separated / bracketed list.
+
+  [atlas1]                                                  input atlas (.jsonl / .jsonl.gz /
+                                                            .jsonl.bz2).
+
+  [atlas2]                                                  output atlas.
+
+
+
+Options
+
+  --config <param.toml>                                     a CycleWalk TOML; its plans table supplies the graph path
+                                                            (map_directory/map_file) and columns
+                                                            (pop_col, geo_units, area_col,
+                                                            node_border_col, edge_perimeter_col,
+                                                            node_data).
+
+  --graph <graph.json>                                      dual-graph JSON (overrides the TOML path).
+
+  --pop-col <col>                                           population column.
+
+  --node-col <col>                                          node id column (the districting key column).
+
+  --area-col <col>                                          node area column.
+
+  --border-col <col>                                        node border-length column.
+
+  --edge-perimeter-col <col>                                shared-edge perimeter column.
+
+  --node-data <cols>                                        extra node attributes to keep (comma-separated list).
+
+  --vote-cols <pairs>                                       vote columns for the partisan writers
+                                                            (get_partisan_margins,
+                                                            get_partisan_seats), as votes1,votes2
+                                                            pairs separated by ; (e.g.
+                                                            G20_PR_D,G20_PR_R;G16_PR_D,G16_PR_R — quote it in
+                                                            your shell since it contains a ;). Each pair adds
+                                                            a field writer_votes1_votes2; the columns are kept
+                                                            on the graph automatically.
+
+
+
+Flags
+
+  --list-writers                                            print the CycleWalk writer function names usable as
+                                                            functions (plain and partisan) and exit;
+                                                            functions/atlas1/atlas2 are
+                                                            not required with this flag.
+
+  --overwrite                                               recompute a field even if a map already has it (otherwise it
+                                                            is an error for a requested field to already exist).
+
+  --quiet                                                   suppress the progress bar.
+
+  --keep-partial                                            if the command fails partway, keep what it wrote, as
+                                                            OUT.incomplete.EXT, for debugging (otherwise nothing is
+                                                            left; an existing output is never replaced by an incomplete
+                                                            one).
+
+  -h, --help                                                Print this help message.
+[exit 0]
