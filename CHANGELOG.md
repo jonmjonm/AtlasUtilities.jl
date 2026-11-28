@@ -52,7 +52,9 @@
 ### Development
 
 - Tests are split between the packages; the library tests run without CycleWalk, then the CycleWalk ones.
-- Aqua checks, and CI jobs with Codecov coverage for both packages.
+- Aqua checks, and CI jobs with Codecov coverage for both packages, each run on 1 and 4 threads.
+- Snapshot tests of every command's printed text and output files (`AtlasCLI/test/snapshots/`; rewrite them with
+  `UPDATE_SNAPSHOTS=1`), and a test that `using AtlasUtilities` loads no heavy package and at most 35 packages.
 
 ## [0.3.2]
 

@@ -1,0 +1,15 @@
+$ mapatlas extract-assignments demo_multiscale.jsonl.gz --graph ../../data/demo_multiscale_graph.json --no-compression --quiet
+[exit 0]
+$ mapatlas extract-assignments atlas_measureID12.jsonl.gz --graph ../../data/NC_pct21.json --quiet
+[exit 0]
+$ mapatlas extract-assignments demo_multiscale.jsonl.gz --no-compression
+mapatlas extract-assignments: demo_multiscale-assignments.csv already exists; pass --force to overwrite.
+[exit 0]
+$ mapatlas extract-assignments demo_multiscale.jsonl.gz --no-compression
+mapatlas extract-assignments: demo_multiscale-assignments.csv already exists; pass --force to overwrite.
+[exit 0]
+$ mapatlas extract-assignments demo_multiscale.jsonl.gz --no-compression --force
+The maps' node sets differ (a multiscale atlas); using the finest regions seen in the atlas as columns.
+Wrote 3 map(s) to demo_multiscale-assignments.csv
+Columns (6): the finest regions seen in the atlas (a region never split in any map stays one column; pass --graph for the graph's finest units).
+[exit 0]

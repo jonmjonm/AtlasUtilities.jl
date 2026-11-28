@@ -1,0 +1,2 @@
+$ mapatlas extract-map-data-histogram cycleWalk_ct_slice.jsonl.gz --add get_isoperimetric_scores --config ../../data/ct.toml --node-data COUNTY --no-compression --quiet
+[exit 0]

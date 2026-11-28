@@ -1,0 +1,22 @@
+$ mapatlas list-map-data atlas_measureID12.jsonl.gz
+acceptance_wait
+bath_swaps
+del_dists
+get_isoperimetric_scores
+get_log_linking_edges
+get_log_spanning_forests
+get_mcd_score
+rejection_excessdistsincoarse
+rejection_fr2_constraint
+rejection_maxcoarsesplit
+rejection_maxhammingdistance
+rejection_metropolisHastings1
+rejection_noedge
+rejection_packnode
+rejection_prestep
+rejection_proposingSameDists
+rejection_sharedcoarse
+rejection_snf_connectivity
+rejection_snf_constraint
+replica_id
+[exit 0]

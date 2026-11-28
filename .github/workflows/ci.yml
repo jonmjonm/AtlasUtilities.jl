@@ -12,18 +12,23 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  JULIA_NUM_THREADS: 2   # exercise the threaded map processing
+  JULIA_NUM_THREADS: 2   # exercise the threaded map processing (the test jobs set their own, below)
 
 jobs:
-  # One test job per package. 1.11 is the oldest Julia [compat] allows. julia-buildpkg is not used: the only build
-  # step is AtlasCLI's, which installs the `mapatlas` command, and the install job below tests that separately.
+  # One test job per package, each on 1 and 4 threads: on 1 thread the map processing takes its serial paths (AtlasIO
+  # reads one map at a time), on 4 the parallel ones. 1.11 is the oldest Julia [compat] allows. julia-buildpkg is
+  # not used: the only build step is AtlasCLI's, which installs the `mapatlas` command, and the install job below
+  # tests that separately.
   library:
-    name: AtlasUtilities (Julia ${{ matrix.julia-version }})
+    name: AtlasUtilities (Julia ${{ matrix.julia-version }}, ${{ matrix.threads }} threads)
     runs-on: ubuntu-latest
+    env:
+      JULIA_NUM_THREADS: ${{ matrix.threads }}
     strategy:
       fail-fast: false
       matrix:
         julia-version: ['1.11', '1']
+        threads: [1, 4]
     steps:
       - uses: actions/checkout@v4
       - uses: julia-actions/setup-julia@v2
@@ -41,13 +46,17 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false   # an upload problem must not fail the tests
 
+  # Includes the snapshot tests (AtlasCLI/test/snapshotTests.jl): every command's output against snapshots/.
   cli:
-    name: AtlasCLI (Julia ${{ matrix.julia-version }})
+    name: AtlasCLI (Julia ${{ matrix.julia-version }}, ${{ matrix.threads }} threads)
     runs-on: ubuntu-latest
+    env:
+      JULIA_NUM_THREADS: ${{ matrix.threads }}
     strategy:
       fail-fast: false
       matrix:
         julia-version: ['1.11', '1']
+        threads: [1, 4]
     steps:
       - uses: actions/checkout@v4
       - uses: julia-actions/setup-julia@v2

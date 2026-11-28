@@ -1,0 +1,24 @@
+$ mapatlas info cycleWalk_v0p2_thread3_walkVSinternal_0.01_gamma0.5.jsonl.gz
+Atlas Header
+============
+  date           : "2025-04-21T13:02:15.557"
+  description    : ""
+  format version : "1"
+  map param type : "Dict{String, Any}"
+  weight type    : "Int64"
+
+Atlas Parameters
+================
+  commit            : "f167343cfb3c903f9e640ce6a100a361d7abdb78"
+  districts         : 14
+  energies          : ["get_log_spanning_forests"]
+  energy weights    : [0.5]
+  population bounds : [730758, 760583]
+
+Map Data Fields
+===============
+  get_isoperimetric_scores
+  get_log_spanning_forests
+  get_log_spanning_trees
+
+[exit 0]

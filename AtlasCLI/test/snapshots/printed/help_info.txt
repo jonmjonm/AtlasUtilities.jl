@@ -1,0 +1,32 @@
+$ mapatlas info --help
+
+
+  info <args> [flags]
+
+
+
+Args
+
+  <atlas>                                                   path to the atlas file (.jsonl,
+                                                            .jsonl.gz, or .jsonl.bz2).
+
+
+
+Flags
+
+  --extract-script                                          write the header script entry to a file named by
+                                                            the header script_name entry (falling back to
+                                                            extracted_script.jl), and, if present, the header
+                                                            toml_config entry to a file named by the header
+                                                            toml_config_file entry (falling back to
+                                                            extracted_config.toml) and each
+                                                            script_includes entry to a file of its own name.
+                                                            Every file is written in the current directory, under the
+                                                            basename of the recorded name, so extraction can never write
+                                                            back over the original.
+
+  --force                                                   overwrite an existing file of that name (otherwise its entry
+                                                            is skipped, with a message).
+
+  -h, --help                                                Print this help message.
+[exit 0]

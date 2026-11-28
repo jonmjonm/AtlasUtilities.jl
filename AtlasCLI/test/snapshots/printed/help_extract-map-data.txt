@@ -1,0 +1,66 @@
+$ mapatlas extract-map-data --help
+
+
+  extract-map-data <args> [options] [flags]
+
+
+
+Args
+
+  <atlas1>                                                  input atlas (.jsonl / .jsonl.gz /
+                                                            .jsonl.bz2).
+
+
+
+Options
+
+  --add <functions>                                         also compute and extract these writer function(s).
+
+  --config <param.toml>                                     CycleWalk TOML supplying the graph (for --add).
+
+  --graph <graph.json>                                      dual-graph JSON (overrides the TOML path).
+
+  --pop-col <col>                                           population column.
+
+  --node-col <col>                                          node id column (the districting key column).
+
+  --area-col <col>                                          node area column.
+
+  --border-col <col>                                        node border-length column.
+
+  --edge-perimeter-col <col>                                shared-edge perimeter column.
+
+  --node-data <cols>                                        extra node attributes to keep (comma-separated list).
+
+  --vote-cols <pairs>                                       vote columns for the partisan --add writers
+                                                            (get_partisan_margins,
+                                                            get_partisan_seats), as votes1,votes2
+                                                            pairs separated by ; (e.g.
+                                                            G20_PR_D,G20_PR_R;G16_PR_D,G16_PR_R — quote it in
+                                                            your shell since it contains a ;); each pair
+                                                            yields a field writer_votes1_votes2.
+
+  --max-maps <n>                                            stop after extracting this many maps (default 0, unlimited).
+                                                            Output filenames get a -partial suffix so a
+                                                            partial run never collides with the output of a full run in
+                                                            the same directory, and about.md notes the limit.
+
+
+
+Flags
+
+  --no-compression                                          write plain .csv instead of gzip-compressed
+                                                            .csv.gz.
+
+  --force                                                   overwrite an output file that already exists (otherwise it
+                                                            is skipped).
+
+  --quiet                                                   suppress the progress bar.
+
+  --keep-partial                                            if the command fails partway, keep what it wrote, as
+                                                            FIELD.incomplete.csv.gz, for debugging (otherwise nothing is
+                                                            left; an existing output is never replaced by an incomplete
+                                                            one).
+
+  -h, --help                                                Print this help message.
+[exit 0]

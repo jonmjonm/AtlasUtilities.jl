@@ -1,0 +1,5 @@
+$ mapatlas list-map-data v2_cycleWalk_ct_slice.jsonl.gz
+get_isoperimetric_scores
+get_log_spanning_forests
+get_log_spanning_trees
+[exit 0]

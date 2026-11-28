@@ -1,0 +1,3 @@
+$ mapatlas extract-map-data v2_demo_grid_4x4.jsonl.gz --quiet
+mapatlas extract-map-data: nothing to write (all target files exist; pass --force to overwrite).
+[exit 0]

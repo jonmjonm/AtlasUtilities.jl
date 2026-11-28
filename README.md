@@ -533,7 +533,17 @@ julia --project=AtlasCLI -e 'using Pkg; Pkg.test()'   # the command
 
 The library tests run first without CycleWalk, then the tests in `test/process/` load it.
 Both packages run [Aqua](https://github.com/JuliaTesting/Aqua.jl) quality checks, and CI
-reports their coverage to Codecov separately.
+reports their coverage to Codecov separately, running each suite on 1 and on 4 threads.
+
+The command tests include snapshot tests (`AtlasCLI/test/snapshotTests.jl`): every subcommand
+is run on the example atlases, in format v1 and v2, and what it prints is compared with
+`AtlasCLI/test/snapshots/printed/`, and a fingerprint of every file it writes with
+`snapshots/fingerprints.txt`. After an intended change to what a command prints or writes,
+rewrite them and review the diff:
+
+```bash
+UPDATE_SNAPSHOTS=1 julia --project=AtlasCLI -e 'using Pkg; Pkg.test()'
+```
 
 ## Repository layout
 

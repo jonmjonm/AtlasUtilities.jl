@@ -1,0 +1,8 @@
+$ mapatlas convert cycleWalk_ct_slice.jsonl.gz ct_v2.jsonl.gz --to 2
+converted 41 maps to format v2: ct_v2.jsonl.gz
+[exit 0]
+$ mapatlas convert ct_v2.jsonl.gz ct_v1.jsonl --to 1
+converted 41 maps to format v1: ct_v1.jsonl
+[exit 0]
+$ mapatlas convert atlas_measureID12.jsonl.gz ms_v2.jsonl --quiet
+[exit 0]

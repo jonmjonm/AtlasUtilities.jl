@@ -1,0 +1,2 @@
+$ mapatlas extract-map-data-histogram v2_cycleWalk_ct_metadata.jsonl.gz --quiet
+[exit 0]

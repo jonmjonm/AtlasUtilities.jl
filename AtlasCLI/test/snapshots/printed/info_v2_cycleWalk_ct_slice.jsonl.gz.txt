@@ -1,0 +1,42 @@
+$ mapatlas info v2_cycleWalk_ct_slice.jsonl.gz
+Atlas Header
+============
+  date           : "2026-07-17T18:21:14.061"
+  description    : ""
+  format version : "2"
+  map param type : "Dict{String, Any}"
+  run script     : "embedded (extract with --extract-script)"
+  weight type    : "Int64"
+
+Atlas Parameters
+================
+  chain.parameters  : 
+  function: "run_metropolis_hastings!"
+  output_freq: 100
+  proposal: 
+    [1] 
+      proposal: "two_tree_cycle_walk"
+      weight: 0.1
+    [2] 
+      proposal: "one_tree_cycle_walk"
+      weight: 0.9
+  steps: 4000
+  threads: 1
+  chain.run         : "standard metropolized CycleWalk"
+  districts         : 5
+  energies          : ["get_log_spanning_forests", "get_isoperimetric_score"]
+  energy weights    : [1.0, 0.3]
+  package.version   : "CycleWalk v0.2.0"
+  popdev            : 0.02
+  population bounds : [706766, 735612]
+  script_name       : "gen_ct_slice.jl"
+  user              : "jonm"
+  user_full_name    : "Jonathan Mattingly"
+
+Map Data Fields
+===============
+  get_isoperimetric_scores
+  get_log_spanning_forests
+  get_log_spanning_trees
+
+[exit 0]

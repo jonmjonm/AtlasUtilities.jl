@@ -1,0 +1,2 @@
+$ mapatlas extract-map-data atlas_ordered.jsonl.gz --quiet
+[exit 0]

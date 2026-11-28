@@ -1,0 +1,2 @@
+$ mapatlas extract-assignments v2_cycleWalk_v0p2_thread3_walkVSinternal_0.01_gamma0.5.jsonl.gz --quiet
+[exit 0]

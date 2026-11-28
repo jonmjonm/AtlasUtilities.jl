@@ -1,0 +1,89 @@
+$ mapatlas extract-map-data-histogram --help
+
+
+  extract-map-data-histogram <args> [options] [flags]
+
+
+
+Args
+
+  <atlas1>                                                  input atlas (.jsonl / .jsonl.gz /
+                                                            .jsonl.bz2).
+
+
+
+Options
+
+  --burn-in <n>                                             skip the first n maps (default 0).
+
+  --max-maps <n>                                            stop after accumulating this many maps past the burn-in
+                                                            (default 0, unlimited). Output filenames get a -
+                                                            histogram-partial suffix so a partial run never
+                                                            collides with the output of a full run in the same
+                                                            directory, and about.md notes the limit.
+
+  --add <functions>                                         also compute and accumulate these writer function(s).
+
+  --config <param.toml>                                     CycleWalk TOML supplying the graph (for --add).
+
+  --graph <graph.json>                                      dual-graph JSON (overrides the TOML path).
+
+  --pop-col <col>                                           population column.
+
+  --node-col <col>                                          node id column (the districting key column).
+
+  --area-col <col>                                          node area column.
+
+  --border-col <col>                                        node border-length column.
+
+  --edge-perimeter-col <col>                                shared-edge perimeter column.
+
+  --node-data <cols>                                        extra node attributes to keep (comma-separated list).
+
+  --vote-cols <pairs>                                       vote columns for the partisan --add writers, as
+                                                            votes1,votes2 pairs separated by ; (see
+                                                            mapatlas add --help).
+
+  --bin-range <range>                                       fix the bin range of every histogram up front instead of
+                                                            learning it from its own data, as lo,hi (e.g.
+                                                            0,1).
+
+  --bin-num <n>                                             number of histogram bins (default 50; ignored with --
+                                                            integer).
+
+  --bins <edges>                                            explicit bin edges, comma separated, overriding --bin-
+                                                            range/--bin-num.
+
+  --moment-powers <powers>                                  moment orders to accumulate and report, comma separated
+                                                            (default 1,2,4,8). Variance and std need a highest
+                                                            power of at least 2, skewness 3 and excess kurtosis 4; with
+                                                            a lower one they are written as null.
+
+  --integer <mode>                                          true, false (default), or
+                                                            auto. true means the data is integer
+                                                            valued: bins are one per integer and the ASH-derived counts
+                                                            are omitted from the output. auto decides
+                                                            true/false independently for each
+                                                            histogram (each index of a vector field included) from its
+                                                            own learn-phase sample; it requires --bin-
+                                                            range/--bins to be left unset.
+
+
+
+Flags
+
+  --no-sort                                                 do not sort the entries of a vector field before
+                                                            accumulating (so histogram j gets raw entry
+                                                            j of each map vector, not the j-th order
+                                                            statistic).
+
+  --no-compression                                          write plain .csv instead of gzip-compressed
+                                                            .csv.gz.
+
+  --force                                                   overwrite an output file that already exists (otherwise it
+                                                            is skipped).
+
+  --quiet                                                   suppress the progress bar.
+
+  -h, --help                                                Print this help message.
+[exit 0]

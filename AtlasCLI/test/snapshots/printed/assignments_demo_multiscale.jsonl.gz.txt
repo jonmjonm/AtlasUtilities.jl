@@ -1,0 +1,2 @@
+$ mapatlas extract-assignments demo_multiscale.jsonl.gz --quiet
+[exit 0]

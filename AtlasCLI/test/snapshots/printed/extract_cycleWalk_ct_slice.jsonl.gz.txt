@@ -1,0 +1,2 @@
+$ mapatlas extract-map-data cycleWalk_ct_slice.jsonl.gz --quiet
+[exit 0]

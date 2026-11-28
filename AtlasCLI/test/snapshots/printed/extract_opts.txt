@@ -1,0 +1,6 @@
+$ mapatlas extract-map-data cycleWalk_ct_slice.jsonl.gz --no-compression --max-maps 3 --quiet
+[exit 0]
+$ mapatlas extract-map-data cycleWalk_ct_slice.jsonl.gz --quiet
+[exit 0]
+$ mapatlas extract-map-data cycleWalk_ct_slice.jsonl.gz --force --quiet
+[exit 0]

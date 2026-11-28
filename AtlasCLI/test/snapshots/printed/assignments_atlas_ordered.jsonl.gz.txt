@@ -1,0 +1,2 @@
+$ mapatlas extract-assignments atlas_ordered.jsonl.gz --quiet
+[exit 0]

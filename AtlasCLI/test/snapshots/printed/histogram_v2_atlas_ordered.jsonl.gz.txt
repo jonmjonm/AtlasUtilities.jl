@@ -1,0 +1,2 @@
+$ mapatlas extract-map-data-histogram v2_atlas_ordered.jsonl.gz --quiet
+[exit 0]

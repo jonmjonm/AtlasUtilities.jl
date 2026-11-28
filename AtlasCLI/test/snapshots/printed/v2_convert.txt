@@ -1,0 +1,3 @@
+$ mapatlas convert v2_cycleWalk_ct_slice.jsonl.gz back.jsonl --to 1
+converted 41 maps to format v1: back.jsonl
+[exit 0]

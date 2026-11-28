@@ -1,0 +1,47 @@
+$ mapatlas summarize-map-data v2_cycleWalk_ct_slice.jsonl.gz --quiet
+Maps considered: 41
+
+get_isoperimetric_scores:
+  [1]
+    mean: 42.714898504771604   std: 7.026078277076613
+    [min, 25%, median, 75%, max]: [26.94337949142753, 37.94882540964591, 39.98386276475723, 49.36488862124595, 54.0170471869217]
+  [2]
+    mean: 49.57747348051912   std: 5.925584178887466
+    [min, 25%, median, 75%, max]: [40.77227659135577, 44.41022059061093, 49.30752111813092, 55.24866857083944, 62.057175660620494]
+    WARNING: a quartile estimate disagrees with the ASH density by 2.4 percentage points -- the within-bin interpolation may not fit this field's shape.
+  [3]
+    mean: 64.39179450975152   std: 9.37584642235304
+    [min, 25%, median, 75%, max]: [42.988253818608975, 57.480491644325724, 67.39823134823797, 72.30490257017351, 80.95089383358409]
+  [4]
+    mean: 75.6172619867555   std: 11.02564569769021
+    [min, 25%, median, 75%, max]: [52.00229944548066, 71.94258948945159, 78.05625065765427, 82.42315149208477, 97.37269772527799]
+  [5]
+    mean: 91.61629998398129   std: 12.973783799858014
+    [min, 25%, median, 75%, max]: [71.51743289034043, 83.8186771464794, 87.5744435831585, 98.37492446603791, 125.52948231356312]
+
+get_log_spanning_forests:
+  mean: 838.4294739133113   std: 24.760763967360806
+  [min, 25%, median, 75%, max]: [806.1573178587053, 822.7683807227883, 829.87063728305, 847.6908446524337, 900.0714541927435]
+
+get_log_spanning_trees:
+  [1]
+    mean: 156.033594722305   std: 3.9810591544574434
+    [min, 25%, median, 75%, max]: [148.91827234990376, 153.27090796760518, 155.45153531667142, 158.13781538436174, 166.1564332120876]
+    WARNING: a quartile estimate disagrees with the ASH density by 2.2 percentage points -- the within-bin interpolation may not fit this field's shape.
+  [2]
+    mean: 160.70237694404187   std: 4.266900421854556
+    [min, 25%, median, 75%, max]: [155.41634009003022, 157.41815807727562, 160.00792849671012, 162.2178041497875, 173.10545337938592]
+    WARNING: a quartile estimate disagrees with the ASH density by 3.9 percentage points -- the within-bin interpolation may not fit this field's shape.
+  [3]
+    mean: 167.39664918785886   std: 6.100275348277627
+    [min, 25%, median, 75%, max]: [159.27649624714962, 162.13091075817505, 166.52543532991598, 169.7098734253804, 182.43604603234562]
+    WARNING: a quartile estimate disagrees with the ASH density by 2.9 percentage points -- the within-bin interpolation may not fit this field's shape.
+  [4]
+    mean: 174.4809649979831   std: 7.015578465233066
+    [min, 25%, median, 75%, max]: [165.46020296791636, 168.74653300527424, 172.87149083224836, 177.74644099139957, 192.73265141072034]
+    WARNING: a quartile estimate disagrees with the ASH density by 5.1 percentage points -- the within-bin interpolation may not fit this field's shape.
+  [5]
+    mean: 179.81588806112242   std: 8.021543901041191
+    [min, 25%, median, 75%, max]: [167.1401914684702, 173.89910523959333, 178.51699663601283, 185.86714044198055, 195.12741205283092]
+    WARNING: a quartile estimate disagrees with the ASH density by 2.4 percentage points -- the within-bin interpolation may not fit this field's shape.
+[exit 0]

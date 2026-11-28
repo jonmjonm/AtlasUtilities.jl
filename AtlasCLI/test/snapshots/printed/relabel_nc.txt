@@ -1,0 +1,4 @@
+$ mapatlas relabel atlas_measureID12.jsonl.gz w.jsonl.gz ../../data/NC_pct21.json --weight-population ../../data/NC_pct21.json --population-attr pop2020cen --quiet
+[exit 0]
+$ mapatlas relabel cycleWalk_v0p2_thread3_walkVSinternal_0.01_gamma0.5.jsonl.gz nc1.jsonl.gz --quiet
+[exit 0]

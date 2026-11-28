@@ -1,0 +1,18 @@
+$ mapatlas list-map-data --help
+
+
+  list-map-data <args>
+
+
+
+Args
+
+  <atlas>                                                   path to the atlas file (.jsonl,
+                                                            .jsonl.gz, or .jsonl.bz2).
+
+
+
+Flags
+
+  -h, --help                                                Print this help message.
+[exit 0]
